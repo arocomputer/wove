@@ -29,10 +29,11 @@ Wove is early in development, and its API is still changing.
 
 ## Get started
 
-Add Wove to your Rust project:
+Add the current Wove source to your Rust project. Version 0.0.1 is not yet
+published; crates.io still has the earlier 0.2.0 API:
 
 ```sh
-cargo add wove
+cargo add wove --git https://github.com/intuitums/wove --branch main
 ```
 
 The [core guide](crates/core/docs/start.md) starts with a runnable terminal app.

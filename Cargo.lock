@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "wove"
-version = "0.2.0"
+version = "0.0.1"
 dependencies = [
  "crossterm",
  "taffy",
@@ -925,7 +925,7 @@ dependencies = [
 
 [[package]]
 name = "wove-dioxus"
-version = "0.2.0"
+version = "0.0.1"
 dependencies = [
  "dioxus",
  "dioxus-core",

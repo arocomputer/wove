@@ -8,7 +8,7 @@ for components and signals.
 
 ```toml
 [dependencies]
-wove = "0.2"
+wove = { git = "https://github.com/intuitums/wove", branch = "main", version = "0.0.1" }
 ```
 
 ```rust

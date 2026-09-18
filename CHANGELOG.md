@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reset the workspace version to 0.0.1 for ongoing development.
+
 - Breaking: rename `Widget` to `Element` and `wove::widgets` to `wove::elements`.
   Update custom implementations and imports to use the new names.
 

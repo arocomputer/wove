@@ -57,7 +57,8 @@ related files. Preserve ecosystem names such as `rust-toolchain.toml` and
 The workspace packages are `wove` and `wove-dioxus`. The core package lives
 in `crates/core`; the adapter lives in `crates/dioxus`.
 
-`wove` 0.2.0 is published on crates.io. The adapter has not been published.
+The workspace version is 0.0.1 and has not been published. The earlier `wove`
+0.2.0 release remains on crates.io. The adapter has not been published.
 
 1. Run `./x check`, `./x ui`, and `./x bench` on the release commit.
 2. Choose the workspace version, update the adapter's exact core dependency,
