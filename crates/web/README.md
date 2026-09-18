@@ -3,7 +3,7 @@
 - [Get started](src/content/docs/start.mdx)
 - [Elements](src/content/docs/elements.mdx)
 - [Dioxus](src/content/docs/dioxus.mdx)
-- [Content and keymaps](src/content/docs/packages.mdx)
+- [Format and keymaps](src/content/docs/packages.mdx)
 - [SSH](src/content/docs/ssh.mdx)
 - [Architecture](src/content/docs/architecture.mdx)
 - [Roadmap](src/content/docs/roadmap.mdx)

@@ -31,7 +31,7 @@ terminal = ["wove/terminal", "wove-dioxus/terminal", "dep:wove-ssh"]
 wove = {{ path = "wove-{version}", default-features = false }}
 wove-dioxus = {{ path = "wove-dioxus-{version}", default-features = false }}
 wove-keymap = {{ path = "wove-keymap-{version}" }}
-wove-content = {{ path = "wove-content-{version}" }}
+wove-format = {{ path = "wove-format-{version}" }}
 wove-ssh = {{ path = "wove-ssh-{version}", optional = true }}
 [patch.crates-io]
 wove = {{ path = "wove-{version}" }}
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tree.add(tree.root(), Text::new("packed consumer"))?;
     let frame = tree.frame(20, 2)?;
     assert_eq!(frame.cell(0, 0).unwrap().symbol(), "p");
-    let _markdown = wove_content::markdown("# Packed", wove_content::Palette::default());
+    let _markdown = wove_format::markdown("# Packed", wove_format::Palette::default());
     let _keys = wove_keymap::Keymap::<()>::new(std::time::Duration::from_millis(300));
     let _registry = wove_dioxus::Registry::default();
     #[cfg(feature = "terminal")]

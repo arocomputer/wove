@@ -1,5 +1,5 @@
 use wove::{Color, Style};
-use wove_content::{diff, markdown, Palette};
+use wove_format::{diff, markdown, Palette};
 #[test]
 fn markdown_keeps_nested_style_and_link_destination() {
     let rich = markdown(

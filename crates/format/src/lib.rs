@@ -1,4 +1,4 @@
-//! Content parsers produce ordinary styled elements without terminal access.
+//! Text formatters produce ordinary styled elements without terminal access.
 #![forbid(unsafe_code)]
 mod code;
 mod diff;

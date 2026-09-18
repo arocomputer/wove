@@ -4,7 +4,7 @@ description: Ownership and crate boundaries.
 order: 5
 ---
 
-The workspace separates `core`, `dioxus`, `keymap`, `content`, `ssh`, and unpublished
+The workspace separates `core`, `dioxus`, `keymap`, `format`, `ssh`, and unpublished
 `examples`. Core owns terminal behavior and does not depend on the other crates. There is no facade crate and no application
 policy in the library.
 
@@ -70,7 +70,7 @@ operating-system shell. Core has no network dependency.
 `crates/web/` contains the Astro website and the published MDX guides. `scripts/` owns
 repository checks and packaging. The core timing example provides optional local speed checks.
 Core groups implementation under text, input, render, terminal, tree, and elements.
-Content parsers and key sequences stay in independent crates.
+Text formatters and key sequences stay in independent crates.
 
 Core keeps the element contract in `element.rs`, portable events in `input.rs`,
 and tree layout and painting in `tree/paint.rs`. Dioxus separates component state

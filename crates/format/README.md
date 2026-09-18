@@ -1,4 +1,4 @@
-# Content
+# Format
 
 Markdown, syntax-highlighted code, and line diffs produce `RichText` elements.
 Applications choose styles and themes. Parsing is separate from rendering, so

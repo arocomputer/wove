@@ -27,7 +27,7 @@ Wove is early in development, and its API is still changing.
 | --- | --- |
 | [Core](crates/core) | Elements, layout, text editing, input, and rendering. |
 | [Dioxus](crates/dioxus) | Optional RSX components, signals, and lifecycles. |
-| [Content](crates/content) | Markdown, syntax highlighting, and line diffs. |
+| [Format](crates/format) | Markdown, syntax highlighting, and line diffs. |
 | [Keymap](crates/keymap) | Scoped bindings and key sequences. |
 | [SSH](crates/ssh) | Authenticated remote terminal applications. |
 

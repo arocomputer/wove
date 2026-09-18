@@ -54,7 +54,7 @@ related files. Preserve ecosystem names such as `rust-toolchain.toml` and
 
 ## Releases
 
-Publishable packages are `wove`, `wove-dioxus`, `wove-keymap`, `wove-content`, and `wove-ssh`.
+Publishable packages are `wove`, `wove-dioxus`, `wove-keymap`, `wove-format`, and `wove-ssh`.
 `crates/examples` is private. `crates/web` uses Bun and is excluded from Cargo. The core has no dependency on the other packages.
 
 The workspace version is 0.0.1 and has not been published. The earlier `wove`

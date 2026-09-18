@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rename the formatting package to `wove-format`, with Rust imports under `wove_format`.
+
 - Add an SSH package with public-key authentication, isolated applications, remote input, and resize handling.
 - Move the documentation website into `crates/web`, outside the Cargo member list.
 - Separate element contracts, tree painting, Dioxus view ownership, and typed attributes.
@@ -12,7 +14,7 @@
 
 - Add multiline editing, styled spans, word wrapping, and edit-based undo history.
 - Add viewport-driven lists and tables, frame recording, and explicit animation clocks.
-- Add separate content, keymap, and unpublished example packages.
+- Add separate formatting, keymap, and unpublished example packages.
 - Drive Dioxus updates asynchronously alongside terminal input.
 - Add main-screen sessions and explicit terminal suspension and resumption.
 - Reuse frame storage when terminal dimensions stay unchanged.
