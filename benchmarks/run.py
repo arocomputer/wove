@@ -25,6 +25,6 @@ result = {
 (root / "artifacts").mkdir(exist_ok=True)
 (root / "artifacts/bench.json").write_text(json.dumps(result, indent=2) + "\n")
 print(json.dumps(result, indent=2))
-for key, ceiling in json.loads((root / "benchmarks/budgets.json").read_text()).items():
+for key, ceiling in json.loads((root / "benchmarks/budgets.json").read_text(encoding="utf-8")).items():
     if result[key] > ceiling:
         raise SystemExit(f"{key}: {result[key]} exceeds {ceiling}")

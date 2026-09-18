@@ -6,10 +6,10 @@ import shutil
 import tomllib
 
 root = Path(__file__).resolve().parents[1]
-version = tomllib.loads((root / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+version = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
 if os.environ["GITHUB_REF_NAME"] != f"v{version}":
     raise SystemExit("release tag does not match workspace version")
-changelog = (root / "CHANGELOG.md").read_text()
+changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
 heading = f"## {version}"
 if heading not in changelog.splitlines():
     raise SystemExit("missing versioned changelog entry")
@@ -19,4 +19,4 @@ out.mkdir(parents=True, exist_ok=True)
 archive = root / f"target/package/intuitums-weft-{version}.crate"
 shutil.copy2(archive, out / archive.name)
 (out / "SHA256SUMS").write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n")
-(root / "artifacts/release-notes.md").write_text(notes + "\n")
+(root / "artifacts/release-notes.md").write_text(notes + "\n", encoding="utf-8")
