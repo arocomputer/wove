@@ -9,12 +9,18 @@ concurrency:
   group: checks-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  check:
-    name: check (${{ matrix.os }})
+  unit:
+    name: unit (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - platform: linux
+            os: ubuntu-latest
+          - platform: macos
+            os: macos-latest
+          - platform: windows
+            os: windows-latest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     defaults:
@@ -23,10 +29,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: ./x check
-      - if: runner.os != 'Windows'
-        run: ./x ui
-  web:
-    name: website
+  e2e:
+    name: e2e (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-latest
+          - platform: macos
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: ./x ui
+  docs:
+    name: docs
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
