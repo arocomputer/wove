@@ -29,7 +29,7 @@ def scenario(name, steps):
                                stdin=slave, stdout=slave, stderr=slave,
                                start_new_session=True, env={**os.environ, "TERM": "xterm-256color"})
 
-    def receive(expected):
+    def receive(expected, after=-1):
         """Drain complete output until the expected frame appears or time expires."""
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
@@ -42,7 +42,7 @@ def scenario(name, steps):
                     raise
                 raw.extend(chunk)
                 stream.feed(chunk)
-            if expected in "\n".join(screen.display):
+            if len(raw) > after and expected in "\n".join(screen.display):
                 return
             if process.poll() is not None:
                 break
@@ -54,9 +54,12 @@ def scenario(name, steps):
             os.write(master, keys)
             receive(expected)
             (OUT / f"{name}-{index}.txt").write_text("\n".join(screen.display) + "\n")
+        before_resize = len(raw)
         screen.resize(lines=12, columns=40)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 40, 0, 0))
         os.kill(process.pid, signal.SIGWINCH)
+        # Observe the resize frame before sending a separate keyboard event.
+        receive("weft", after=before_resize)
         # An additional key produces an observable update after the resize.
         os.write(master, b"+" if name == "counter" else b"k")
         receive("3" if name == "counter" else "Browse a shared collect")
