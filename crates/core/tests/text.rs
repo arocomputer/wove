@@ -136,3 +136,75 @@ fn logical_line_navigation_never_stops_inside_a_crlf_grapheme() {
     editor.vertical(-1, false);
     assert_eq!(editor.cursor(), 1);
 }
+
+#[test]
+fn undo_deletion_restores_the_original_cursor_without_a_selection() {
+    let mut editor = Editor::new("a界b");
+    editor.left(false);
+    let cursor = editor.cursor();
+    editor.backspace();
+    assert_eq!(editor.text(), "ab");
+    editor.undo();
+    assert_eq!(editor.text(), "a界b");
+    assert_eq!(editor.cursor(), cursor);
+    assert!(editor.selection().is_empty());
+    editor.redo();
+    assert_eq!(editor.text(), "ab");
+
+    editor.home(false);
+    editor.delete();
+    editor.undo();
+    assert_eq!(editor.text(), "ab");
+    assert_eq!(editor.cursor(), 0);
+    assert!(editor.selection().is_empty());
+}
+
+#[test]
+fn word_wrap_rechecks_a_wide_grapheme_after_moving_the_word() {
+    use wove::{
+        elements::RichText,
+        testing::Screen,
+        text::{Span, TextLayout, Wrap},
+    };
+    let spans = vec![Span::new(" aab界", Style::default())];
+    let layout = TextLayout::new(&spans, Some(4), Wrap::Word);
+    assert_eq!(layout.size(), (3, 3));
+    let mut screen = Screen::new(4, 3);
+    let id = screen
+        .tree
+        .add(
+            screen.tree.root(),
+            RichText {
+                spans,
+                wrap: Wrap::Word,
+            },
+        )
+        .unwrap();
+    let mut style = screen.tree.layout(id).unwrap().clone();
+    style.size.width = wove::layout::length(4.0);
+    screen.tree.set_layout(id, style).unwrap();
+    let frame = screen.frame().unwrap();
+    assert_eq!(frame.cell(0, 1).unwrap().symbol(), "a");
+    assert_eq!(frame.cell(0, 2).unwrap().symbol(), "界");
+}
+
+#[test]
+fn clicking_an_input_reports_a_focus_repaint() {
+    use wove::{elements::Input, testing::Screen, Event, Mouse, MouseKind};
+    let mut screen = Screen::new(10, 2);
+    let id = screen
+        .tree
+        .add(screen.tree.root(), Input::default())
+        .unwrap();
+    screen.frame().unwrap();
+    let event = Event::Mouse(Mouse {
+        x: 0,
+        y: 0,
+        kind: MouseKind::Down,
+    });
+    let result = screen.send(event.clone()).unwrap();
+    assert_eq!(screen.tree.focused(), Some(id));
+    assert!(result.changed);
+    screen.frame().unwrap();
+    assert!(!screen.send(event).unwrap().changed);
+}

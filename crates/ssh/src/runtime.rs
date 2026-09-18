@@ -1,7 +1,10 @@
 //! Run a remote application without acquiring the server terminal.
 use crate::{input::Decoder, server::Factory, Error, Peer};
 use russh::{server, ChannelId};
-use std::time::Duration;
+use std::{
+    panic::{catch_unwind, AssertUnwindSafe},
+    time::Duration,
+};
 use tokio::sync::mpsc;
 use wove::{Event, Key};
 
@@ -11,7 +14,8 @@ pub(crate) enum Message {
 }
 
 /// Keep non-Send application state off the network executor. Bounded queues and
-/// output deadlines prevent a slow peer from retaining unlimited work.
+/// output deadlines prevent a slow peer from retaining unlimited work. Application
+/// panics unwind inside this boundary so remote mode restoration still runs.
 pub(crate) fn run(
     factory: Factory,
     peer: Peer,
@@ -29,7 +33,7 @@ pub(crate) fn run(
             Ok(())
         })
     };
-    let result = (|| -> Result<(), Error> {
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), Error> {
         let mut app = factory(&peer)?;
         let (mut width, mut height) = (peer.width, peer.height);
         let mut renderer = wove::terminal::Renderer::default();
@@ -69,7 +73,8 @@ pub(crate) fn run(
             }
         }
         Ok(())
-    })();
+    }))
+    .unwrap_or_else(|_| Err("SSH application panicked".into()));
     let _ = send(b"\x1b[0m\x1b[?1006l\x1b[?1000l\x1b[?2004l\x1b[?25h\x1b[?1049l".to_vec());
     let _ = runtime.block_on(async {
         tokio::time::timeout(Duration::from_secs(5), async {

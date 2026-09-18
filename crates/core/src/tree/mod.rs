@@ -381,6 +381,7 @@ impl Tree {
         }
     }
     pub fn dispatch(&mut self, event: Event) -> Result<Dispatch, Error> {
+        let previous_focus = self.focus;
         if self
             .focus
             .is_some_and(|id| !self.visible(id) || !self.nodes[id].element.focusable())
@@ -400,6 +401,7 @@ impl Tree {
         }
         let mut result = Dispatch {
             target,
+            changed: self.focus != previous_focus,
             ..Dispatch::default()
         };
         let mut next = target;

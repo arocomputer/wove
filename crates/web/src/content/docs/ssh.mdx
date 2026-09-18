@@ -35,7 +35,9 @@ ssh -p 2222 -i ~/.ssh/id_ed25519 guest@localhost
 The client must request a PTY before starting the application. Each connection
 permits one interactive channel. Commands, forwarding, and subsystems are not
 supported. Ctrl-C closes the app; disconnecting drops its state. Server shutdown
-disconnects active clients. App callbacks must return promptly.
+disconnects active clients. An unwinding application panic restores remote terminal
+modes and closes its channel with a failure status. Process aborts cannot run
+cleanup. App callbacks must return promptly.
 
 The decoder preserves UTF-8 and escape sequences across packet boundaries and
 supports common xterm keys, modifiers, SGR mouse reports, and bracketed paste.

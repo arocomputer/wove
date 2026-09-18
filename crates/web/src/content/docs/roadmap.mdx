@@ -18,6 +18,19 @@ Wove is early development software. Version 0.0.1 is not a stable release.
 - Full-screen main and alternate buffers, suspension, and resumption.
 - Headless frames, recording, explicit clocks, PTY checks, and optional local timing checks.
 
+## First-release priorities
+
+The first release should document supported behavior and keep the optional
+adapters marked experimental until they cover real application workloads.
+Prioritize these additions over more integration packages:
+
+- Dioxus tags for rich text, lists, and tables. Core already has these elements;
+  the adapter currently requires custom registration to use them.
+- Terminal capability handling for extended keyboard reports and color support.
+  Applications need predictable fallbacks across supported terminals.
+- SSH application wakeups for background tasks and animation. The transport
+  currently redraws only after client input or resize.
+
 ## Remaining work
 
 Text storage still uses a String. Large-document editing needs measured storage

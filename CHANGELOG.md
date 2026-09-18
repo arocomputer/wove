@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Restore the original cursor and selection when undoing Backspace or Delete.
+- Report focus changes from mouse clicks as frame changes.
+- Preserve wide graphemes when word wrapping moves an overflowing word.
+- Restore remote terminal modes and close the SSH channel after an application panic.
+
 - Consolidate formatting into core behind optional `markdown`, `syntax`, and `diff` features.
 - Keep command bindings and key sequences in the separate `wove-keymap` package.
 

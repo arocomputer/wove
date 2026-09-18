@@ -69,7 +69,7 @@ impl TextLayout {
             if n > limit {
                 continue;
             }
-            if columns + n > limit && !row.is_empty() {
+            while columns + n > limit && !row.is_empty() {
                 let split = if wrap == Wrap::Word {
                     row.iter().rposition(|g| g.whitespace).map(|i| i + 1)
                 } else {
