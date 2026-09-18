@@ -1,0 +1,17 @@
+name: Bug report
+description: Report incorrect behavior in weft.
+body:
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Include a minimal example and the expected and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the weft revision, Rust version, operating system, and terminal.
+    validations:
+      required: true

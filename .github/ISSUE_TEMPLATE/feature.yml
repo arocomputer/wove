@@ -1,0 +1,10 @@
+name: Feature request
+description: Describe a terminal application use case.
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: What application behavior needs this, and how would you use the API?
+    validations:
+      required: true

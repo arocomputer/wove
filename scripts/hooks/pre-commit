@@ -1,0 +1,5 @@
+#!/bin/sh
+# Reject whitespace defects and unformatted Rust before committing.
+set -eu
+git diff --cached --check
+cargo fmt --all --check

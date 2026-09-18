@@ -1,0 +1,13 @@
+"""Check repository trust boundaries without reading user configuration."""
+from pathlib import Path
+import re
+
+root = Path(__file__).resolve().parents[1]
+for path in (root / ".github/workflows").glob("*.yml"):
+    for action in re.findall(r"uses:\s*(\S+)", path.read_text()):
+        if not re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", action):
+            raise SystemExit(f"{path}: action must be pinned by commit: {action}")
+for path in (root / "crates/weft/src").glob("*.rs"):
+    if re.search(r"\bunsafe\s*(?:\{|impl|fn)", path.read_text()):
+        raise SystemExit(f"{path}: library must not use unsafe code")
+print("repository guards passed")
