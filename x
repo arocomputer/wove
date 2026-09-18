@@ -26,7 +26,7 @@ case "$command" in
   docs) RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked ;;
   package) python3 scripts/package.py ;;
   web)
-    cd web
+    cd crates/web
     bun install --frozen-lockfile
     bun run check
     bun run build

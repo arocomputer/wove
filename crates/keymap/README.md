@@ -1,4 +1,4 @@
-# Wove keymap
+# Keymap
 
 Scoped bindings and key sequences for terminal applications. Applications own
 command execution, focus ancestry, and the clock. Call `expire` before dispatching

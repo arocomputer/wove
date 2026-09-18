@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add an SSH package with public-key authentication, isolated applications, remote input, and resize handling.
+- Move the documentation website into `crates/web`, outside the Cargo member list.
+- Separate element contracts, tree painting, Dioxus view ownership, and typed attributes.
+- Use readable library names and a documentation index in the README.
+
 - Withdraw the premature release and keep 0.0.1 unpublished.
 - Remove the top-level timing suite and CI performance budgets.
 
@@ -11,7 +16,7 @@
 - Drive Dioxus updates asynchronously alongside terminal input.
 - Add main-screen sessions and explicit terminal suspension and resumption.
 - Reuse frame storage when terminal dimensions stay unchanged.
-- Move published docs into a minimal Astro and MDX website under `web/`.
+- Move published docs into a minimal Astro and MDX website under `crates/web/`.
 
 - Reset the workspace version to 0.0.1 for ongoing development.
 

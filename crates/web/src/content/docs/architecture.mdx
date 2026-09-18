@@ -4,7 +4,7 @@ description: Ownership and crate boundaries.
 order: 5
 ---
 
-The workspace separates `core`, `dioxus`, `keymap`, `content`, and unpublished
+The workspace separates `core`, `dioxus`, `keymap`, `content`, `ssh`, and unpublished
 `examples`. Core owns terminal behavior and does not depend on the other crates. There is no facade crate and no application
 policy in the library.
 
@@ -54,9 +54,24 @@ The async runner waits for terminal input and component work concurrently.
 `Registry` lets an application map extra tags and attributes to its own elements.
 An adapter must use the same public tree operations available to every consumer.
 
+## SSH
+
+The SSH package owns encrypted connections and translates remote input into core
+events. Applications supply a host key, a public-key authorization policy, and
+an application factory. Each accepted interactive session owns a separate app on
+a worker thread, so core elements and callbacks do not need to be Send.
+
+The caller binds the listener and supplies shutdown. Input queues, grid dimensions,
+and output waits have limits. The package exposes a terminal application, not an
+operating-system shell. Core has no network dependency.
+
 ## Repository
 
-`web/` contains the Astro website and the published MDX guides. `scripts/` owns
+`crates/web/` contains the Astro website and the published MDX guides. `scripts/` owns
 repository checks and packaging. The core timing example provides optional local speed checks.
 Core groups implementation under text, input, render, terminal, tree, and elements.
 Content parsers and key sequences stay in independent crates.
+
+Core keeps the element contract in `element.rs`, portable events in `input.rs`,
+and tree layout and painting in `tree/paint.rs`. Dioxus separates component state
+in `view.rs` from mutations in `host/` and typed attributes in `host/attrs.rs`.

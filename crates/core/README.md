@@ -38,4 +38,4 @@ This is an early release with an unstable API. Current elements are `Container`,
 logical lines and horizontal scrolling; soft-wrapped editing is not implemented.
 
 [Source and examples](https://github.com/intuitums/wove/tree/main) ·
-[Guide](https://github.com/intuitums/wove/blob/main/web/src/content/docs/start.mdx)
+[Guide](https://github.com/intuitums/wove/blob/main/crates/web/src/content/docs/start.mdx)

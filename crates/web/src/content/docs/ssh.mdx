@@ -1,0 +1,57 @@
+---
+title: SSH
+description: Serve terminal applications over authenticated SSH connections.
+order: 5
+---
+
+`wove-ssh` serves a Wove application to each authenticated peer. The core library
+remains independent of networking. Remote output goes to the SSH channel and
+does not change the server's terminal modes.
+
+## Start a server
+
+`Server::new` takes a persistent host `PrivateKey`, an authorization callback,
+and an application factory. Authorization receives the username and verified
+public key. Reject any identity the application does not trust.
+
+The factory receives `Peer`, including that identity, remote address, terminal
+name, and initial dimensions. It runs on the connection's application thread,
+where it can build a tree with ordinary non-Send elements and callbacks.
+`Tree` implements `App` directly. Custom applications implement `frame` and
+`event`; return false from `event` to close the channel.
+
+Bind a Tokio `TcpListener` and pass it to `Server::serve` with a shutdown future.
+The library does not choose a network interface or create host keys. The
+`server` example binds `127.0.0.1:2222` and loads both keys from explicit paths:
+
+```sh
+ssh-keygen -t ed25519 -f /tmp/wove-host -N ''
+cargo run -p wove-ssh --example server -- /tmp/wove-host ~/.ssh/id_ed25519.pub
+ssh -p 2222 -i ~/.ssh/id_ed25519 guest@localhost
+```
+
+## Input and lifecycle
+
+The client must request a PTY before starting the application. Each connection
+permits one interactive channel. Commands, forwarding, and subsystems are not
+supported. Ctrl-C closes the app; disconnecting drops its state. Server shutdown
+disconnects active clients. App callbacks must return promptly.
+
+The decoder preserves UTF-8 and escape sequences across packet boundaries and
+supports common xterm keys, modifiers, SGR mouse reports, and bracketed paste.
+A lone Escape waits 40 milliseconds for a following sequence. Unsupported
+terminal reports are ignored. Paste is delivered as text, so a control character
+inside a paste does not become a command.
+
+Frames update after input or resize. This initial transport does not yet provide
+an asynchronous application wakeup mechanism for background tasks or animation.
+Extended keyboard protocols and terminal capability negotiation are not implemented.
+
+## Limits
+
+The default connection limit is 32 and can be changed through `connections`.
+Terminal dimensions must be positive, at most 512 columns and 256 rows, and no
+more than 65,536 cells. Input packets and pasted text are limited to 64 KiB.
+The input queue holds 16 messages; overflow closes the connection. A stalled
+output write times out after five seconds. Inactive connections expire after
+five minutes. Applications remain responsible for their own content and work limits.

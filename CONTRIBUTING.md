@@ -31,7 +31,7 @@ Releases require an explicit maintainer decision; commits do not publish crates.
 
 ## Documentation
 
-Published guides, architecture, and the roadmap live in `web/src/content/docs/`.
+Published guides, architecture, and the roadmap live in `crates/web/src/content/docs/`.
 Crate READMEs introduce their package and link to these guides. Contribution and
 release instructions live here.
 
@@ -54,8 +54,8 @@ related files. Preserve ecosystem names such as `rust-toolchain.toml` and
 
 ## Releases
 
-Publishable packages are `wove`, `wove-dioxus`, `wove-keymap`, and `wove-content`.
-`crates/examples` is private. The core has no dependency on the other packages.
+Publishable packages are `wove`, `wove-dioxus`, `wove-keymap`, `wove-content`, and `wove-ssh`.
+`crates/examples` is private. `crates/web` uses Bun and is excluded from Cargo. The core has no dependency on the other packages.
 
 The workspace version is 0.0.1 and has not been published. The earlier `wove`
 0.2.0 package is yanked on crates.io. The other packages have not been published.
@@ -76,6 +76,6 @@ Do not publish from a pull request.
 
 ## Website
 
-`web/` is a minimal Astro and MDX documentation setup, using Bun 1.4.2 or newer.
+`crates/web/` is a minimal Astro and MDX documentation setup, using Bun 1.4.2 or newer.
 Run `./x web` for dependency, type, and build checks. Do not add a full website
 design or deployment configuration until requested.

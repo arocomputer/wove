@@ -1,4 +1,14 @@
-# Wove website
+# Documentation
+
+- [Get started](src/content/docs/start.mdx)
+- [Elements](src/content/docs/elements.mdx)
+- [Dioxus](src/content/docs/dioxus.mdx)
+- [Content and keymaps](src/content/docs/packages.mdx)
+- [SSH](src/content/docs/ssh.mdx)
+- [Architecture](src/content/docs/architecture.mdx)
+- [Roadmap](src/content/docs/roadmap.mdx)
+
+## Website
 
 Minimal Astro, MDX, TypeScript, and Bun documentation setup. Pages build to
 static files in `dist/`. Website design and hosting are deferred.

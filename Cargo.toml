@@ -1,5 +1,6 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/core", "crates/content", "crates/dioxus", "crates/keymap", "crates/ssh", "crates/examples"]
+exclude = ["crates/web"]
 resolver = "2"
 
 [workspace.package]

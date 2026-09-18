@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="web/public/logo/dark.svg">
-    <img src="web/public/logo/light.svg" alt="Wove logo" height="42">
+    <source media="(prefers-color-scheme: dark)" srcset="crates/web/public/logo/dark.svg">
+    <img src="crates/web/public/logo/light.svg" alt="Wove logo" height="42">
   </picture>
 </p>
 
@@ -19,17 +19,21 @@ Wove is a Rust library to build terminal user interfaces.
 
 Wove is early in development, and its API is still changing.
 
-[Documentation](web/src/content/docs/start.mdx) | [Roadmap](web/src/content/docs/roadmap.mdx)
+[Documentation](crates/web/README.md) | [Roadmap](crates/web/src/content/docs/roadmap.mdx)
 
-## Crates
+## Libraries
 
-- [`wove`](crates/core) provides elements, layout, text editing, input, and terminal rendering.
-- [`wove-content`](crates/content) provides Markdown, highlighted code, and line diffs.
-- [`wove-keymap`](crates/keymap) provides scoped bindings and key sequences.
-- [`wove-dioxus`](crates/dioxus) adds RSX, signals, and component lifecycles over the core library. It is optional and currently available from a source checkout.
+| Library | Purpose |
+| --- | --- |
+| [Core](crates/core) | Elements, layout, text editing, input, and rendering. |
+| [Dioxus](crates/dioxus) | Optional RSX components, signals, and lifecycles. |
+| [Content](crates/content) | Markdown, syntax highlighting, and line diffs. |
+| [Keymap](crates/keymap) | Scoped bindings and key sequences. |
+| [SSH](crates/ssh) | Authenticated remote terminal applications. |
 
-The unpublished [`examples`](crates/examples) package contains application examples.
-`web/` holds the documentation and minimal website setup.
+[Examples](crates/examples) contains runnable applications.
+[Web](crates/web) contains the documentation and minimal Astro setup.
+All packages live under `crates/`; Web uses Bun and is excluded from Cargo.
 
 ## Get started
 
@@ -40,8 +44,8 @@ published. The earlier crates.io version was withdrawn:
 cargo add wove --git https://github.com/intuitums/wove --branch main
 ```
 
-The [core guide](web/src/content/docs/start.mdx) starts with a runnable terminal app.
-For components and signals, see the [Dioxus guide](web/src/content/docs/dioxus.mdx).
+The [core guide](crates/web/src/content/docs/start.mdx) starts with a runnable terminal app.
+For components and signals, see the [Dioxus guide](crates/web/src/content/docs/dioxus.mdx).
 
 ## Development
 
@@ -66,7 +70,7 @@ For an optional local speed check, run
 For documentation changes, run `./x web` with Bun 1.4.2 or newer.
 
 See [AGENTS.md](AGENTS.md) for repository conventions and
-[architecture](web/src/content/docs/architecture.mdx) for the crate boundaries.
+[architecture](crates/web/src/content/docs/architecture.mdx) for the crate boundaries.
 
 ## Contributing
 

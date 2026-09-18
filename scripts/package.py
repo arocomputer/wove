@@ -26,12 +26,13 @@ version = "0.0.0"
 edition = "2021"
 [features]
 default = ["terminal"]
-terminal = ["wove/terminal", "wove-dioxus/terminal"]
+terminal = ["wove/terminal", "wove-dioxus/terminal", "dep:wove-ssh"]
 [dependencies]
 wove = {{ path = "wove-{version}", default-features = false }}
 wove-dioxus = {{ path = "wove-dioxus-{version}", default-features = false }}
 wove-keymap = {{ path = "wove-keymap-{version}" }}
 wove-content = {{ path = "wove-content-{version}" }}
+wove-ssh = {{ path = "wove-ssh-{version}", optional = true }}
 [patch.crates-io]
 wove = {{ path = "wove-{version}" }}
 ''', encoding="utf-8")
@@ -45,6 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _markdown = wove_content::markdown("# Packed", wove_content::Palette::default());
     let _keys = wove_keymap::Keymap::<()>::new(std::time::Duration::from_millis(300));
     let _registry = wove_dioxus::Registry::default();
+    #[cfg(feature = "terminal")]
+    let _remote = std::mem::size_of::<wove_ssh::Server>();
     #[cfg(feature = "terminal")]
     wove::terminal::Renderer::default().draw(&mut Vec::new(), frame)?;
     Ok(())

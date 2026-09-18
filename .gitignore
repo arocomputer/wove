@@ -1,6 +1,6 @@
 /target/
 /artifacts/
 __pycache__/
-/web/node_modules/
-/web/dist/
-/web/.astro/
+/crates/web/node_modules/
+/crates/web/dist/
+/crates/web/.astro/

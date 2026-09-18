@@ -12,6 +12,8 @@
 #![forbid(unsafe_code)]
 
 pub mod animation;
+mod element;
+pub use element::Element;
 pub mod elements;
 pub mod input;
 pub mod render;
@@ -22,7 +24,7 @@ mod tree;
 pub use input::{Event, Key, Modifiers, Mouse, MouseKind, Response};
 pub use render::{Buffer, Canvas, Cell, Color, Rect, Style};
 pub use taffy::Style as Layout;
-pub use tree::{Dispatch, Element, Error, Id, Tree};
+pub use tree::{Dispatch, Error, Id, Tree};
 /// Taffy's layout types and helpers, measured in terminal cells.
 pub mod layout {
     pub use taffy::prelude::*;
