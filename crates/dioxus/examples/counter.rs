@@ -11,7 +11,7 @@ fn app() -> Element {
         if let Event::Key(Key::Char('+'),_) = *event.data { count += 1; event.prevent_default(); }
         if let Event::Key(Key::Char('-'),_) = *event.data { count -= 1; event.prevent_default(); }
     },
-        text { content:"wove · Dioxus counter" }
+        text { content:"Wove · Dioxus counter" }
         text { content:"Count: {count}" }
         text { content:"+ / - change · Tab focus · Esc quit" }
         input { value:"{name}", placeholder:"Type here", oninput: move |event| name.set(event.data.to_string()) }

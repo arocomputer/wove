@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_core::AttributeValue;
 use wove::{
-    widgets::{Input, Text},
+    elements::{Input, Text},
     Event as InputEvent, Id, Key, Tree,
 };
 use wove_dioxus::{elements as dioxus_elements, View};
@@ -85,7 +85,7 @@ fn invalid_attributes_fail_explicitly() {
 }
 
 #[test]
-fn custom_tags_use_custom_widgets_without_changing_core() {
+fn custom_tags_use_custom_elements_without_changing_core() {
     use wove_dioxus::{Error, Registry};
     fn create(t: &mut Tree) -> Result<Id, Error> {
         Ok(t.create(Text::new("custom"))?)

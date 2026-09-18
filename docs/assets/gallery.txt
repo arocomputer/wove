@@ -1,4 +1,4 @@
-wove · widget gallery
+Wove · element gallery
 scroll
 Scroll            ┌────────────────────────────────────────────────────────────┐
                   │Scroll                                                      │

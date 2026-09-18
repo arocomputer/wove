@@ -15,4 +15,4 @@ Next work should use concrete examples to choose scope:
 
 Core will remain usable without a component runtime. Additional adapters belong
 in separate crates and must use public core operations. Application-specific
-behavior belongs in applications and their own widgets.
+behavior belongs in applications and their own elements.

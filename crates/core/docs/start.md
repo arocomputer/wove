@@ -12,7 +12,7 @@ wove = "0.2"
 ## Build a tree
 
 ```rust
-use wove::{Tree, widgets::{Input, Text}, terminal};
+use wove::{Tree, elements::{Input, Text}, terminal};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tree = Tree::new();
@@ -24,8 +24,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`add` attaches a widget; `create` leaves it detached. `append` and `insert` move
-existing widgets without losing state. `update` changes typed widget state and
+`add` attaches an element; `create` leaves it detached. `append` and `insert` move
+existing elements without losing state. `update` changes typed element state and
 invalidates layout and paint. `remove` drops a subtree. IDs cannot be reused or
 passed to another tree.
 
@@ -37,15 +37,15 @@ Text defaults to clipping. Set `Text::wrap` for hard wrapping at grapheme bounda
 
 ## Input and rendering
 
-`Tree::on` runs before a widget's default behavior. `Response::HANDLED` consumes
+`Tree::on` runs before an element's default behavior. `Response::HANDLED` consumes
 the event; otherwise it bubbles through parents. Tab and Shift-Tab move focus
 when no handler consumes the key. Mouse presses focus the nearest focusable
-ancestor of the hit widget. Hit testing uses the last painted frame.
+ancestor of the hit element. Hit testing uses the last painted frame.
 
 `Input` supports arrows, Shift selection, Home, End, Backspace, Delete, Ctrl-A,
 Ctrl-Z, Ctrl-Y, and bracketed paste. Programmatic changes through its public
 editor should contain single-line text. `Editor` itself accepts arbitrary text;
-it is also available to custom widgets.
+it is also available to custom elements.
 
 `Scroll` clips children and handles arrows, paging, Home, End, and mouse wheels.
 Children that should retain their full content height need `flex_shrink: 0.0`.
@@ -60,7 +60,7 @@ own loop. Do not print over a live session without invalidating its renderer.
 ## Test without a terminal
 
 ```rust
-use wove::{testing::Screen, widgets::Input, Key};
+use wove::{testing::Screen, elements::Input, Key};
 
 let mut screen = Screen::new(20, 3);
 let input = screen.tree.add(screen.tree.root(), Input::default())?;
@@ -70,5 +70,5 @@ assert_eq!(screen.frame()?.cell(0, 0).unwrap().symbol(), "界");
 # Ok::<(), wove::Error>(())
 ```
 
-Headless tests use the same layout, widgets, clipping, and input routing as a
+Headless tests use the same layout, elements, clipping, and input routing as a
 terminal session. Real PTY checks run through `./x ui` on Unix.

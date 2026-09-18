@@ -54,7 +54,7 @@ def scenario(name, steps):
                 assert row[18] == "│" and row[-1] == "│", f"clipped panel border: {row!r}"
 
     try:
-        receive("wove")
+        receive("Wove")
         for index, (keys, expected) in enumerate(steps):
             os.write(master, keys)
             receive(expected)
@@ -65,7 +65,7 @@ def scenario(name, steps):
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 40, 0, 0))
         os.kill(process.pid, signal.SIGWINCH)
         # Observe the resize frame before sending a separate keyboard event.
-        receive("wove", after=before_resize)
+        receive("Wove", after=before_resize)
         # An additional key produces an observable update after the resize.
         os.write(master, b"+" if name == "counter" else b"\x01\x7f")
         receive("Count: 3" if name == "counter" else "Text")

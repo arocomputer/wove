@@ -1,4 +1,4 @@
-//! An owned text editor shared by input components and custom widgets.
+//! An owned text editor shared by input elements and custom elements.
 use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

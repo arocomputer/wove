@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Breaking: rename `Widget` to `Element` and `wove::widgets` to `wove::elements`.
+  Update custom implementations and imports to use the new names.
+
 - Update the Wove wordmark and README with a runnable getting-started example.
 - Rename the source repository to `intuitums/wove`.
 

@@ -47,7 +47,7 @@ impl View {
         self.render()?;
         Ok(self.host.tree.frame(width, height)?)
     }
-    /// Dispatch to Dioxus before native widget behavior. `prevent_default` cancels
+    /// Dispatch to Dioxus before native element behavior. `prevent_default` cancels
     /// editing or focus traversal; `stop_propagation` stops Dioxus parent listeners.
     pub fn send(&mut self, event: Event) -> Result<Dispatch, Error> {
         self.render()?;
@@ -70,7 +70,7 @@ impl View {
         let input = std::iter::successors(target, |id| self.host.tree.parent(*id)).find_map(|id| {
             self.host
                 .tree
-                .get::<wove::widgets::Input>(id)
+                .get::<wove::elements::Input>(id)
                 .ok()
                 .map(|w| (id, w.editor.text().to_owned()))
         });
@@ -79,7 +79,7 @@ impl View {
             let value = self
                 .host
                 .tree
-                .get::<wove::widgets::Input>(id)?
+                .get::<wove::elements::Input>(id)?
                 .editor
                 .text();
             if value != before {

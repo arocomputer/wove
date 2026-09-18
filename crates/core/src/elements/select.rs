@@ -1,5 +1,5 @@
 //! A keyboard-selectable list with a viewport that follows selection.
-use crate::{Canvas, Event, Key, Response, Style, Widget};
+use crate::{Canvas, Element, Event, Key, Response, Style};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Default)]
@@ -22,7 +22,7 @@ impl Select {
         }
     }
 }
-impl Widget for Select {
+impl Element for Select {
     fn focusable(&self) -> bool {
         !self.items.is_empty()
     }

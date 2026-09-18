@@ -1,5 +1,5 @@
 //! Grapheme-safe text measurement and optional hard wrapping.
-use crate::{Canvas, Style, Widget};
+use crate::{Canvas, Element, Style};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -50,7 +50,7 @@ impl Text {
     }
 }
 
-impl Widget for Text {
+impl Element for Text {
     fn measure(&self, width: Option<u16>) -> (u16, u16) {
         let rows = self.rows(width);
         (

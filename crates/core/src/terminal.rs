@@ -178,7 +178,7 @@ impl Drop for Terminal {
     }
 }
 
-/// Terminal events are converted here so core widgets never depend on crossterm.
+/// Terminal events are converted here so core elements never depend on crossterm.
 pub fn read() -> io::Result<Option<crate::Event>> {
     use crate::{Event, Key, Modifiers, Mouse, MouseKind};
     Ok(match event::read()? {

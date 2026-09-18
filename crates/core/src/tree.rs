@@ -1,5 +1,5 @@
-//! Retained component ownership, layout, focus, and bubbling input.
-use crate::{widgets::Container, Buffer, Canvas, Event, Key, Layout, MouseKind, Rect, Response};
+//! Retained element ownership, layout, focus, and bubbling input.
+use crate::{elements::Container, Buffer, Canvas, Event, Key, Layout, MouseKind, Rect, Response};
 use std::any::Any;
 use std::{
     collections::HashMap,
@@ -48,9 +48,9 @@ impl IndexMut<Id> for Nodes {
     }
 }
 
-/// A component measures and paints in cells. It owns its state and releases its
+/// An element measures and paints in cells. It owns its state and releases its
 /// resources when removed. Events bubble to parents unless consumed.
-pub trait Widget: Any {
+pub trait Element: Any {
     fn layout(&self) -> Layout {
         Layout::default()
     }
@@ -83,7 +83,7 @@ impl std::fmt::Display for Error {
             Self::MissingNode => f.write_str("node does not belong to this tree or was removed"),
             Self::Root => f.write_str("the root cannot be removed or reparented"),
             Self::Cycle => f.write_str("reparenting would introduce a cycle"),
-            Self::WrongType => f.write_str("node contains a different widget type"),
+            Self::WrongType => f.write_str("node contains a different element type"),
             Self::Layout(error) => write!(f, "layout: {error}"),
         }
     }
@@ -97,7 +97,7 @@ impl From<taffy::TaffyError> for Error {
 
 type Handler = Box<dyn FnMut(&Event) -> Response>;
 struct Node {
-    widget: Box<dyn Widget>,
+    element: Box<dyn Element>,
     layout: taffy::NodeId,
     parent: Option<Id>,
     children: Vec<Id>,
@@ -116,7 +116,7 @@ pub struct Dispatch {
     pub changed: bool,
 }
 
-/// Owns widgets and their layout, focus, and last rendered frame.
+/// Owns elements and their layout, focus, and last rendered frame.
 pub struct Tree {
     nodes: Nodes,
     layout: TaffyTree<Id>,
@@ -141,7 +141,7 @@ impl Tree {
         };
         let lid = layout.new_leaf(style).expect("new root layout");
         let root = nodes.insert(Node {
-            widget: Box::new(Container),
+            element: Box::new(Container),
             layout: lid,
             parent: None,
             children: vec![],
@@ -193,10 +193,10 @@ impl Tree {
     }
 
     /// New nodes are detached. Append or insert them before they can render or focus.
-    pub fn create(&mut self, widget: impl Widget) -> Result<Id, Error> {
-        let lid = self.layout.new_leaf(widget.layout())?;
+    pub fn create(&mut self, element: impl Element) -> Result<Id, Error> {
+        let lid = self.layout.new_leaf(element.layout())?;
         let id = self.nodes.insert(Node {
-            widget: Box::new(widget),
+            element: Box::new(element),
             layout: lid,
             parent: None,
             children: vec![],
@@ -208,9 +208,9 @@ impl Tree {
         self.layout.set_node_context(lid, Some(id))?;
         Ok(id)
     }
-    pub fn add(&mut self, parent: Id, widget: impl Widget) -> Result<Id, Error> {
+    pub fn add(&mut self, parent: Id, element: impl Element) -> Result<Id, Error> {
         self.node(parent)?;
-        let id = self.create(widget)?;
+        let id = self.create(element)?;
         self.append(parent, id)?;
         Ok(id)
     }
@@ -219,7 +219,7 @@ impl Tree {
         self.insert(parent, child, index)
     }
 
-    /// Move a node without recreating its widget, handlers, descendants, or focus.
+    /// Move a node without recreating its element, handlers, descendants, or focus.
     /// The index is interpreted after removing it from its previous position.
     pub fn insert(&mut self, parent: Id, child: Id, index: usize) -> Result<(), Error> {
         self.node(parent)?;
@@ -251,7 +251,7 @@ impl Tree {
         Ok(())
     }
 
-    /// Remove a subtree and drop its widget state and callbacks. IDs never revive.
+    /// Remove a subtree and drop its element state and callbacks. IDs never revive.
     pub fn remove(&mut self, id: Id) -> Result<(), Error> {
         self.node(id)?;
         if id == self.root {
@@ -282,23 +282,23 @@ impl Tree {
         self.dirty = true;
         Ok(())
     }
-    pub fn get<W: Widget>(&self, id: Id) -> Result<&W, Error> {
-        (self.node(id)?.widget.as_ref() as &dyn Any)
+    pub fn get<E: Element>(&self, id: Id) -> Result<&E, Error> {
+        (self.node(id)?.element.as_ref() as &dyn Any)
             .downcast_ref()
             .ok_or(Error::WrongType)
     }
     /// Mutations invalidate measurement as well as paint; no manual redraw call is needed.
-    pub fn update<W: Widget>(&mut self, id: Id, update: impl FnOnce(&mut W)) -> Result<(), Error> {
+    pub fn update<E: Element>(&mut self, id: Id, update: impl FnOnce(&mut E)) -> Result<(), Error> {
         let node = self.nodes.get_mut(id).ok_or(Error::MissingNode)?;
-        let widget = (node.widget.as_mut() as &mut dyn Any)
+        let element = (node.element.as_mut() as &mut dyn Any)
             .downcast_mut()
             .ok_or(Error::WrongType)?;
-        update(widget);
+        update(element);
         self.layout.mark_dirty(node.layout)?;
         self.dirty = true;
         Ok(())
     }
-    /// A node handler runs before its widget's default behavior. Returning handled
+    /// A node handler runs before its element's default behavior. Returning handled
     /// stops the default and parent handlers. Replacing it drops the old callback.
     pub fn on(
         &mut self,
@@ -311,7 +311,7 @@ impl Tree {
     pub fn focus(&mut self, id: Option<Id>) -> Result<(), Error> {
         if let Some(id) = id {
             self.node(id)?;
-            if !self.visible(id) || !self.nodes[id].widget.focusable() {
+            if !self.visible(id) || !self.nodes[id].element.focusable() {
                 return Ok(());
             }
         }
@@ -360,7 +360,7 @@ impl Tree {
     pub fn focus_next(&mut self, reverse: bool) -> Result<(), Error> {
         let mut ids = Vec::new();
         self.ordered(self.root, &mut ids);
-        ids.retain(|id| self.nodes[*id].widget.focusable());
+        ids.retain(|id| self.nodes[*id].element.focusable());
         if ids.is_empty() {
             return self.focus(None);
         }
@@ -376,7 +376,7 @@ impl Tree {
         let node = self.nodes.get_mut(id).ok_or(Error::MissingNode)?;
         let mut response = node.handler.as_mut().map_or(Response::IGNORE, |h| h(event));
         if !response.handled {
-            let default = node.widget.event(event);
+            let default = node.element.event(event);
             response.handled |= default.handled;
             response.changed |= default.changed;
         }
@@ -403,7 +403,7 @@ impl Tree {
     pub fn dispatch(&mut self, event: Event) -> Result<Dispatch, Error> {
         if self
             .focus
-            .is_some_and(|id| !self.visible(id) || !self.nodes[id].widget.focusable())
+            .is_some_and(|id| !self.visible(id) || !self.nodes[id].element.focusable())
         {
             self.focus(None)?;
         }
@@ -411,7 +411,7 @@ impl Tree {
         if matches!(event, Event::Mouse(mouse) if mouse.kind == MouseKind::Down) {
             let mut ancestor = target;
             while let Some(id) = ancestor {
-                if self.nodes[id].widget.focusable() {
+                if self.nodes[id].element.focusable() {
                     self.focus(Some(id))?;
                     break;
                 }
@@ -454,7 +454,7 @@ impl Tree {
         }
         if self
             .focus
-            .is_some_and(|id| !self.visible(id) || !self.nodes[id].widget.focusable())
+            .is_some_and(|id| !self.visible(id) || !self.nodes[id].element.focusable())
         {
             self.focus(None)?;
         }
@@ -484,7 +484,7 @@ impl Tree {
                             _ => None,
                         });
                         let (w, h) = context.and_then(|id| nodes.get(*id)).map_or((0, 0), |n| {
-                            n.widget.measure(width.map(|n| n.max(0.0) as u16))
+                            n.element.measure(width.map(|n| n.max(0.0) as u16))
                         });
                         Size {
                             width: known.width.unwrap_or(f32::from(w)),
@@ -525,7 +525,7 @@ impl Tree {
         node.origin = origin;
         node.size = size;
         node.clip = bounds;
-        node.widget.paint(&mut Canvas {
+        node.element.paint(&mut Canvas {
             buffer,
             origin,
             size,
@@ -542,7 +542,7 @@ impl Tree {
             layout.scrollable_overflow_rect.right.max(0.0) as u16,
             layout.scrollable_overflow_rect.bottom.max(0.0) as u16,
         );
-        let offset = node.widget.viewport(inner_size, content);
+        let offset = node.element.viewport(inner_size, content);
         let children = node.children.clone();
         for child in children {
             self.paint(

@@ -1,4 +1,4 @@
-//! The same component tree and input dispatch used by an interactive terminal.
+//! The same element tree and input dispatch used by an interactive terminal.
 use crate::{Buffer, Dispatch, Error, Event, Tree};
 
 pub struct Screen {

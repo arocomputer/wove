@@ -8,7 +8,7 @@ repository.workspace = true
 description = "A Rust library to build terminal user interfaces"
 readme = "README.md"
 documentation = "https://docs.rs/wove"
-keywords = ["terminal", "tui", "widgets", "layout"]
+keywords = ["terminal", "tui", "elements", "layout"]
 categories = ["command-line-interface"]
 
 [features]

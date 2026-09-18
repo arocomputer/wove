@@ -31,7 +31,7 @@ wove-dioxus = {{ path = "wove-dioxus-{version}", default-features = false }}
 wove = {{ path = "wove-{version}" }}
 ''', encoding="utf-8")
     (consumer / "src").mkdir()
-    (consumer / "src/main.rs").write_text('''use wove::{Tree, widgets::Text};
+    (consumer / "src/main.rs").write_text('''use wove::{Tree, elements::Text};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tree = Tree::new();
     tree.add(tree.root(), Text::new("packed consumer"))?;

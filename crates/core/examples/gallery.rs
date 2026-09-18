@@ -1,8 +1,8 @@
-//! A small catalogue demonstrates direct tree ownership and independent widgets.
-use wove::{layout::*, terminal, widgets::*, Color, Layout, Style, Tree};
+//! A small catalogue demonstrates direct tree ownership and independent elements.
+use wove::{elements::*, layout::*, terminal, Color, Layout, Style, Tree};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tree = Tree::new();
-    let title = tree.add(tree.root(), Text::new("wove · widget gallery"))?;
+    let title = tree.add(tree.root(), Text::new("Wove · element gallery"))?;
     tree.update::<Text>(title, |w| {
         w.style = Style {
             fg: Color::Rgb(104, 211, 192),
@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input = tree.add(
         tree.root(),
         Input {
-            placeholder: "Filter widgets".into(),
+            placeholder: "Filter elements".into(),
             ..Input::default()
         },
     )?;
@@ -95,7 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let content = selected
             .items
             .get(selected.selected)
-            .map_or_else(|| "No matching widgets".into(), |s| description(s));
+            .map_or_else(|| "No matching elements".into(), |s| description(s));
         if tree.get::<Text>(detail).expect("detail exists").content != content {
             tree.update::<Text>(detail, |w| w.content = content)
                 .expect("detail exists");
@@ -115,7 +115,7 @@ fn description(name: &str) -> String {
         "Input"=>"Editable text with grapheme movement, selection, and undo.\n\nShift + arrows selects. Ctrl + A selects all. Ctrl + Z undoes. Ctrl + Y redoes.\n\nPaste inserts text without terminal controls.",
         "Select"=>"A list with keyboard selection and a visible selected row.\n\nApplications own item meaning and choose the highlight style.",
         "Scroll"=>"A clipped viewport.\n\nArrow keys move one row. Page Up and Page Down move a page. End follows new content. Moving away from the end stops following.",
-        _=>"A bordered container with one cell reserved on each edge.\n\nPut any widgets inside. Layout determines their size and placement.",
+        _=>"A bordered container with one cell reserved on each edge.\n\nPut any elements inside. Layout determines their size and placement.",
     };
     format!("{name}\n\n{body}")
 }

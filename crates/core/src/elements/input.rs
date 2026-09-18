@@ -1,5 +1,5 @@
 //! Single-line editing with selection and a horizontally scrolling cursor.
-use crate::{text::Editor, Canvas, Event, Key, Layout, Response, Style, Widget};
+use crate::{text::Editor, Canvas, Element, Event, Key, Layout, Response, Style};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -24,7 +24,7 @@ impl Input {
     }
 }
 
-impl Widget for Input {
+impl Element for Input {
     fn focusable(&self) -> bool {
         true
     }

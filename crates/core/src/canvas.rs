@@ -1,9 +1,9 @@
-//! Widget drawing in local coordinates, clipped by the tree's viewport.
+//! Element drawing in local coordinates, clipped by the tree's viewport.
 use crate::{Buffer, Rect, Style};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-/// A widget cannot reach cells outside its assigned clip through this interface.
+/// An element cannot reach cells outside its assigned clip through this interface.
 pub struct Canvas<'a> {
     pub(crate) buffer: &'a mut Buffer,
     pub(crate) origin: (i32, i32),

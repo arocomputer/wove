@@ -1,18 +1,18 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/dark.svg">
-    <img src="docs/assets/logo/light.svg" alt="Wove logo" width="255" height="60">
+    <img src="docs/assets/logo/light.svg" alt="Wove logo" height="42">
   </picture>
 </p>
 
 <div align="center">
-  <a href="https://crates.io/crates/wove"><img alt="Crates.io version" src="https://img.shields.io/crates/v/wove?style=flat-square" /></a>
+  <a href="https://crates.io/crates/wove"><img alt="Crates.io version" src="https://img.shields.io/crates/v/wove?style=flat-square&amp;label=crate" /></a>
   <a href="https://github.com/intuitums/wove/actions/workflows/checks.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/intuitums/wove/checks.yml?branch=main&amp;style=flat-square" /></a>
 </div>
 
 Wove is a Rust library to build terminal user interfaces.
 
-- Build with Rust widgets or Dioxus components and signals.
+- Build with Rust elements or Dioxus components and signals.
 - Arrange content with flexbox and grid layouts.
 - Add text, inputs, selects, panels, and scrolling views.
 - Handle keyboard and mouse input, with text selection and undo.
@@ -24,7 +24,7 @@ Wove is early in development, and its API is still changing.
 
 ## Crates
 
-- [`wove`](crates/core) provides widgets, layout, text editing, input, and terminal rendering.
+- [`wove`](crates/core) provides elements, layout, text editing, input, and terminal rendering.
 - [`wove-dioxus`](crates/dioxus) adds RSX, signals, and component lifecycles over the core library. It is optional and currently available from a source checkout.
 
 ## Get started

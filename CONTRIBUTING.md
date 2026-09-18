@@ -37,6 +37,9 @@ crate in its README. Repository-wide architecture and roadmap notes belong in
 
 ## Naming
 
+Core building blocks are elements. Components compose elements through an
+optional framework adapter. Nodes identify elements within a tree.
+
 Use short, concrete names. The project is Wove; crate imports are `wove`
 and `wove_dioxus`. Prefer
 `Tree`, `Id`, `Text`, and `Scroll` to compound names with generic suffixes

@@ -29,7 +29,7 @@ let frame = view.frame(80, 24)?;
 ```
 
 Tags are `view`, `panel`, `text`, `input`, and `scroll`. Bare RSX strings create
-separate text widgets. Use `content` for one measured text block; adjacent strings
+separate text elements. Use `content` for one measured text block; adjacent strings
 are not merged into rich text.
 
 Layout attributes are `width`, `height`, `grow`, `gap`, `padding`, and `direction`.
@@ -43,10 +43,10 @@ for a node, to avoid relying on attribute application order.
 `onkey`, `onpaste`, and `onmouse` receive `dioxus_core::Event<wove::Event>`.
 The data is the portable core event. Listeners can call `prevent_default` or
 `stop_propagation`. Initial focus is explicit: call `view.focus_next(false)`, send Tab, or let the
-user choose a widget with the mouse. Event handlers on unfocused descendants do
+user choose an element with the mouse. Event handlers on unfocused descendants do
 not receive keyboard events.
 
-A `value` update replaces input text only when it differs. The native widget owns cursor and undo state; binding the edited value back
+A `value` update replaces input text only when it differs. The native element owns cursor and undo state; binding the edited value back
 without changing it preserves that state.
 `oninput` receives `Event<String>` after a native edit, paste, undo, or redo changes
 the value. Set a signal from `event.data.to_string()` and bind that signal to
@@ -58,7 +58,7 @@ paint first when hit testing needs current geometry. Async hosts must drive
 `wait_for_work` and call `render` or `frame` after it wakes. No executor is forced
 on applications.
 
-For custom widgets, register a tag with `Registry::register`. Its factory creates
+For custom elements, register a tag with `Registry::register`. Its factory creates
 a detached core node, and its attribute function validates and applies values.
 Pass the registry to `View::with_registry`. Hyphenated custom RSX tags work without
 an element schema; applications can define a schema for short tags and completion.

@@ -1,7 +1,7 @@
 use std::{cell::Cell, rc::Rc};
 use wove::{
+    elements::*,
     layout::{length, FlexDirection, Size},
-    widgets::*,
     *,
 };
 fn fixed(w: f32, h: f32) -> Layout {
@@ -45,9 +45,9 @@ fn moves_keep_input_state_and_focus_but_removal_invalidates_ids() {
     assert!(!other.contains(a));
 }
 #[test]
-fn removal_drops_widgets_and_handlers() {
+fn removal_drops_elements_and_handlers() {
     struct Owned(Rc<()>);
-    impl Widget for Owned {
+    impl Element for Owned {
         fn measure(&self, _: Option<u16>) -> (u16, u16) {
             let _ = &self.0;
             (0, 0)
@@ -81,7 +81,7 @@ fn handlers_can_cancel_editing_and_tab_then_bubble_unhandled_keys() {
     assert_eq!(result.path, vec![input, t.root()]);
 }
 #[test]
-fn hidden_and_removed_widgets_leave_the_focus_order() {
+fn hidden_and_removed_elements_leave_the_focus_order() {
     let mut t = Tree::new();
     let a = t.add(t.root(), Input::default()).unwrap();
     let b = t.add(t.root(), Input::default()).unwrap();
@@ -98,7 +98,7 @@ fn hidden_and_removed_widgets_leave_the_focus_order() {
 #[test]
 fn idle_frames_do_not_measure_or_paint() {
     struct Count(Rc<Cell<usize>>);
-    impl Widget for Count {
+    impl Element for Count {
         fn paint(&self, _: &mut Canvas<'_>) {
             self.0.set(self.0.get() + 1);
         }

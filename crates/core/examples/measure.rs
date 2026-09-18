@@ -1,6 +1,6 @@
 //! Reproducible construction, changed-frame, and cached-frame measurements.
 use std::{hint::black_box, time::Instant};
-use wove::{widgets::Text, Tree};
+use wove::{elements::Text, Tree};
 fn main() {
     let mut tree = Tree::new();
     let text = tree.add(tree.root(), Text::new("wove")).unwrap();

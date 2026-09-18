@@ -1,5 +1,5 @@
 //! A clipped vertical viewport with explicit scrolling and optional tail following.
-use crate::{Event, Key, Layout, MouseKind, Response, Widget};
+use crate::{Element, Event, Key, Layout, MouseKind, Response};
 
 #[derive(Default)]
 pub struct Scroll {
@@ -9,7 +9,7 @@ pub struct Scroll {
     page: u16,
 }
 
-impl Widget for Scroll {
+impl Element for Scroll {
     fn focusable(&self) -> bool {
         true
     }

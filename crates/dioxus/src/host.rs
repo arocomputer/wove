@@ -4,8 +4,8 @@ use dioxus_core::{
 };
 use std::collections::HashMap;
 use wove::{
-    widgets::{Container, Input, Panel, Scroll, Text},
-    Id, Layout, Style, Tree, Widget,
+    elements::{Container, Input, Panel, Scroll, Text},
+    Element, Id, Layout, Style, Tree,
 };
 
 #[derive(Debug)]
@@ -34,7 +34,7 @@ impl std::error::Error for Error {}
 
 type Create = fn(&mut Tree) -> Result<Id, Error>;
 type Set = fn(&mut Tree, Id, &str, &AttributeValue) -> Result<(), Error>;
-/// Extra RSX tags can create any core widget and define their own attributes.
+/// Extra RSX tags can create any core element and define their own attributes.
 #[derive(Default)]
 pub struct Registry {
     entries: HashMap<String, (Create, Set)>,
