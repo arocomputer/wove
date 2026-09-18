@@ -1,6 +1,6 @@
 # Working on Wove
 
-Wove is a Rust library to build terminal user interfaces. Capitalize the project
+Wove is a Rust library for building terminal user interfaces. Capitalize the project
 name in prose; keep package names and Rust imports lowercase.
 It must stand on its own across applications. Do not add agent, provider,
 session, or other consumer-specific concepts to the library.
@@ -16,7 +16,7 @@ session, or other consumer-specific concepts to the library.
 - Run ./x hooks once per worktree, ./x check for changes, ./x ui for rendering
   or terminal changes, and ./x web for documentation or website changes.
   Keep optional speed checks beside core; do not add performance budgets or CI gates.
-- Tests pin behavior, not implementation details. Keep docs and changelog current.
+- Tests pin behavior, not implementation details. Keep docs current.
 - Keep published documentation in crates/web/src/content/docs/. Crate READMEs introduce
   their package; CONTRIBUTING.md covers contribution and release instructions.
 - `main` is the default branch. Use short type/name topic branches, such as

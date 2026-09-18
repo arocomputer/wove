@@ -1,0 +1,61 @@
+---
+import Page from "../layouts/Page.astro";
+
+const crates = [
+  {
+    name: "wove",
+    path: "core",
+    guide: "start",
+    description:
+      "The core library. Elements, layout, input, text editing, and rendering.",
+  },
+  {
+    name: "wove-dioxus",
+    path: "dioxus",
+    guide: "dioxus",
+    description:
+      "Reactive components and signals over the core, with Dioxus RSX.",
+  },
+  {
+    name: "wove-keymap",
+    path: "keymap",
+    guide: "packages",
+    description:
+      "Scoped keyboard shortcuts, command bindings, and multi-key sequences.",
+  },
+  {
+    name: "wove-ssh",
+    path: "ssh",
+    guide: "ssh",
+    description:
+      "Terminal interfaces over SSH, with separate state for each connection.",
+  },
+];
+---
+
+<Page title="Crates" description="The four Rust crates that make up Wove.">
+  <article class="crates-page prose">
+    <h1>Crates</h1>
+    <div class="package-guide">
+      {crates.map((crate) => (
+        <section aria-labelledby={`crate-${crate.name}`}>
+          <h2 id={`crate-${crate.name}`}>{crate.name}</h2>
+          <p>{crate.description}</p>
+          <p class="package-links">
+            <a href={`/docs/${crate.guide}/`}>Guide</a>
+            <span aria-hidden="true">·</span>
+            <a
+              href={`https://github.com/intuitums/wove/tree/main/crates/${crate.path}`}
+            >
+              Source
+            </a>
+          </p>
+        </section>
+      ))}
+    </div>
+    <p class="docs-note">
+      These versions are not yet published. The guides use the current source
+      checkout.
+    </p>
+  </article>
+</Page>

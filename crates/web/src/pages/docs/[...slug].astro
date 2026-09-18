@@ -1,5 +1,5 @@
 ---
-import Page from "../../layouts/Page.astro";
+import Docs from "../../layouts/Docs.astro";
 import { getCollection, render } from "astro:content";
 export async function getStaticPaths() {
   return (await getCollection("docs")).map((guide) => ({
@@ -9,26 +9,12 @@ export async function getStaticPaths() {
 }
 const { guide } = Astro.props;
 const { Content } = await render(guide);
-const guides = (await getCollection("docs")).sort(
-  (a, b) => a.data.order - b.data.order,
-);
 ---
 
-<Page title={guide.data.title} description={guide.data.description}>
-  <div class="docs">
-    <aside aria-label="Guides">
-      {guides.map((item) => (
-        <a
-          href={`/docs/${item.id}/`}
-          aria-current={item.id === guide.id ? "page" : undefined}
-        >
-          {item.data.title}
-        </a>
-      ))}
-    </aside>
-    <article>
-      <h1>{guide.data.title}</h1>
-      <Content />
-    </article>
-  </div>
-</Page>
+<Docs
+  title={guide.data.title}
+  description={guide.data.description}
+  current={guide.id}
+>
+  <Content />
+</Docs>

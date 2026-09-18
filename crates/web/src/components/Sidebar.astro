@@ -1,0 +1,15 @@
+---
+import Wordmark from "./Wordmark.astro";
+// Homepage identity and navigation, stacked above the content on small screens.
+---
+
+<aside class="sidebar" aria-label="Wove">
+  <a class="wordmark" href="/" aria-label="Wove home">
+    <Wordmark />
+  </a>
+  <nav aria-label="Primary">
+    <a href="/docs/">Documentation</a>
+    <a href="/crates/">Crates</a>
+    <a href="https://github.com/intuitums/wove">GitHub</a>
+  </nav>
+</aside>

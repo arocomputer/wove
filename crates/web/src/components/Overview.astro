@@ -1,0 +1,19 @@
+---
+import readme from "../../../../README.md?raw";
+
+// The README's first bullet list is the shared project introduction.
+const features = readme
+  .match(/(?:^- .+\r?\n)+/m)![0]
+  .trim()
+  .split("\n")
+  .map((line) => line.slice(2));
+---
+
+<article class="overview prose">
+  <h1>A Rust library for building terminal user interfaces.</h1>
+  <ul role="list">
+    {features.map((feature) => (
+      <li>{feature}</li>
+    ))}
+  </ul>
+</article>

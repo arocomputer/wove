@@ -20,7 +20,7 @@ It has no thresholds and does not run in CI.
 
 Add focused tests for behavior changes. A regression test should fail for the
 original defect. Document public contracts beside the API and update guides
-when behavior changes. Add user-visible changes under Unreleased in CHANGELOG.md.
+when behavior changes. GitHub generates release notes from merged pull requests.
 
 Use conventional commit titles, such as `fix: preserve wide glyphs on resize`.
 Keep each change about one concern. Name branches `feat/input`,
@@ -31,7 +31,7 @@ Releases require an explicit maintainer decision; commits do not publish crates.
 
 ## Documentation
 
-Published guides, architecture, and the roadmap live in `crates/web/src/content/docs/`.
+Published guides and architecture live in `crates/web/src/content/docs/`.
 Crate READMEs introduce their package and link to these guides. Contribution and
 release instructions live here.
 
@@ -62,20 +62,55 @@ The workspace version is 0.0.1 and has not been published. The earlier `wove`
 
 1. Run `./x check` and `./x ui` on the release commit.
 2. Choose the workspace version, update the adapter's exact core dependency,
-   move Unreleased changes into that version, update Cargo.lock, and commit.
+   update Cargo.lock, and commit.
 3. `./x package` builds the publishable archives and runs an external consumer against their
    extracted contents, with and without the terminal backend.
 4. After a maintainer authorizes registry publication, publish core first, then
    the dependent packages. Verify package ownership and credentials before the first release.
 5. Tag the release commit `v<version>` and push the tag. The workflow checks the
    version and publishes the archives and their checksums to a GitHub release.
-   It does not publish to crates.io.
+   GitHub generates the release notes. It does not publish to crates.io.
 
 Actions are pinned by commit. Only the release job has contents write permission.
 Do not publish from a pull request.
 
 ## Website
 
-`crates/web/` is a minimal Astro and MDX documentation setup, using Bun 1.4.2 or newer.
-Run `./x web` for dependency, type, and build checks. Do not add a full website
-design or deployment configuration until requested.
+`crates/web/` contains the Astro website and MDX guides, using Bun 1.4.2 or newer.
+Run `./x web` for dependency, type, and build checks.
+
+### Deployment
+
+`.github/workflows/deploy.yml` runs `./x web`, uploads `crates/web/dist/`, and
+deploys to GitHub Pages on pushes to `main`. It can also be run manually from
+`main`. Pull requests only run checks. Deployment uses GitHub's workflow
+credentials and does not require a separate hosting secret.
+
+The production origin is `https://wovetui.com`, configured in
+`crates/web/astro.config.mjs`. To set up hosting:
+
+1. An `intuitums` organization owner must allow public GitHub Pages sites in
+   the organization's Settings → Member privileges → Pages creation.
+2. In the repository's Settings → Pages, select **GitHub Actions** as the source
+   and save `wovetui.com` as the custom domain before changing DNS.
+3. In Cloudflare DNS, replace conflicting records for the apex and `www` with
+   the following records. Set each to **DNS only**, with the proxy disabled.
+
+   | Type | Name | Target |
+   | --- | --- | --- |
+   | A | `@` | `185.199.108.153` |
+   | A | `@` | `185.199.109.153` |
+   | A | `@` | `185.199.110.153` |
+   | A | `@` | `185.199.111.153` |
+   | CNAME | `www` | `intuitums.github.io` |
+
+   Remove old apex AAAA records or replace them with GitHub Pages IPv6 records
+   from the [custom-domain documentation](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site).
+   Preserve unrelated records, including email records.
+4. Merge the deployment workflow to `main`. After DNS propagates and GitHub
+   provisions the certificate, enable **Enforce HTTPS** in Settings → Pages.
+5. Verify the homepage, `/docs/`, an unknown URL returning the 404 page, and
+   the redirect from `www.wovetui.com` to `wovetui.com` over HTTPS.
+
+GitHub Pages manages the custom domain in repository settings. This Actions
+deployment does not require a `CNAME` file in the build output.
