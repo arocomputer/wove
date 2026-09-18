@@ -8,10 +8,10 @@
 </p>
 
 <div align="center">
-  <a href="https://github.com/intuitums/wove/actions/workflows/checks.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/intuitums/wove/checks.yml?branch=main&amp;style=flat-square" /></a>
+  <a href="https://github.com/intuitums/wove/actions/workflows/unit.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/intuitums/wove/unit.yml?branch=main&amp;style=flat-square" /></a>
 </div>
 
-A Rust library for building terminal user interfaces.
+Wove is a Rust library for building terminal user interfaces.
 
 - Build with Rust elements or Dioxus components and signals.
 - Arrange content with flexbox and grid layouts.

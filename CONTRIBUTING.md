@@ -18,6 +18,11 @@ on Unix and retains frames under `artifacts/ui/`. The optional
 `cargo run -p wove --release --example timing` command prints local frame timings.
 It has no thresholds and does not run in CI.
 
+Required PR checks are `unit (linux)`, `unit (macos)`, `unit (windows)`,
+`e2e (linux)`, `e2e (macos)`, `docs`, and `audit`. Unit jobs run `./x check`,
+E2E jobs run `./x ui`, and the docs job runs `./x web`. The security audit runs
+on every PR so required checks cannot be skipped by path filters.
+
 Add focused tests for behavior changes. A regression test should fail for the
 original defect. Document public contracts beside the API and update guides
 when behavior changes. GitHub generates release notes from merged pull requests.
