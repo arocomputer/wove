@@ -1,0 +1,90 @@
+---
+import { getCollection } from "astro:content";
+import Page from "./Page.astro";
+interface Props {
+  title: string;
+  description: string;
+  current?: string;
+}
+const collection = await getCollection("docs");
+const { title, description, current } = Astro.props;
+const groups = [
+  { label: "Start", ids: ["start"] },
+  { label: "Build", ids: ["elements", "dioxus", "ssh"] },
+  { label: "Reference", ids: ["packages", "architecture"] },
+];
+const guides = groups.flatMap((group) =>
+  group.ids.map((id) => collection.find((guide) => guide.id === id)!),
+);
+const index = guides.findIndex((guide) => guide.id === current);
+const previous = index > 0 ? guides[index - 1] : undefined;
+const next = current ? guides[index + 1] : guides[0];
+---
+
+<Page title={title} description={description}>
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <details class="docs-menu" open>
+        <summary>
+          Documentation <span aria-hidden="true">⌄</span>
+        </summary>
+        <script is:inline>
+          // Set the native disclosure before its content paints; without JS it stays open.
+          {
+            const menu = document.currentScript.parentElement;
+            const mobile = matchMedia("(max-width: 760px)");
+            const sync = () => {
+              menu.open = !mobile.matches;
+            };
+            sync();
+            mobile.addEventListener("change", sync);
+          }
+        </script>
+        <nav aria-label="Documentation">
+          {groups.map((group) => (
+            <div class="nav-group">
+              <span class="nav-label">{group.label}</span>
+              {group.label === "Start" && (
+                <a href="/docs/" aria-current={!current ? "page" : undefined}>
+                  Introduction
+                </a>
+              )}
+              {group.ids.map((id) => {
+                const guide = guides.find((guide) => guide.id === id)!;
+                return (
+                  <a
+                    href={`/docs/${id}/`}
+                    aria-current={id === current ? "page" : undefined}
+                  >
+                    {guide.data.title}
+                  </a>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+      </details>
+    </aside>
+    <div class="docs-body">
+      <header class="article-header">
+        <h1>{title}</h1>
+      </header>
+      <article class="prose">
+        <slot />
+      </article>
+      <nav class="guide-pagination" aria-label="Guide navigation">
+        <a
+          href={previous ? `/docs/${previous.id}/` : "/docs/"}
+          hidden={!current}
+        >
+          {previous?.data.title ?? "Introduction"}
+        </a>
+        {next && (
+          <a class="next-guide" href={`/docs/${next.id}/`}>
+            {next.data.title}
+          </a>
+        )}
+      </nav>
+    </div>
+  </div>
+</Page>

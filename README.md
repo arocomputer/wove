@@ -1,15 +1,17 @@
 <p align="center">
+  <a href="https://wovetui.com">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="crates/web/public/logo/dark.svg">
     <img src="crates/web/public/logo/light.svg" alt="Wove logo" height="42">
   </picture>
+  </a>
 </p>
 
 <div align="center">
   <a href="https://github.com/intuitums/wove/actions/workflows/checks.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/intuitums/wove/checks.yml?branch=main&amp;style=flat-square" /></a>
 </div>
 
-Wove is a Rust library to build terminal user interfaces.
+A Rust library for building terminal user interfaces.
 
 - Build with Rust elements or Dioxus components and signals.
 - Arrange content with flexbox and grid layouts.
@@ -19,7 +21,7 @@ Wove is a Rust library to build terminal user interfaces.
 
 Wove is early in development, and its API is still changing.
 
-[Documentation](crates/web/README.md) | [Roadmap](crates/web/src/content/docs/roadmap.mdx)
+[Documentation](crates/web/README.md)
 
 ## Libraries
 
@@ -82,4 +84,4 @@ documentation, and releases.
 
 ## License
 
-[MIT](LICENSE).
+MIT.

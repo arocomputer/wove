@@ -1,11 +1,12 @@
 ---
 import Page from "../layouts/Page.astro";
+import Overview from "../components/Overview.astro";
 ---
 
-<Page title="Wove">
-  <h1>Wove</h1>
-  <p>A Rust library to build terminal user interfaces.</p>
-  <p>
-    Under development. <a href="/docs/">Read the development docs.</a>
-  </p>
+<Page
+  title="Wove"
+  description="A Rust library for building terminal user interfaces."
+  sidebar
+>
+  <Overview />
 </Page>
