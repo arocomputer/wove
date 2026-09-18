@@ -1,5 +1,5 @@
 [package]
-name = "intuitums-weft"
+name = "weft-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,11 +7,6 @@ license.workspace = true
 repository.workspace = true
 description = "A Rust library to build terminal user interfaces"
 readme = "../../README.md"
-keywords = ["terminal", "tui", "widgets", "layout"]
-categories = ["command-line-interface"]
-
-[lib]
-name = "weft"
 
 [features]
 default = ["terminal"]
@@ -20,12 +15,14 @@ terminal = ["dep:crossterm"]
 [dependencies]
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
+taffy = { version = "0.14", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "content_size"] }
 crossterm = { version = "0.29", optional = true }
 
 [[example]]
-name = "explorer"
+name = "gallery"
+path = "examples/gallery.rs"
 required-features = ["terminal"]
 
 [[example]]
-name = "counter"
-required-features = ["terminal"]
+name = "measure"
+path = "examples/measure.rs"

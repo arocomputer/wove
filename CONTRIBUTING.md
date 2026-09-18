@@ -3,7 +3,7 @@
 weft is a general-purpose terminal UI library. Propose features with a concrete
 use case and a small example. Keep application policy outside the library.
 
-Install Rust through rustup and Python 3.11 or newer. The checked-in toolchain
+Install Rust through rustup and Python 3.12 or newer. The checked-in toolchain
 file selects the compiler. Each contributing worktree installs hooks once:
 
 ```sh
@@ -23,9 +23,23 @@ original defect. Document public contracts beside the API and update guides
 when behavior changes. Add user-visible changes under Unreleased in CHANGELOG.md.
 
 Use conventional commit titles, such as `fix: preserve wide glyphs on resize`.
-Keep each change about one concern. Name branches `feat/short-description`,
-`fix/short-description`, or another conventional type. Never commit secrets.
+Keep each change about one concern. Name branches `feat/input`,
+`fix/resize`, or another conventional type. Never commit secrets.
 
 Before 1.0, incompatible public API changes increment the minor version.
 Releases require an explicit maintainer decision; commits do not publish crates.
 See [releasing](contributing/releases.md).
+
+## Naming
+
+Use short, concrete names. The project is `weft`; crate imports are `weft_core`
+and `weft_dioxus`. Prefer
+`Tree`, `Id`, `Text`, and `Scroll` to compound names with generic suffixes
+such as Manager, Handler, Provider, or Renderable. Use module paths to supply
+context instead of repeating it in every type name.
+
+Use conventional abbreviations only when they are familiar, such as `Rect`,
+`fg`, and `bg`. Keep meaningful Rust snake_case names when two words are needed.
+Prefer a single word for files and directories; use a directory when it groups
+related files. Preserve ecosystem names such as `rust-toolchain.toml` and
+`pre-commit`, which tools recognize. Do not rename dependencies or command flags.

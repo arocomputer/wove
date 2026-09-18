@@ -1,19 +1,18 @@
 # Performance
 
-Run `./x bench` to build release examples and measure their size, median warm
-process launch, and pure buffer drawing. Results include the machine and are
-written to `artifacts/bench.json`. These are local measurements, not claims
-that weft beats another library or language.
+`./x bench` builds release examples and records sizes, median warm process
+launch, changed-frame rendering, and cached-frame access in `artifacts/bench.json`.
+These are local measurements, not comparisons with another library or language.
 
-The startup probe returns before terminal initialization. It measures process
-launch on a warm executable, including Python subprocess overhead. It is not a
-cold-cache benchmark and does not measure time to first terminal frame.
+The startup probe constructs a tree and renders one 100 by 30 frame in memory,
+then exits. Timing includes Python subprocess overhead. It uses a warm executable
+and does not measure cold-cache startup or time to first terminal output.
 
-The rendering workload clears a 120 by 40 buffer and paints three Unicode text
-rows 10,000 times. It excludes terminal output. The explorer executable size
-includes its terminal backend. Broad ceilings catch large regressions without
-pretending shared CI machines give precise performance comparisons.
+The rendering workload updates Unicode text and renders 1,000 changed frames.
+A separate loop reads 100,000 cached frames. Both exclude terminal output.
+Executable sizes cover the direct-core gallery and the Dioxus counter with their
+terminal backends. Broad ceilings catch large regressions on shared CI machines.
 
-Future comparisons must use equivalent applications, release settings, input,
-terminal, platform, and cache conditions. Report actual first-frame latency
-separately from process startup before drawing conclusions about Rust or Zig.
+Comparisons need equivalent applications, release settings, input, terminal,
+platform, and cache conditions. Report first-frame latency separately from
+process launch before drawing conclusions about Rust or Zig.

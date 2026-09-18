@@ -1,18 +1,18 @@
 # Roadmap
 
-The first milestone is a small usable library with reproducible contracts,
-examples, CI, package validation, and terminal checks. This is an early
-foundation, not a complete replacement for established TUI libraries.
+The retained core and optional Dioxus adapter are implemented. The current
+examples exercise editing, layout, selection, scrolling, and component updates.
+The API needs experience from independent applications before a stable release.
 
-Next work, subject to concrete application examples:
+Next work should use concrete examples to choose scope:
 
-- Grapheme-aware editing, cursor placement, and text wrapping.
-- Focus management and keyboard/mouse routing across composed widgets.
-- Scrolling containers, tables, and a dashboard example.
-- Benchmarks for sparse updates, full frames, resize, and large lists.
-- Broader terminal compatibility tests and accessibility review.
+- A multiline editor with vertical movement and selection painting.
+- Rich text spans and word wrapping with matching measurement.
+- Virtualized lists and tables, measured with large datasets.
+- Sparse painting and fewer frame allocations, guided by benchmarks.
+- Broader terminal compatibility and accessibility work.
 - Optional main-screen and scrollback rendering with explicit ownership rules.
 
-Keep the core independent of a runtime. Do not add a virtual DOM, reactive
-scheduler, template language, or plugin ABI without evidence that consumers
-need it. A stable 1.0 API requires experience from independent applications.
+Core will remain usable without a component runtime. Additional adapters belong
+in separate crates and must use public core operations. Application-specific
+behavior belongs in applications and their own widgets.

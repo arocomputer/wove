@@ -2,79 +2,54 @@
 
 A Rust library to build terminal user interfaces.
 
-Compose widgets, divide space, and render application-owned state. Use the
-included terminal loop or drive rendering from your own event loop. Drawing
-and layout work in memory without a terminal backend or async runtime.
+weft owns a persistent tree of widgets. Layout, focus, input, and rendering work
+without a component framework. An optional Dioxus adapter adds RSX, signals, and
+component lifecycles over the same tree.
 
-**Early development.** The first version supports full-screen applications,
-fixed and weighted layouts, styled Unicode text, borders, and selectable lists.
-The API is not stable yet. Text editing, wrapping, focus navigation, mouse
-routing, and inline output are planned, not implemented.
+```text
+crates/
+  core/       widgets, layout, text editing, input, rendering, testing
+  dioxus/     Dioxus adapter and terminal RSX elements
+```
+
+The design follows OpenTUI's separation between its core and framework adapters.
+weft uses Rust widgets and Taffy layout, with no JavaScript runtime or native FFI
+boundary in its own code. It is independent of any consuming application.
 
 ## Try it
 
 ```sh
-git clone https://github.com/intuitums/weft
-cd weft
-cargo run --example explorer
-cargo run --example counter
+cargo run -p weft-core --example gallery
+cargo run -p weft-dioxus --example counter
 ```
 
-The [captured explorer frame](docs/assets/explorer.txt) shows a two-pane catalog. The counter is a small complete
-application. Arrow keys navigate, and `q` or Ctrl-C exits.
+The [captured gallery](docs/assets/gallery.txt) demonstrates filtering, selection,
+borders, wrapping, and scrolling.
+The counter demonstrates Dioxus signals and event cancellation. Both exit with
+Escape or Ctrl-C.
 
-## Use it
-
-The crate is not published yet. Depend on the repository and pin a reviewed
-commit for reproducible builds:
-
-```toml
-[dependencies]
-weft = { package = "intuitums-weft", git = "https://github.com/intuitums/weft" }
-```
+## Use the core
 
 ```rust
-use weft::{Buffer, Style, Text, Widget};
+use weft_core::{Tree, widgets::Text};
 
-let mut frame = Buffer::new(30, 3);
-Text {
-    content: "Hello, terminal.",
-    style: Style::default(),
-}.render(frame.area(), &mut frame);
-
-assert_eq!(frame.lines()[0].trim_end(), "Hello, terminal.");
+let mut tree = Tree::new();
+let greeting = tree.add(tree.root(), Text::new("Hello, terminal"))?;
+tree.update::<Text>(greeting, |text| text.content.push('!'))?;
+let frame = tree.frame(80, 24)?;
+# Ok::<(), weft_core::Error>(())
 ```
 
-Disable default features for pure layout, drawing, and widget tests. The
-`terminal` feature adds crossterm input and output. weft does not require Tokio,
-a global application store, code generation, or a second compiler.
+Widgets retain state when moved. Removing a subtree drops its widgets and
+callbacks. Applications can implement `Widget` and use `Canvas` to paint inside
+their allocated, clipped area. `Tree` is usable without terminal access through
+`default-features = false`.
 
-## Design
+This is an early library with an unstable API. Current widgets are `Container`,
+`Panel`, `Text`, `Input`, `Select`, and `Scroll`. Text editing supports grapheme
+movement, selection, and undo. It does not yet include a multiline editor, rich
+text spans, virtualized lists, or accessibility integration. Dioxus support is
+optional and experimental.
 
-Applications own their state, palette, and event policy. Widgets draw into
-bounded regions of a cell buffer. Layouts nest to compose screens. A renderer
-compares completed frames and writes changed cells. A terminal session owns
-raw mode and restores it when dropped, including during panic unwinding.
-
-weft is intended for file browsers, dashboards, editors, developer tools, and
-other terminal applications. No application-specific concepts live in the
-library.
-
-- [Getting started](docs/getting-started.md)
-- [Architecture and contracts](docs/architecture.md)
-- [Roadmap](docs/roadmap.md)
-- [Contributing](CONTRIBUTING.md)
-- [Performance methodology](benchmarks/README.md)
-
-## Development
-
-```sh
-./x hooks
-./x check
-./x ui
-./x bench
-```
-
-MIT licensed. Linux, macOS, and Windows builds are checked in CI. PTY scenarios
-run on Linux and macOS. Terminal appearance and Unicode widths can vary by
-terminal emulator and font.
+[Start](docs/start.md) · [Architecture](docs/architecture.md) ·
+[Dioxus](docs/dioxus.md) · [Contributing](CONTRIBUTING.md)

@@ -1,0 +1,24 @@
+[package]
+name = "weft-dioxus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Dioxus components for weft terminal interfaces"
+readme = "README.md"
+
+[features]
+default = ["terminal"]
+terminal = ["weft-core/terminal"]
+
+[dependencies]
+weft-core = { path = "../core", version = "=0.2.0", default-features = false }
+dioxus-core = "=0.7.10"
+
+[dev-dependencies]
+dioxus = { version = "=0.7.10", default-features = false, features = ["macro", "hooks", "signals"] }
+
+[[example]]
+name = "counter"
+required-features = ["terminal"]

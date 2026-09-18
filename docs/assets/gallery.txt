@@ -1,0 +1,24 @@
+weft · widget gallery
+scroll
+Scroll            ┌────────────────────────────────────────────────────────────┐
+                  │Scroll                                                      │
+                  │                                                            │
+                  │A clipped viewport.                                         │
+                  │                                                            │
+                  │Arrow keys move one row. Page Up and Page Down move a page. │
+                  │End follows new content. Moving away from the end stops foll│
+                  │owing.                                                      │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  │                                                            │
+                  └────────────────────────────────────────────────────────────┘
+Tab focus · arrows select / scroll · Esc quit

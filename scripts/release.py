@@ -16,7 +16,11 @@ if heading not in changelog.splitlines():
 notes = changelog.split(heading + "\n", 1)[1].split("\n## ", 1)[0].strip()
 out = root / "artifacts/release"
 out.mkdir(parents=True, exist_ok=True)
-archive = root / f"target/package/intuitums-weft-{version}.crate"
-shutil.copy2(archive, out / archive.name)
-(out / "SHA256SUMS").write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n")
-(root / "artifacts/release-notes.md").write_text(notes + "\n", encoding="utf-8")
+checksums = []
+for manifest in sorted((root / "crates").glob("*/Cargo.toml")):
+    name = tomllib.loads(manifest.read_text(encoding="utf-8"))["package"]["name"]
+    archive = root / f"target/package/{name}-{version}.crate"
+    shutil.copy2(archive, out / archive.name)
+    checksums.append(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}")
+(out / "SHA256SUMS").write_text("\n".join(checksums) + "\n")
+(root / "artifacts/notes.md").write_text(notes + "\n", encoding="utf-8")

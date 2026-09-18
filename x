@@ -24,20 +24,20 @@ case "$command" in
     cargo test --workspace --locked --no-default-features
     ;;
   docs) RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked ;;
-  package) cargo package --locked --allow-dirty -p intuitums-weft ;;
+  package) python3 scripts/package.py ;;
   guard) python3 scripts/guard.py ;;
   hooks)
     git config extensions.worktreeConfig true
     git config --worktree core.hooksPath "$PWD/scripts/hooks"
     ;;
   ui)
-    cargo build --locked --examples
-    python3 -m venv target/ui-env
-    target/ui-env/bin/python -m pip install --quiet -r scripts/ui-requirements.txt
-    target/ui-env/bin/python scripts/ui.py
+    cargo build --workspace --locked --examples
+    python3 -m venv target/ui
+    target/ui/bin/python -m pip install --quiet -r scripts/ui/requirements.txt
+    target/ui/bin/python scripts/ui.py
     ;;
   bench)
-    cargo build --locked --release --examples
+    cargo build --workspace --locked --release --examples
     python3 benchmarks/run.py
     ;;
   *) echo 'usage: ./x [hooks|check|fmt|lint|test|docs|package|guard|ui|bench]' >&2; exit 2 ;;

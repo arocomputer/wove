@@ -15,12 +15,14 @@ for _ in range(25):
     start = time.perf_counter()
     subprocess.run([str(probe), "--startup"], check=True)
     samples.append((time.perf_counter() - start) * 1000)
-frame_us = float(subprocess.check_output([str(probe)], text=True).split()[0])
+frame_us, idle_us = map(float, subprocess.check_output([str(probe)], text=True).split())
 result = {
     "platform": platform.platform(),
-    "explorer_bytes": (examples / ("explorer" + extension)).stat().st_size,
+    "gallery_bytes": (examples / ("gallery" + extension)).stat().st_size,
+    "dioxus_bytes": (examples / ("counter" + extension)).stat().st_size,
     "warm_launch_ms": round(statistics.median(samples[5:]), 3),
     "frame_us": frame_us,
+    "idle_us": idle_us,
 }
 (root / "artifacts").mkdir(exist_ok=True)
 (root / "artifacts/bench.json").write_text(json.dumps(result, indent=2) + "\n")

@@ -1,0 +1,65 @@
+# Dioxus
+
+Use `weft-dioxus` when an application wants components, signals, and RSX.
+Direct core use does not require it.
+
+```toml
+[dependencies]
+weft-core = { path = "../weft/crates/core" }
+weft-dioxus = { path = "../weft/crates/dioxus" }
+dioxus = { version = "=0.7.10", default-features = false, features = ["macro", "hooks", "signals"] }
+```
+
+```rust
+use dioxus::prelude::*;
+use weft_dioxus::{elements as dioxus_elements, View};
+
+fn app() -> Element {
+    rsx! {
+        view { direction: "column", gap: 1,
+            text { content: "Hello from weft" }
+            input { placeholder: "Type here" }
+        }
+    }
+}
+
+let mut view = View::new(VirtualDom::new(app))?;
+let frame = view.frame(80, 24)?;
+# Ok::<(), weft_dioxus::Error>(())
+```
+
+Tags are `view`, `panel`, `text`, `input`, and `scroll`. Bare RSX strings create
+separate text widgets. Use `content` for one measured text block; adjacent strings
+are not merged into rich text.
+
+Layout attributes are `width`, `height`, `grow`, `gap`, `padding`, and `direction`.
+Numeric values are nonnegative cell lengths, and direction is `row` or `column`.
+`text` accepts `content` and `wrap`; `input` accepts `value` and `placeholder`.
+For full Taffy layout, pass `weft_dioxus::AttributeValue::any_value(layout)` as
+`layout`. Likewise, `style` accepts an `AttributeValue::any_value(Style)` on text,
+input, and panel. Use either a complete layout or individual layout attributes
+for a node, to avoid relying on attribute application order.
+
+`onkey`, `onpaste`, and `onmouse` receive `dioxus_core::Event<weft_core::Event>`.
+The data is the portable core event. Listeners can call `prevent_default` or
+`stop_propagation`. Initial focus is explicit: call `view.focus_next(false)`, send Tab, or let the
+user choose a widget with the mouse. Event handlers on unfocused descendants do
+not receive keyboard events.
+
+A `value` update replaces input text only when it differs. The native widget owns cursor and undo state; binding the edited value back
+without changing it preserves that state.
+`oninput` receives `Event<String>` after a native edit, paste, undo, or redo changes
+the value. Set a signal from `event.data.to_string()` and bind that signal to
+`value` to keep component state in sync. It is a notification; cancel editing in
+`onkey` or `onpaste` instead. Cursor movement does not emit `oninput`.
+
+Call `frame` to apply pending component updates and render. Call `send` for input;
+paint first when hit testing needs current geometry. Async hosts must drive
+`wait_for_work` and call `render` or `frame` after it wakes. No executor is forced
+on applications.
+
+For custom widgets, register a tag with `Registry::register`. Its factory creates
+a detached core node, and its attribute function validates and applies values.
+Pass the registry to `View::with_registry`. Hyphenated custom RSX tags work without
+an element schema; applications can define a schema for short tags and completion.
+See `crates/dioxus/tests/view.rs` for a tested custom tag.

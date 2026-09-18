@@ -18,14 +18,11 @@ pub enum Color {
 /// Complete cell styling; applications choose their own palette.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Style {
-    /// Foreground color.
-    pub foreground: Color,
-    /// Background color.
-    pub background: Color,
-    /// Bold text.
+    pub fg: Color,
+    pub bg: Color,
     pub bold: bool,
-    /// Underlined text.
     pub underline: bool,
+    pub reverse: bool,
 }
 
 /// One terminal cell. Wide graphemes own following continuation cells.
@@ -51,7 +48,6 @@ impl Cell {
     pub fn symbol(&self) -> &str {
         &self.symbol
     }
-    /// Complete style for this cell.
     pub fn style(&self) -> Style {
         self.style
     }
@@ -63,6 +59,7 @@ pub struct Buffer {
     width: u16,
     height: u16,
     pub(crate) cells: Vec<Cell>,
+    pub(crate) cursor: Option<(u16, u16)>,
 }
 
 impl Buffer {
@@ -71,9 +68,14 @@ impl Buffer {
         Self {
             width,
             height,
+            cursor: None,
             cells: vec![Cell::default(); usize::from(width) * usize::from(height)],
         }
     }
+    pub fn cursor(&self) -> Option<(u16, u16)> {
+        self.cursor
+    }
+
     /// The full drawable area.
     pub fn area(&self) -> Rect {
         Rect::new(0, 0, self.width, self.height)
@@ -89,6 +91,7 @@ impl Buffer {
     /// Restore every cell to its blank default.
     pub fn clear(&mut self) {
         self.cells.fill(Cell::default());
+        self.cursor = None;
     }
 
     /// Erase the complete grapheme covering an index, including its trailing cells.

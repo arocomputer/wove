@@ -14,6 +14,7 @@ session, or other consumer-specific concepts to the library.
 - Run ./x hooks once per worktree, ./x check for changes, ./x ui for rendering
   or terminal changes, and ./x bench for performance-sensitive changes.
 - Tests pin behavior, not implementation details. Keep docs and changelog current.
-- Use a conventional type/slug branch before pushing. Never push main.
+- Use short type/name topic branches, such as fix/resize. Never push main.
+  Follow the naming rules in CONTRIBUTING.md.
 - Do not open a pull request unless explicitly asked.
 - Do not claim support or performance without a reproducible check.

@@ -48,11 +48,17 @@ def scenario(name, steps):
                 break
         raise AssertionError(f"{name}: missing {expected!r}\n" + "\n".join(screen.display))
 
+    def check_border():
+        if name == "gallery":
+            for row in screen.display[3:-2]:
+                assert row[18] == "│" and row[-1] == "│", f"clipped panel border: {row!r}"
+
     try:
         receive("weft")
         for index, (keys, expected) in enumerate(steps):
             os.write(master, keys)
             receive(expected)
+            check_border()
             (OUT / f"{name}-{index}.txt").write_text("\n".join(screen.display) + "\n")
         before_resize = len(raw)
         screen.resize(lines=12, columns=40)
@@ -61,10 +67,11 @@ def scenario(name, steps):
         # Observe the resize frame before sending a separate keyboard event.
         receive("weft", after=before_resize)
         # An additional key produces an observable update after the resize.
-        os.write(master, b"+" if name == "counter" else b"k")
-        receive("3" if name == "counter" else "Browse a shared collect")
+        os.write(master, b"+" if name == "counter" else b"\x01\x7f")
+        receive("Count: 3" if name == "counter" else "Text")
+        check_border()
         (OUT / f"{name}-resized.txt").write_text("\n".join(screen.display) + "\n")
-        os.write(master, b"q")
+        os.write(master, b"\x1b")
         assert process.wait(timeout=10) == 0
         while select.select([master], [], [], 0.05)[0]:
             chunk = os.read(master, 65536)
@@ -83,5 +90,5 @@ def scenario(name, steps):
         os.close(slave)
 
 
-scenario("counter", [(b"++", "2")])
-scenario("explorer", [(b"j", "Browse a shared collection."), (b"j", "Make something useful.")])
+scenario("counter", [(b"++", "Count: 2")])
+scenario("gallery", [(b"\x1b[200~scroll\x1b[201~", "A clipped viewport.")])

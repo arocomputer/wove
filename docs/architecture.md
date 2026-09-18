@@ -1,52 +1,59 @@
-# Architecture and contracts
+# Architecture
 
-The initial workspace has one library crate. Modules separate pure rendering
-from terminal ownership; separate crates will be introduced only when there
-is a dependency or release reason.
+weft has two crates. `core` owns terminal behavior; `dioxus` depends on its public
+API. Core never depends on Dioxus. There is no facade crate and no application
+policy in either crate.
 
-| Module | Responsibility |
-| --- | --- |
-| layout | Rectangles, fixed tracks, weighted tracks, bounded placement |
-| buffer | Styled cell storage, grapheme ownership, clipped writes |
-| widgets | Composition over the buffer, with application-owned state |
-| terminal | Optional event loop, changed-cell output, terminal restoration |
+## Core
 
-## Drawing
+`Tree` owns widgets, callbacks, parent/child relationships, and focus. A node's
+`Id` is unique across trees. Removing a node drops its subtree; reparenting keeps
+its state and focus. Detached and hidden nodes do not paint or receive focus.
 
-Coordinates use terminal columns and rows. Text is segmented into extended
-grapheme clusters. A wide grapheme owns continuation cells and is never split
-at the right edge. Overwriting any part clears its whole old footprint, which
-can clear a cell just outside a write region if a wide glyph straddles it.
-Control characters and standalone zero-width graphemes are skipped. Text
-widgets interpret newlines; raw buffer writes are single-line operations.
-Widths follow unicode-width and may differ from a terminal's Unicode version.
+Taffy computes flex and grid layout in cells. Widgets supply intrinsic
+measurement. The paint pass translates coordinates, clips children inside parent
+borders, and applies viewport offsets. All descendants are currently visited;
+scrolling does not imply virtualization. Paint order follows child order, and
+pointer hit testing uses that same order in reverse.
 
-Widgets receive a shared frame and a clipping rectangle. Custom widgets must
-honor that rectangle; the trait is a contract, not a sandbox. Public buffer
-writes always clip to frame bounds. Text and list styles cover written glyphs,
-not an entire row. Applications control unused space through their composition.
+`Widget` defines measurement, paint, input, focus eligibility, and viewport
+behavior. `Canvas` clips drawing and filters terminal control characters.
+Applications can implement widgets without registering them globally. `Text`
+shares measurement and wrapping logic. `Editor` stores grapheme-aligned byte
+positions and up to 100 undo snapshots. Undo memory scales with document size.
 
-Frames are rebuilt from application state. The renderer emits changed lead
-cells and necessary blanks, omitting wide continuation cells. It commits its
-shadow frame only after successful output. Dimensions changing invalidate the
-comparison. The initial renderer clones the completed frame; measure before
-adding more complex buffer reuse or damage tracking.
+State changes invalidate layout and paint. An idle frame does neither. A changed
+frame currently allocates and repaints the cell buffer; the terminal renderer
+then emits only changed cells. This is not incremental subtree painting.
 
-## Terminal lifecycle
+The optional crossterm backend owns raw mode, alternate screen, mouse input,
+bracketed paste, and cursor restoration. Portable events keep backend types out
+of widget contracts. Terminal restoration runs on ordinary return and panic
+unwinding, not on process abort or uncatchable signals.
 
-Terminal sessions require interactive stdin and stdout. They reject an existing
-raw session and competing weft sessions. Sessions use the alternate screen,
-bracketed paste, hidden cursor, and disabled line wrapping. Drop restores a
-normal shell configuration. Previously customized cursor or wrap modes are not
-queried or restored exactly. Avoid nesting with other terminal owners.
+## Dioxus
 
-Normal errors and panic unwinding run cleanup. Aborts and uncatchable signals
-do not. The library does not install a global panic hook or signal handler.
-`run` reserves Ctrl-C for exit. Custom event loops own that policy themselves.
+Dioxus owns signals, components, and reconciliation. Its mutation writer creates,
+updates, moves, and removes core nodes. Keyed moves preserve native widget state.
+The adapter has terminal elements, not HTML or CSS emulation. Unknown tags and
+attributes produce errors. A failed mutation invalidates the view, so subsequent
+calls cannot silently use a partially applied update.
 
-## Independence
+Events reach the nearest registered Dioxus listener and bubble through Dioxus
+parents before core widget behavior. `prevent_default` cancels native behavior;
+`stop_propagation` stops Dioxus parents while allowing native editing. An
+`oninput` notification carries the new value after an edit. The host
+owns scheduling and can await `View::wait_for_work` alongside terminal input.
+The included counter uses a blocking loop because it has no asynchronous tasks.
 
-No application owns weft's API. Application settings, themes, persistence,
-networking, tasks, and domain-specific models stay in consumers. Examples must
-exercise different kinds of applications. e is a possible future consumer;
-compatibility with its current implementation is not a library contract.
+`Registry` lets an application map extra tags and attributes to its own widgets.
+An adapter must use the same public tree operations available to every consumer.
+
+## Reference
+
+OpenTUI's core owns persistent renderables, layout, input, and widgets. Its React
+and Solid packages translate their respective reconciliation operations into
+that core. That separation informs weft's crate boundary. Its source was studied
+at commit `4954312d749f71e80664aa8b0e8a75384186eb99` in
+[anomalyco/opentui](https://github.com/anomalyco/opentui/tree/4954312d749f71e80664aa8b0e8a75384186eb99/packages).
+weft does not translate OpenTUI's TypeScript API or reproduce its Zig renderer.

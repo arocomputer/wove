@@ -44,7 +44,11 @@ impl Renderer {
                 next_position = x.checked_add(cell.width as u16).map(|x| (x, y));
             }
         }
-        if !output.is_empty() {
+        if !output.is_empty() || previous.is_none_or(|old| old.cursor() != frame.cursor()) {
+            match frame.cursor() {
+                Some((x, y)) => queue!(output, cursor::MoveTo(x, y), cursor::Show)?,
+                None => queue!(output, cursor::Hide)?,
+            }
             queue!(
                 output,
                 style::SetAttribute(style::Attribute::Reset),
@@ -72,11 +76,14 @@ fn apply_style(writer: &mut impl Write, value: Style) -> io::Result<()> {
     queue!(
         writer,
         style::SetAttribute(style::Attribute::Reset),
-        style::SetForegroundColor(color(value.foreground)),
-        style::SetBackgroundColor(color(value.background))
+        style::SetForegroundColor(color(value.fg)),
+        style::SetBackgroundColor(color(value.bg))
     )?;
     if value.bold {
         queue!(writer, style::SetAttribute(style::Attribute::Bold))?;
+    }
+    if value.reverse {
+        queue!(writer, style::SetAttribute(style::Attribute::Reverse))?;
     }
     if value.underline {
         queue!(writer, style::SetAttribute(style::Attribute::Underlined))?;
@@ -128,6 +135,7 @@ impl Terminal {
             terminal::EnterAlternateScreen,
             cursor::Hide,
             terminal::DisableLineWrap,
+            event::EnableMouseCapture,
             event::EnableBracketedPaste
         )?;
         Ok(session)
@@ -156,6 +164,7 @@ impl Drop for Terminal {
                 self.output,
                 style::SetAttribute(style::Attribute::Reset),
                 style::ResetColor,
+                event::DisableMouseCapture,
                 event::DisableBracketedPaste,
                 terminal::EnableLineWrap,
                 cursor::Show,
@@ -169,36 +178,87 @@ impl Drop for Terminal {
     }
 }
 
-/// An event-driven application with explicit state. For timers, asynchronous
-/// work, or another event source, use `Terminal` with your own event loop.
-pub trait Application {
-    /// Paint the current state into a blank frame; perform no terminal I/O.
-    fn view(&self, frame: &mut Buffer);
-    /// Handle input or resize. Return false to exit the application.
-    fn update(&mut self, event: event::Event) -> bool;
+/// Terminal events are converted here so core widgets never depend on crossterm.
+pub fn read() -> io::Result<Option<crate::Event>> {
+    use crate::{Event, Key, Modifiers, Mouse, MouseKind};
+    Ok(match event::read()? {
+        event::Event::Key(key) if key.kind != event::KeyEventKind::Release => {
+            let mut mods = Modifiers {
+                ctrl: key.modifiers.contains(event::KeyModifiers::CONTROL),
+                alt: key.modifiers.contains(event::KeyModifiers::ALT),
+                shift: key.modifiers.contains(event::KeyModifiers::SHIFT),
+            };
+            let key = match key.code {
+                event::KeyCode::Char(c) => Key::Char(c),
+                event::KeyCode::Enter => Key::Enter,
+                event::KeyCode::Esc => Key::Escape,
+                event::KeyCode::Tab => Key::Tab,
+                event::KeyCode::BackTab => {
+                    mods.shift = true;
+                    Key::Tab
+                }
+                event::KeyCode::Backspace => Key::Backspace,
+                event::KeyCode::Delete => Key::Delete,
+                event::KeyCode::Left => Key::Left,
+                event::KeyCode::Right => Key::Right,
+                event::KeyCode::Up => Key::Up,
+                event::KeyCode::Down => Key::Down,
+                event::KeyCode::Home => Key::Home,
+                event::KeyCode::End => Key::End,
+                event::KeyCode::PageUp => Key::PageUp,
+                event::KeyCode::PageDown => Key::PageDown,
+                _ => return Ok(None),
+            };
+            Some(Event::Key(key, mods))
+        }
+        event::Event::Paste(s) => Some(Event::Paste(s)),
+        event::Event::Mouse(m) => {
+            let kind = match m.kind {
+                event::MouseEventKind::Down(event::MouseButton::Left) => MouseKind::Down,
+                event::MouseEventKind::Up(event::MouseButton::Left) => MouseKind::Up,
+                event::MouseEventKind::Moved
+                | event::MouseEventKind::Drag(event::MouseButton::Left) => MouseKind::Move,
+                event::MouseEventKind::ScrollUp => MouseKind::ScrollUp,
+                event::MouseEventKind::ScrollDown => MouseKind::ScrollDown,
+                _ => return Ok(None),
+            };
+            Some(Event::Mouse(Mouse {
+                x: m.column,
+                y: m.row,
+                kind,
+            }))
+        }
+        _ => None,
+    })
 }
 
-/// Run an application, redrawing after events with no idle polling or timers.
-/// Ctrl-C exits by default; custom loops can choose another interrupt policy.
-pub fn run(app: &mut impl Application) -> io::Result<()> {
+/// Wait without reading. Custom loops can multiplex terminal input and their own work.
+pub fn poll(timeout: std::time::Duration) -> io::Result<bool> {
+    event::poll(timeout)
+}
+
+/// Run a tree with an application callback after each dispatched event. Escape
+/// and Ctrl-C exit; the callback can return false to finish for another reason.
+pub fn run(
+    tree: &mut crate::Tree,
+    mut update: impl FnMut(&mut crate::Tree, &crate::Event, &crate::Dispatch) -> bool,
+) -> io::Result<()> {
     let mut terminal = Terminal::new()?;
     loop {
-        let (width, height) = terminal.size()?;
-        let mut frame = Buffer::new(width, height);
-        app.view(&mut frame);
-        terminal.draw(&frame)?;
-        let event = event::read()?;
-        if let event::Event::Key(key) = &event {
-            if key.kind == event::KeyEventKind::Release {
-                continue;
-            }
-            if key.code == event::KeyCode::Char('c')
-                && key.modifiers.contains(event::KeyModifiers::CONTROL)
-            {
-                break;
-            }
+        let (w, h) = terminal.size()?;
+        terminal.draw(tree.frame(w, h).map_err(io::Error::other)?)?;
+        let Some(event) = read()? else {
+            continue;
+        };
+        if matches!(
+            &event,
+            crate::Event::Key(crate::Key::Escape, _)
+                | crate::Event::Key(crate::Key::Char('c'), crate::Modifiers { ctrl: true, .. })
+        ) {
+            break;
         }
-        if !app.update(event) {
+        let result = tree.dispatch(event.clone()).map_err(io::Error::other)?;
+        if !update(tree, &event, &result) {
             break;
         }
     }
