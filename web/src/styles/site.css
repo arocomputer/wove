@@ -1,0 +1,45 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: light dark;
+  line-height: 1.6;
+}
+body {
+  max-width: 64rem;
+  margin: auto;
+  padding: 1.5rem;
+}
+header {
+  margin-bottom: 2rem;
+}
+pre {
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid gray;
+}
+code {
+  font-family: ui-monospace, monospace;
+}
+.docs {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  gap: 2rem;
+}
+.docs article {
+  min-width: 0;
+}
+.docs aside a {
+  display: block;
+  margin-bottom: 0.75rem;
+}
+@media (max-width: 700px) {
+  .docs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .astro-code,
+  .astro-code span {
+    color: var(--shiki-dark) !important;
+    background-color: var(--shiki-dark-bg) !important;
+  }
+}

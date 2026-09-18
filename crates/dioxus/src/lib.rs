@@ -58,6 +58,7 @@ impl View {
             Event::Mouse(..) => "mouse",
             Event::Focus => "focus",
             Event::Blur => "blur",
+            Event::Resize(..) => "resize",
         };
         if !self.emit(target, name, Rc::new(event.clone())) {
             self.render()?;
@@ -67,27 +68,34 @@ impl View {
                 ..Dispatch::default()
             });
         }
-        let input = std::iter::successors(target, |id| self.host.tree.parent(*id)).find_map(|id| {
-            self.host
-                .tree
-                .get::<wove::elements::Input>(id)
-                .ok()
-                .map(|w| (id, w.editor.text().to_owned()))
-        });
+        let input = std::iter::successors(target, |id| self.host.tree.parent(*id))
+            .find_map(|id| self.input_value(id).map(|value| (id, value.to_owned())));
         let result = self.host.tree.dispatch(event)?;
         if let Some((id, before)) = input {
-            let value = self
-                .host
-                .tree
-                .get::<wove::elements::Input>(id)?
-                .editor
-                .text();
-            if value != before {
-                self.emit(Some(id), "input", Rc::new(value.to_owned()));
+            if let Some(value) = self.input_value(id) {
+                if value != before {
+                    self.emit(Some(id), "input", Rc::new(value.to_owned()));
+                }
             }
         }
         self.render()?;
         Ok(result)
+    }
+    /// Both editable elements share the same value-change event.
+    fn input_value(&self, id: wove::Id) -> Option<&str> {
+        use wove::elements::{Input, Textarea};
+        self.host
+            .tree
+            .get::<Input>(id)
+            .map(|input| input.editor.text())
+            .ok()
+            .or_else(|| {
+                self.host
+                    .tree
+                    .get::<Textarea>(id)
+                    .map(|area| area.editor.text())
+                    .ok()
+            })
     }
     fn emit(&self, target: Option<wove::Id>, name: &str, data: Rc<dyn Any>) -> bool {
         let mut node = target;
@@ -107,3 +115,8 @@ impl View {
         self.dom.wait_for_work().await;
     }
 }
+
+#[cfg(feature = "terminal")]
+mod runtime;
+#[cfg(feature = "terminal")]
+pub use runtime::run;

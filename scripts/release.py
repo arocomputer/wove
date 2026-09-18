@@ -18,7 +18,10 @@ out = root / "artifacts/release"
 out.mkdir(parents=True, exist_ok=True)
 checksums = []
 for manifest in sorted((root / "crates").glob("*/Cargo.toml")):
-    name = tomllib.loads(manifest.read_text(encoding="utf-8"))["package"]["name"]
+    package = tomllib.loads(manifest.read_text(encoding="utf-8"))["package"]
+    if package.get("publish") is False:
+        continue
+    name = package["name"]
     archive = root / f"target/package/{name}-{version}.crate"
     shutil.copy2(archive, out / archive.name)
     checksums.append(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}")

@@ -1,0 +1,75 @@
+---
+title: Dioxus
+description: Components and signals over the same core tree.
+order: 3
+---
+
+Use `wove-dioxus` when an application wants components, signals, and RSX.
+Direct core use does not require it.
+
+```toml
+[dependencies]
+wove = { path = "../wove/crates/core" }
+wove-dioxus = { path = "../wove/crates/dioxus" }
+dioxus = { version = "=0.7.10", default-features = false, features = ["macro", "hooks", "signals"] }
+```
+
+```rust
+use dioxus::prelude::*;
+use wove_dioxus::{elements as dioxus_elements, View};
+
+fn app() -> Element {
+    rsx! {
+        view { direction: "column", gap: 1,
+            text { content: "Hello from Wove" }
+            input { placeholder: "Type here" }
+        }
+    }
+}
+
+let mut view = View::new(VirtualDom::new(app))?;
+let frame = view.frame(80, 24)?;
+# Ok::<(), wove_dioxus::Error>(())
+```
+
+Tags are `view`, `panel`, `text`, `input`, `textarea`, and `scroll`. Bare RSX strings create
+separate text elements. Use `content` for one measured text block; adjacent strings
+are not merged into rich text.
+
+Layout attributes are `width`, `height`, `grow`, `gap`, `padding`, and `direction`.
+Numeric values are nonnegative cell lengths, and direction is `row` or `column`.
+`text` accepts `content` and `wrap`; `input` and `textarea` accept `value` and `placeholder`.
+For full Taffy layout, pass `wove_dioxus::AttributeValue::any_value(layout)` as
+`layout`. Likewise, `style` accepts an `AttributeValue::any_value(Style)` on text,
+input, textarea, and panel. Use either a complete layout or individual layout attributes
+for a node, to avoid relying on attribute application order.
+
+`onkey`, `onpaste`, and `onmouse` receive `dioxus_core::Event<wove::Event>`.
+The data is the portable core event. Listeners can call `prevent_default` or
+`stop_propagation`. Initial focus is explicit: call `view.focus_next(false)`, send Tab, or let the
+user choose an element with the mouse. Event handlers on unfocused descendants do
+not receive keyboard events.
+
+A `value` update replaces input text only when it differs. The native element owns cursor and undo state; binding the edited value back
+without changing it preserves that state.
+`oninput` receives `Event<String>` after a native edit, paste, undo, or redo changes
+the value. Set a signal from `event.data.to_string()` and bind that signal to
+`value` to keep component state in sync. It is a notification; cancel editing in
+`onkey` or `onpaste` instead. Cursor movement does not emit `oninput`.
+
+Call `frame` to apply pending component updates and render. Call `send` for input;
+paint first when hit testing needs current geometry. Async hosts must drive
+`wait_for_work` and call `render` or `frame` after it wakes. No executor is forced
+on applications.
+
+For custom elements, register a tag with `Registry::register`. Its factory creates
+a detached core node, and its attribute function validates and applies values.
+Pass the registry to `View::with_registry`. Hyphenated custom RSX tags work without
+an element schema; applications can define a schema for short tags and completion.
+See the [adapter tests](https://github.com/intuitums/wove/blob/main/crates/dioxus/tests/view.rs) for a tested custom tag.
+
+## Run an application
+
+`wove_dioxus::run(&mut view).await` drives terminal input and component work.
+It repaints when a signal or task wakes, even without keyboard input. Use your
+executor of choice; the counter example uses `futures_lite::future::block_on`.

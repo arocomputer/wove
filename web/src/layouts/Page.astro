@@ -1,0 +1,30 @@
+---
+import "../styles/site.css";
+interface Props {
+  title?: string;
+  description?: string;
+}
+const {
+  title = "Documentation",
+  description = "Wove development documentation.",
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <title>{title} · Wove</title>
+  </head>
+  <body>
+    <header>
+      <a href="/">Wove</a> · <a href="/docs/">Docs</a> ·{" "}
+      <a href="https://github.com/intuitums/wove">Source</a>
+    </header>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>

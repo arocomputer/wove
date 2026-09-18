@@ -4,7 +4,7 @@ use dioxus_core::{
 };
 use std::collections::HashMap;
 use wove::{
-    elements::{Container, Input, Panel, Scroll, Text},
+    elements::{Container, Input, Panel, Scroll, Text, Textarea},
     Element, Id, Layout, Style, Tree,
 };
 
@@ -148,6 +148,7 @@ impl Host {
                     "panel" => self.tree.create(Panel::default())?,
                     "text" => self.tree.create(Text::default())?,
                     "input" => self.tree.create(Input::default())?,
+                    "textarea" => self.tree.create(Textarea::default())?,
                     "scroll" => self.tree.create(Scroll::default())?,
                     tag => (self
                         .registry
@@ -263,10 +264,11 @@ impl Host {
             match self.tags.get(&id).map(String::as_str) {
                 Some("text") => self.tree.update::<Text>(id, |w| w.style = style)?,
                 Some("input") => self.tree.update::<Input>(id, |w| w.style = style)?,
+                Some("textarea") => self.tree.update::<Textarea>(id, |w| w.style = style)?,
                 Some("panel") => self.tree.update::<Panel>(id, |w| w.style = style)?,
                 _ => {
                     return Err(Error::Unsupported(
-                        "style requires text, input, or panel".into(),
+                        "style requires text, input, textarea, or panel".into(),
                     ))
                 }
             }
@@ -284,6 +286,18 @@ impl Host {
         let invalid = || Error::Unsupported(format!("{name}={text:?}"));
         match name {
             "content" => self.tree.update::<Text>(id, |w| w.content = text)?,
+            "value" if self.tags.get(&id).is_some_and(|tag| tag == "textarea") => {
+                self.tree.update::<Textarea>(id, |area| {
+                    let replacement = Textarea::new(&text);
+                    if area.editor.text() != replacement.editor.text() {
+                        area.editor = replacement.editor;
+                    }
+                })?;
+            }
+            "placeholder" if self.tags.get(&id).is_some_and(|tag| tag == "textarea") => {
+                self.tree
+                    .update::<Textarea>(id, |area| area.placeholder = text)?
+            }
             "value" => self.tree.update::<Input>(id, |w| {
                 if w.editor.text() != text {
                     w.editor

@@ -19,7 +19,7 @@ terminal = ["dep:crossterm"]
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
 taffy = { version = "0.14", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "content_size"] }
-crossterm = { version = "0.29", optional = true }
+crossterm = { version = "0.29", optional = true, features = ["event-stream"] }
 
 [[example]]
 name = "gallery"
@@ -27,5 +27,5 @@ path = "examples/gallery.rs"
 required-features = ["terminal"]
 
 [[example]]
-name = "measure"
-path = "examples/measure.rs"
+name = "timing"
+path = "examples/timing.rs"

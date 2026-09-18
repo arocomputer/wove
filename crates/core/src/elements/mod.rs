@@ -8,7 +8,7 @@ use crate::{Canvas, Element, Layout, Style};
 pub use input::Input;
 pub use scroll::Scroll;
 pub use select::Select;
-pub use text::Text;
+pub use text::{RichText, Text};
 
 /// A layout-only container, useful for rows, columns, and grids.
 #[derive(Default)]
@@ -31,3 +31,9 @@ impl Element for Panel {
         canvas.border(self.style);
     }
 }
+mod textarea;
+pub use textarea::Textarea;
+mod list;
+mod table;
+pub use list::List;
+pub use table::Table;

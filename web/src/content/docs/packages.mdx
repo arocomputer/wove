@@ -1,0 +1,30 @@
+---
+title: Content and keymaps
+description: Optional packages without expanding the core dependency graph.
+order: 4
+---
+
+## Content
+
+`wove-content` parses Markdown, highlights code, and computes line diffs. Each
+operation produces an ordinary `RichText` element. Parse when source content
+changes, then attach or update that element in the tree.
+
+`markdown` accepts a `Palette` of complete terminal styles. `Highlighter` accepts
+a reusable Syntect syntax set and application-selected theme. `diff` accepts
+separate base, addition, and deletion styles. Core does not depend on these tools.
+
+Markdown is currently linear text layout. HTML remains literal text, and links
+show their destinations. Markdown tables and clickable links are not implemented.
+
+## Keymaps
+
+`wove-keymap::Keymap` maps sequences of `Stroke` values to application commands.
+Bindings can be global or scoped to an element ID. Pass focus ancestry in order
+from the focused element to the root. The nearest scope wins; newer bindings win
+within a scope.
+
+Call `expire` with the current monotonic time before feeding a stroke and when
+the pending deadline arrives. It returns an exact command that was waiting for
+a longer sequence. Applications own execution and scheduling. Clear pending
+sequences when focus changes, and remove a scope when its element is destroyed.

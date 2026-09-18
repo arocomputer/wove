@@ -1,0 +1,62 @@
+---
+title: Architecture
+description: Ownership and crate boundaries.
+order: 5
+---
+
+The workspace separates `core`, `dioxus`, `keymap`, `content`, and unpublished
+`examples`. Core owns terminal behavior and does not depend on the other crates. There is no facade crate and no application
+policy in the library.
+
+## Core
+
+`Tree` owns elements, callbacks, parent/child relationships, and focus. A node's
+`Id` is unique across trees. Removing a node drops its subtree; reparenting keeps
+its state and focus. Detached and hidden nodes do not paint or receive focus.
+
+Taffy computes flex and grid layout in cells. Elements supply intrinsic
+measurement. The paint pass translates coordinates, clips children inside parent
+borders, and applies viewport offsets. All descendants are currently visited;
+scrolling does not imply virtualization. Paint order follows child order, and
+pointer hit testing uses that same order in reverse.
+
+`Element` defines measurement, paint, input, focus eligibility, and viewport
+behavior. `Canvas` clips drawing and filters terminal control characters.
+Applications can implement elements without registering them globally. `Text`
+shares measurement and wrapping logic. `Editor` stores grapheme-aligned byte
+positions and up to 100 edit records. Each record stores inserted and removed text plus cursor
+and selection endpoints. Text storage remains a String.
+
+State changes invalidate layout and paint. An idle frame does neither. A changed
+frame reuses its cell buffer when dimensions match and repaints it; the terminal renderer
+then emits only changed cells. This is not incremental subtree painting.
+
+The optional crossterm backend owns raw mode, alternate screen, mouse input,
+bracketed paste, and cursor restoration. Portable events keep backend types out
+of element contracts. Terminal restoration runs on ordinary return and panic
+unwinding, not on process abort or uncatchable signals.
+
+## Dioxus
+
+Dioxus owns signals, components, and reconciliation. Its mutation writer creates,
+updates, moves, and removes core nodes. Keyed moves preserve native element state.
+The adapter has terminal elements, not HTML or CSS emulation. Unknown tags and
+attributes produce errors. A failed mutation invalidates the view, so subsequent
+calls cannot silently use a partially applied update.
+
+Events reach the nearest registered Dioxus listener and bubble through Dioxus
+parents before core element behavior. `prevent_default` cancels native behavior;
+`stop_propagation` stops Dioxus parents while allowing native editing. An
+`oninput` notification carries the new value after an edit. The host
+owns scheduling and can await `View::wait_for_work` alongside terminal input.
+The async runner waits for terminal input and component work concurrently.
+
+`Registry` lets an application map extra tags and attributes to its own elements.
+An adapter must use the same public tree operations available to every consumer.
+
+## Repository
+
+`web/` contains the Astro website and the published MDX guides. `scripts/` owns
+repository checks and packaging. The core timing example provides optional local speed checks.
+Core groups implementation under text, input, render, terminal, tree, and elements.
+Content parsers and key sequences stay in independent crates.

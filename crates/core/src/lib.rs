@@ -11,19 +11,16 @@
 //! ```
 #![forbid(unsafe_code)]
 
-mod buffer;
-mod canvas;
+pub mod animation;
 pub mod elements;
-mod event;
-mod geometry;
+pub mod input;
+pub mod render;
 pub mod testing;
 pub mod text;
 mod tree;
 
-pub use buffer::{Buffer, Cell, Color, Style};
-pub use canvas::Canvas;
-pub use event::{Event, Key, Modifiers, Mouse, MouseKind, Response};
-pub use geometry::Rect;
+pub use input::{Event, Key, Modifiers, Mouse, MouseKind, Response};
+pub use render::{Buffer, Canvas, Cell, Color, Rect, Style};
 pub use taffy::Style as Layout;
 pub use tree::{Dispatch, Element, Error, Id, Tree};
 /// Taffy's layout types and helpers, measured in terminal cells.

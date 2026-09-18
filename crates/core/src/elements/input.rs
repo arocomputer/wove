@@ -1,5 +1,5 @@
 //! Single-line editing with selection and a horizontally scrolling cursor.
-use crate::{text::Editor, Canvas, Element, Event, Key, Layout, Response, Style};
+use crate::{text::Editor, Canvas, Element, Event, Layout, Response, Style};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -81,29 +81,6 @@ impl Element for Input {
         }
     }
     fn event(&mut self, event: &Event) -> Response {
-        match event {
-            Event::Paste(value) => {
-                let value: String = value.chars().filter(|c| !c.is_control()).collect();
-                self.editor.insert(&value);
-            }
-            Event::Key(key, m) => match key {
-                Key::Char('a') if m.ctrl => self.editor.select_all(),
-                Key::Char('z') if m.ctrl && m.shift => self.editor.redo(),
-                Key::Char('z') if m.ctrl => self.editor.undo(),
-                Key::Char('y') if m.ctrl => self.editor.redo(),
-                Key::Char(c) if !m.ctrl && !m.alt && !c.is_control() => {
-                    self.editor.insert(&c.to_string())
-                }
-                Key::Left => self.editor.left(m.shift),
-                Key::Right => self.editor.right(m.shift),
-                Key::Home => self.editor.home(m.shift),
-                Key::End => self.editor.end(m.shift),
-                Key::Backspace => self.editor.backspace(),
-                Key::Delete => self.editor.delete(),
-                _ => return Response::IGNORE,
-            },
-            _ => return Response::IGNORE,
-        }
-        Response::CHANGED
+        crate::text::edit(&mut self.editor, event, false)
     }
 }

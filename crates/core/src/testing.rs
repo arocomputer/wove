@@ -26,3 +26,40 @@ impl Screen {
         self.tree.dispatch(event.into())
     }
 }
+
+/// A clock advanced explicitly by tests, with no sleeping or wall-clock reads.
+#[derive(Default)]
+pub struct Clock {
+    now: std::time::Duration,
+}
+impl Clock {
+    pub fn now(&self) -> std::time::Duration {
+        self.now
+    }
+    pub fn advance(&mut self, elapsed: std::time::Duration) {
+        self.now = self.now.saturating_add(elapsed);
+    }
+}
+
+/// Retains only changed frames, including their styles and cursor positions.
+#[derive(Default)]
+pub struct Recorder {
+    frames: Vec<(std::time::Duration, Buffer)>,
+}
+impl Recorder {
+    pub fn record(&mut self, at: std::time::Duration, frame: &Buffer) {
+        if self
+            .frames
+            .last()
+            .is_none_or(|(_, previous)| previous != frame)
+        {
+            self.frames.push((at, frame.clone()));
+        }
+    }
+    pub fn frames(&self) -> &[(std::time::Duration, Buffer)] {
+        &self.frames
+    }
+    pub fn clear(&mut self) {
+        self.frames.clear();
+    }
+}

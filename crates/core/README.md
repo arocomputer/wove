@@ -33,9 +33,9 @@ a clipped `Canvas`. Moving an element preserves its state; removing it drops its
 subtree and callbacks.
 
 This is an early release with an unstable API. Current elements are `Container`,
-`Panel`, `Text`, `Input`, `Select`, and `Scroll`. Multiline editing, rich text spans,
-and virtualized lists are not implemented yet.
+`Panel`, `Text`, `RichText`, `Input`, `Textarea`, `Select`, `List`, `Table`, and
+`Scroll`. `List` requests only visible rows from its provider. `Textarea` supports
+logical lines and horizontal scrolling; soft-wrapped editing is not implemented.
 
-[API documentation](https://docs.rs/wove) ·
 [Source and examples](https://github.com/intuitums/wove/tree/main) ·
-[Guide](https://github.com/intuitums/wove/blob/main/crates/core/docs/start.md)
+[Guide](https://github.com/intuitums/wove/blob/main/web/src/content/docs/start.mdx)

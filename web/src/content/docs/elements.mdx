@@ -1,0 +1,21 @@
+---
+title: Elements and text
+description: Compose persistent elements and edit Unicode text.
+order: 2
+---
+
+An element supplies measurement, drawing, and input behavior. The tree owns its state and lifetime. `Tree::add` attaches a new element. Moving it preserves state; removing it drops its descendants and callbacks.
+
+## Built-in elements
+
+`Container` groups children. `Panel` adds a border. `Text` draws a string, while `RichText` draws styled spans with optional word wrapping. `Input` edits a single line; `Textarea` edits multiple logical lines. `Select` handles a list of choices, and `Scroll` clips its children to a viewport.
+
+## Editing
+
+Both editable elements use `wove::text::Editor`. Cursor positions are byte offsets on grapheme boundaries. Shift extends a selection; Ctrl+Z undoes an edit. The multiline editor accepts pasted newlines and preserves the display column when moving vertically through short lines.
+
+Undo keeps at most 100 edits and stores changed text rather than a copy of the entire document. Text storage is currently a `String`; large-document editing still needs profiling.
+
+## Custom elements
+
+Implement `wove::Element` and add your type to a tree. Drawing goes through `Canvas`, which clips output to the assigned area and removes terminal control characters. No global registration is required.

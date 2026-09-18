@@ -7,16 +7,18 @@ session, or other consumer-specific concepts to the library.
 
 - Preserve unrelated changes and never expose secrets.
 - Follow ~/Code/README.md. Use managed worktrees, never edit base checkouts.
-- Read CONTRIBUTING.md and docs/architecture.md before changing contracts.
+- Read CONTRIBUTING.md and web/src/content/docs/architecture.mdx before changing contracts.
 - Use the smallest concrete design that meets the current requirement.
 - Document public items and nontrivial private functions by purpose and contract.
 - Keep rendering deterministic and testable without a terminal.
 - No unsafe code in library modules. Terminal access stays in the optional backend.
+- Keep web/ minimal until website design is requested.
 - Run ./x hooks once per worktree, ./x check for changes, ./x ui for rendering
-  or terminal changes, and ./x bench for performance-sensitive changes.
+  or terminal changes, and ./x web for documentation or website changes.
+  Keep optional speed checks beside core; do not add performance budgets or CI gates.
 - Tests pin behavior, not implementation details. Keep docs and changelog current.
-- Keep crate-specific guides beside their crate. Root docs cover the workspace;
-  CONTRIBUTING.md covers contribution and release instructions.
+- Keep published documentation in web/src/content/docs/. Crate READMEs introduce
+  their package; CONTRIBUTING.md covers contribution and release instructions.
 - `main` is the default branch. Use short type/name topic branches, such as
   fix/resize, unless the user authorizes committing directly to main.
   Follow the naming rules in CONTRIBUTING.md.

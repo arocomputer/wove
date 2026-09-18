@@ -157,3 +157,39 @@ fn input_notifications_update_signals_without_resetting_undo() {
     .unwrap();
     assert!(!text(&mut v).contains("a界"));
 }
+
+#[test]
+fn textarea_notifications_preserve_multiline_value_and_undo() {
+    fn app() -> Element {
+        let mut value = use_signal(String::new);
+        rsx! {textarea {value:"{value}",oninput:move |event|value.set(event.data.to_string())}}
+    }
+    let mut view = View::new(VirtualDom::new(app)).unwrap();
+    view.focus_next(false).unwrap();
+    view.send(InputEvent::Paste("one\ntwo".into())).unwrap();
+    let id = view.tree().focused().unwrap();
+    assert_eq!(
+        view.tree()
+            .get::<wove::elements::Textarea>(id)
+            .unwrap()
+            .editor
+            .text(),
+        "one\ntwo"
+    );
+    view.send(InputEvent::Key(
+        Key::Char('z'),
+        wove::Modifiers {
+            ctrl: true,
+            ..Default::default()
+        },
+    ))
+    .unwrap();
+    assert_eq!(
+        view.tree()
+            .get::<wove::elements::Textarea>(id)
+            .unwrap()
+            .editor
+            .text(),
+        ""
+    );
+}

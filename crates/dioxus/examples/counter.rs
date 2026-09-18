@@ -1,8 +1,5 @@
 use dioxus::prelude::*;
-use wove::{
-    terminal::{self, Terminal},
-    Event, Key,
-};
+use wove::{Event, Key};
 use wove_dioxus::{elements as dioxus_elements, View};
 fn app() -> Element {
     let mut count = use_signal(|| 0);
@@ -21,21 +18,6 @@ fn app() -> Element {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut view = View::new(VirtualDom::new(app))?;
     view.focus_next(false)?;
-    let mut terminal = Terminal::new()?;
-    loop {
-        let (w, h) = terminal.size()?;
-        terminal.draw(view.frame(w, h)?)?;
-        let Some(event) = terminal::read()? else {
-            continue;
-        };
-        if matches!(
-            event,
-            Event::Key(Key::Escape, _)
-                | Event::Key(Key::Char('c'), wove::Modifiers { ctrl: true, .. })
-        ) {
-            break;
-        }
-        view.send(event)?;
-    }
+    futures_lite::future::block_on(wove_dioxus::run(&mut view))?;
     Ok(())
 }

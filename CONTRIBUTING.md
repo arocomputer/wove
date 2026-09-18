@@ -10,13 +10,13 @@ file selects the compiler. Each contributing worktree installs hooks once:
 ./x hooks
 ./x check
 ./x ui
-./x bench
 ```
 
 `./x check` checks formatting, lints, contracts, documentation, package contents,
 and repository rules. CI uses the same entry point. `./x ui` checks real PTYs
-on Unix and retains frames under `artifacts/ui/`. `./x bench` records local
-performance and applies broad regression ceilings.
+on Unix and retains frames under `artifacts/ui/`. The optional
+`cargo run -p wove --release --example timing` command prints local frame timings.
+It has no thresholds and does not run in CI.
 
 Add focused tests for behavior changes. A regression test should fail for the
 original defect. Document public contracts beside the API and update guides
@@ -31,9 +31,9 @@ Releases require an explicit maintainer decision; commits do not publish crates.
 
 ## Documentation
 
-Keep crate-specific guides in that crate's `docs/` directory and introduce the
-crate in its README. Repository-wide architecture and roadmap notes belong in
-`docs/`. Contribution and release instructions live here.
+Published guides, architecture, and the roadmap live in `web/src/content/docs/`.
+Crate READMEs introduce their package and link to these guides. Contribution and
+release instructions live here.
 
 ## Naming
 
@@ -54,22 +54,28 @@ related files. Preserve ecosystem names such as `rust-toolchain.toml` and
 
 ## Releases
 
-The workspace packages are `wove` and `wove-dioxus`. The core package lives
-in `crates/core`; the adapter lives in `crates/dioxus`.
+Publishable packages are `wove`, `wove-dioxus`, `wove-keymap`, and `wove-content`.
+`crates/examples` is private. The core has no dependency on the other packages.
 
 The workspace version is 0.0.1 and has not been published. The earlier `wove`
-0.2.0 release remains on crates.io. The adapter has not been published.
+0.2.0 package is yanked on crates.io. The other packages have not been published.
 
-1. Run `./x check`, `./x ui`, and `./x bench` on the release commit.
+1. Run `./x check` and `./x ui` on the release commit.
 2. Choose the workspace version, update the adapter's exact core dependency,
    move Unreleased changes into that version, update Cargo.lock, and commit.
-3. `./x package` builds both archives and runs an external consumer against their
+3. `./x package` builds the publishable archives and runs an external consumer against their
    extracted contents, with and without the terminal backend.
 4. After a maintainer authorizes registry publication, publish core first, then
-   the adapter. Verify package ownership and credentials before the first release.
+   the dependent packages. Verify package ownership and credentials before the first release.
 5. Tag the release commit `v<version>` and push the tag. The workflow checks the
-   version and publishes both archives and their checksums to a GitHub release.
+   version and publishes the archives and their checksums to a GitHub release.
    It does not publish to crates.io.
 
 Actions are pinned by commit. Only the release job has contents write permission.
 Do not publish from a pull request.
+
+## Website
+
+`web/` is a minimal Astro and MDX documentation setup, using Bun 1.4.2 or newer.
+Run `./x web` for dependency, type, and build checks. Do not add a full website
+design or deployment configuration until requested.

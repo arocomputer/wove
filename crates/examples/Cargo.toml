@@ -1,0 +1,15 @@
+[package]
+name = "wove-examples"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+wove = { path = "../core" }
+wove-keymap = { path = "../keymap" }
+
+[[bin]]
+name = "editor"
+path = "src/editor.rs"

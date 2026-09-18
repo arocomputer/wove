@@ -1,4 +1,4 @@
-"""Build both archives and compile a consumer against their extracted contents."""
+"""Build publishable archives and compile a consumer against their extracted contents."""
 from pathlib import Path
 import os
 import shutil
@@ -9,12 +9,15 @@ import tomllib
 
 root = Path(__file__).resolve().parents[1]
 version = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
-subprocess.run(["cargo", "package", "--workspace", "--locked", "--allow-dirty", "--no-verify"], cwd=root, check=True)
+packages = [tomllib.loads(manifest.read_text())["package"] for manifest in sorted((root / "crates").glob("*/Cargo.toml"))]
+names = [package["name"] for package in packages if package.get("publish") is not False]
+selection = [flag for name in names for flag in ("-p", name)]
+subprocess.run(["cargo", "package", *selection, "--locked", "--allow-dirty", "--no-verify"], cwd=root, check=True)
 # A fresh consumer avoids Cargo's temporary-registry cache retaining an older
 # archive when contributors package the same unpublished version repeatedly.
 with tempfile.TemporaryDirectory(prefix="wove-package-") as directory:
     consumer = Path(directory)
-    for name in ("wove", "wove-dioxus"):
+    for name in names:
         with tarfile.open(root / f"target/package/{name}-{version}.crate") as archive:
             archive.extractall(consumer, filter="data")
     (consumer / "Cargo.toml").write_text(f'''[package]
@@ -27,6 +30,8 @@ terminal = ["wove/terminal", "wove-dioxus/terminal"]
 [dependencies]
 wove = {{ path = "wove-{version}", default-features = false }}
 wove-dioxus = {{ path = "wove-dioxus-{version}", default-features = false }}
+wove-keymap = {{ path = "wove-keymap-{version}" }}
+wove-content = {{ path = "wove-content-{version}" }}
 [patch.crates-io]
 wove = {{ path = "wove-{version}" }}
 ''', encoding="utf-8")
@@ -37,6 +42,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tree.add(tree.root(), Text::new("packed consumer"))?;
     let frame = tree.frame(20, 2)?;
     assert_eq!(frame.cell(0, 0).unwrap().symbol(), "p");
+    let _markdown = wove_content::markdown("# Packed", wove_content::Palette::default());
+    let _keys = wove_keymap::Keymap::<()>::new(std::time::Duration::from_millis(300));
     let _registry = wove_dioxus::Registry::default();
     #[cfg(feature = "terminal")]
     wove::terminal::Renderer::default().draw(&mut Vec::new(), frame)?;

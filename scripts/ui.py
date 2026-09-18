@@ -25,7 +25,8 @@ def scenario(name, steps):
     screen = pyte.Screen(80, 24)
     stream = pyte.ByteStream(screen)
     raw = bytearray()
-    process = subprocess.Popen([str(ROOT / "target/debug/examples" / name)],
+    binary = ROOT / "target/debug" / name if name == "editor" else ROOT / "target/debug/examples" / name
+    process = subprocess.Popen([str(binary)],
                                stdin=slave, stdout=slave, stderr=slave,
                                start_new_session=True, env={**os.environ, "TERM": "xterm-256color"})
 
@@ -67,8 +68,8 @@ def scenario(name, steps):
         # Observe the resize frame before sending a separate keyboard event.
         receive("Wove", after=before_resize)
         # An additional key produces an observable update after the resize.
-        os.write(master, b"+" if name == "counter" else b"\x01\x7f")
-        receive("Count: 3" if name == "counter" else "Text")
+        os.write(master, b"+" if name == "counter" else b"x" if name == "editor" else b"\x01\x7f")
+        receive("Count: 3" if name == "counter" else "bytes" if name == "editor" else "Text")
         check_border()
         (OUT / f"{name}-resized.txt").write_text("\n".join(screen.display) + "\n")
         os.write(master, b"\x1b")
@@ -92,3 +93,5 @@ def scenario(name, steps):
 
 scenario("counter", [(b"++", "Count: 2")])
 scenario("gallery", [(b"\x1b[200~scroll\x1b[201~", "A clipped viewport.")])
+
+scenario("editor", [(b"\x1b[200~\nNew line\x1b[201~", "New line")])
