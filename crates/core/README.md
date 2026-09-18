@@ -2,9 +2,9 @@
 
 A Rust library to build terminal user interfaces.
 
-wove owns a persistent tree of widgets with flex and grid layout, focus, input
-routing, Unicode text editing, and clipped scrolling. The core works directly
-from Rust; an optional Dioxus adapter lives in a separate workspace crate.
+Start with a few widgets. Arrange them with flex or grid, handle input, and let
+wove draw the terminal. Build directly in Rust, or use the optional Dioxus adapter
+for components and signals.
 
 ```toml
 [dependencies]
@@ -16,13 +16,16 @@ use wove::{Tree, widgets::{Input, Text}, terminal};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tree = Tree::new();
-    tree.add(tree.root(), Text::new("Your name"))?;
+    tree.add(tree.root(), Text::new("Hello from wove. What's your name?"))?;
     let input = tree.add(tree.root(), Input::default())?;
     tree.focus(Some(input))?;
     terminal::run(&mut tree, |_, _, _| true)?;
     Ok(())
 }
 ```
+
+Run your app and start typing. Shift + arrows selects text, Ctrl + Z undoes an
+edit, and Escape exits.
 
 Disable default features for headless use. `Tree::frame` returns a cell buffer
 without acquiring a terminal. Custom widgets implement `Widget` and paint through

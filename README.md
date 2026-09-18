@@ -1,58 +1,75 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/dark.svg">
-  <img src="docs/assets/logo/light.svg" alt="wove" width="311" height="81">
+  <img src="docs/assets/logo/light.svg" alt="wove" width="170" height="40">
 </picture>
 
 A Rust library to build terminal user interfaces.
 
-wove owns a persistent tree of widgets. Layout, focus, input, and rendering work
-without a component framework. An optional Dioxus adapter adds RSX, signals, and
-component lifecycles over the same tree.
+Start with a few widgets. Arrange them with flex or grid, handle input, and let
+wove draw the terminal. Build directly in Rust, or use the optional Dioxus adapter
+for components and signals.
 
-```text
-crates/
-  core/       widgets, layout, text editing, input, rendering, testing
-  dioxus/     Dioxus adapter and terminal RSX elements
+[Get started](docs/start.md) · [API](https://docs.rs/wove) · [Examples](crates/core/examples) · [crates.io](https://crates.io/crates/wove)
+
+## Your first terminal app
+
+With Rust 1.98 or newer, create a project and add wove:
+
+```sh
+cargo new hello
+cd hello
+cargo add wove
 ```
 
-The design follows OpenTUI's separation between its core and framework adapters.
-wove uses Rust widgets and Taffy layout, with no JavaScript runtime or native FFI
-boundary in its own code. It is independent of any consuming application.
+Put this in `src/main.rs`:
 
-## Try it
+```rust
+use wove::{terminal, widgets::{Input, Text}, Tree};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut ui = Tree::new();
+    ui.add(ui.root(), Text::new("Hello from wove. What's your name?"))?;
+    let name = ui.add(ui.root(), Input::default())?;
+    ui.focus(Some(name))?;
+
+    terminal::run(&mut ui, |_, _, _| true)?;
+    Ok(())
+}
+```
+
+Run `cargo run` and start typing. Try selecting text with Shift + arrows or
+undoing an edit with Ctrl + Z. Press Escape to exit.
+
+## Build from here
+
+- Compose text, inputs, lists, panels, and scrolling views.
+- Move widgets around without resetting their input or selection.
+- Choose your colors and layout, or implement `Widget` to draw something new.
+- Test frames and input without opening a terminal.
+
+The [guide](docs/start.md) covers layout, events, and headless testing.
+If you prefer RSX and signals, see [Dioxus](docs/dioxus.md). The adapter is optional
+and currently available from a source checkout.
+
+To try the demos, run these from this repository:
 
 ```sh
 cargo run -p wove --example gallery
 cargo run -p wove-dioxus --example counter
 ```
 
-The [captured gallery](docs/assets/gallery.txt) demonstrates filtering, selection,
-borders, wrapping, and scrolling.
-The counter demonstrates Dioxus signals and event cancellation. Both exit with
-Escape or Ctrl-C.
+The gallery has editable filtering, keyboard selection, and scrolling. The
+counter shows how Dioxus signals and input events work together.
 
-## Use the core
+## Growing wove
 
-```rust
-use wove::{Tree, widgets::Text};
+wove is young, and its API is still changing. Multiline editing, rich text, and
+virtualized lists are [ahead of us](docs/roadmap.md).
 
-let mut tree = Tree::new();
-let greeting = tree.add(tree.root(), Text::new("Hello, terminal"))?;
-tree.update::<Text>(greeting, |text| text.content.push('!'))?;
-let frame = tree.frame(80, 24)?;
-# Ok::<(), wove::Error>(())
-```
+Building something with it? We'd like to hear what works and what gets in your
+way. [Open an issue](https://github.com/intuitums/wove/issues) with an example,
+or read [Contributing](CONTRIBUTING.md) to work on the library.
 
-Widgets retain state when moved. Removing a subtree drops its widgets and
-callbacks. Applications can implement `Widget` and use `Canvas` to paint inside
-their allocated, clipped area. `Tree` is usable without terminal access through
-`default-features = false`.
-
-This is an early library with an unstable API. Current widgets are `Container`,
-`Panel`, `Text`, `Input`, `Select`, and `Scroll`. Text editing supports grapheme
-movement, selection, and undo. It does not yet include a multiline editor, rich
-text spans, virtualized lists, or accessibility integration. Dioxus support is
-optional and experimental.
-
-[Start](docs/start.md) · [Architecture](docs/architecture.md) ·
-[Dioxus](docs/dioxus.md) · [Contributing](CONTRIBUTING.md)
+For a look inside, [core](crates/core) owns the widgets and terminal behavior;
+[dioxus](crates/dioxus) adds the component adapter. The
+[architecture guide](docs/architecture.md) explains how they fit together.
