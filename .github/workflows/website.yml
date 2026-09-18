@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   website:
-    name: Website
+    name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

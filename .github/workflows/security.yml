@@ -1,4 +1,4 @@
-name: Audit
+name: Dependencies
 on:
   schedule:
     - cron: '17 6 * * 1'
