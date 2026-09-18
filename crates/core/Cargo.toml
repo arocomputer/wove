@@ -20,7 +20,7 @@ diff = ["dep:similar"]
 
 [dependencies]
 pulldown-cmark = { version = "0.13", default-features = false, optional = true }
-similar = { version = "2.7", optional = true }
+similar = { version = "3.2", optional = true }
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"], optional = true }
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
