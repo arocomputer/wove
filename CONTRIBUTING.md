@@ -89,6 +89,10 @@ out terminal output, SSH, dependencies, and automation for review; it does not b
 itself configure branch protection. Passing checks are evidence for review, not
 permission to merge or publish.
 
+Main requires a pull request and a squash merge. The branch must be current,
+review conversations resolved, and Linux, macOS, Windows, docs, and audit checks
+successful. The active repository rule has no bypass actors.
+
 ## AI/LLM assistance
 
 AI-assisted issues and pull requests are welcome when the contributor owns the
