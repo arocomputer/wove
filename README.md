@@ -1,4 +1,7 @@
-# wove
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/dark.svg">
+  <img src="docs/assets/logo/light.svg" alt="wove" width="311" height="81">
+</picture>
 
 A Rust library to build terminal user interfaces.
 

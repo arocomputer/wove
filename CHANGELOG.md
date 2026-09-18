@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the wove wordmark and rename the source repository to `intuitums/wove`.
+
 ## 0.2.0
 
 - Name the core package `wove` and the optional adapter `wove-dioxus`.

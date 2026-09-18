@@ -34,5 +34,5 @@ This is an early release with an unstable API. Current widgets are `Container`,
 and virtualized lists are not implemented yet.
 
 [API documentation](https://docs.rs/wove) ·
-[Source and examples](https://github.com/intuitums/weft/tree/chore/wove) ·
-[Guide](https://github.com/intuitums/weft/blob/chore/wove/docs/start.md)
+[Source and examples](https://github.com/intuitums/wove/tree/chore/wove) ·
+[Guide](https://github.com/intuitums/wove/blob/chore/wove/docs/start.md)
