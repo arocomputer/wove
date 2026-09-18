@@ -57,9 +57,8 @@ Never paste host keys, tokens, private application data, or unreviewed logs.
 ```
 
 Run `./x check` for every submission, `./x ui` for rendering or terminal/input
-changes, and `./x web` for documentation or website changes. CI's `test` workflow
-checks Rust on Linux, macOS, and Windows; Unix jobs run the PTY suite, and `docs`
-builds the website. Workflow commands come from `./x`.
+changes, and `./x web` for documentation or website changes. The `unit` workflow checks Rust on Linux, macOS, and Windows. The `e2e` workflow
+runs the PTY suite on Linux and macOS; `docs` builds the website. Workflow commands come from `./x`.
 
 A regression test must fail on the original defect. Keep tests focused on public
 behavior, and include a captured frame when appearance changes. Do not weaken
@@ -90,7 +89,7 @@ itself configure branch protection. Passing checks are evidence for review, not
 permission to merge or publish.
 
 Main requires a pull request and a squash merge. The branch must be current,
-review conversations resolved, and Linux, macOS, Windows, docs, and audit checks
+review conversations resolved, and unit, e2e, docs, and audit checks
 successful. The active repository rule has no bypass actors.
 
 ## AI/LLM assistance
