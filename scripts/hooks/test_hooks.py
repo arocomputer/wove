@@ -32,7 +32,7 @@ class HookTests(unittest.TestCase):
         """Create nested fixture files with exact content."""
         path = self.root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, newline="\n")
         return path
 
     def check(self, *args):
@@ -42,11 +42,12 @@ class HookTests(unittest.TestCase):
     def test_staged_rust_is_checked_without_touching_unstaged_edits(self):
         path = self.write('src/file with spaces.rs', 'fn main() {}\n')
         self.run_command('git', 'add', '.')
-        path.write_text('fn main( ){ }\n')
-        self.assertEqual(self.check().returncode, 0)
+        path.write_text('fn main( ){ }\n', newline='\n')
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(path.read_text(), 'fn main( ){ }\n')
         self.run_command('git', 'add', '.')
-        path.write_text('fn main() {}\n')
+        path.write_text('fn main() {}\n', newline='\n')
         result = self.check()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('stage them again', result.stderr)
