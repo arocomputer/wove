@@ -1,75 +1,72 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/dark.svg">
-  <img src="docs/assets/logo/light.svg" alt="wove" width="170" height="40">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/dark.svg">
+    <img src="docs/assets/logo/light.svg" alt="wove logo" width="255" height="60">
+  </picture>
+</p>
 
-A Rust library to build terminal user interfaces.
+<div align="center">
+  <a href="https://crates.io/crates/wove"><img alt="Crates.io version" src="https://img.shields.io/crates/v/wove?style=flat-square" /></a>
+  <a href="https://github.com/intuitums/wove/actions/workflows/checks.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/intuitums/wove/checks.yml?branch=main&amp;style=flat-square" /></a>
+</div>
 
-Start with a few widgets. Arrange them with flex or grid, handle input, and let
-wove draw the terminal. Build directly in Rust, or use the optional Dioxus adapter
-for components and signals.
+wove is a Rust library to build terminal user interfaces.
 
-[Get started](docs/start.md) · [API](https://docs.rs/wove) · [Examples](crates/core/examples) · [crates.io](https://crates.io/crates/wove)
+- Build with Rust widgets or Dioxus components and signals.
+- Arrange content with flexbox and grid layouts.
+- Add text, inputs, selects, panels, and scrolling views.
+- Handle keyboard and mouse input, with text selection and undo.
+- Test rendering and input without opening a terminal.
 
-## Your first terminal app
+wove is early in development, and its API is still changing.
 
-With Rust 1.98 or newer, create a project and add wove:
+[Documentation](crates/core/docs/start.md) | [API reference](https://docs.rs/wove) | [Roadmap](docs/roadmap.md)
+
+## Crates
+
+- [`wove`](crates/core) provides widgets, layout, text editing, input, and terminal rendering.
+- [`wove-dioxus`](crates/dioxus) adds RSX, signals, and component lifecycles over the core library. It is optional and currently available from a source checkout.
+
+## Get started
+
+Add wove to your Rust project:
 
 ```sh
-cargo new hello
-cd hello
 cargo add wove
 ```
 
-Put this in `src/main.rs`:
+The [core guide](crates/core/docs/start.md) starts with a runnable terminal app.
+For components and signals, see the [Dioxus guide](crates/dioxus/docs/start.md).
 
-```rust
-use wove::{terminal, widgets::{Input, Text}, Tree};
+## Development
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut ui = Tree::new();
-    ui.add(ui.root(), Text::new("Hello from wove. What's your name?"))?;
-    let name = ui.add(ui.root(), Input::default())?;
-    ui.focus(Some(name))?;
+Development requires Rust 1.98 or newer and Python 3.12 or newer. The checked-in
+Rust toolchain file selects the compiler.
 
-    terminal::run(&mut ui, |_, _, _| true)?;
-    Ok(())
-}
+```sh
+cargo build --workspace
+./x check
 ```
 
-Run `cargo run` and start typing. Try selecting text with Shift + arrows or
-undoing an edit with Ctrl + Z. Press Escape to exit.
-
-## Build from here
-
-- Compose text, inputs, lists, panels, and scrolling views.
-- Move widgets around without resetting their input or selection.
-- Choose your colors and layout, or implement `Widget` to draw something new.
-- Test frames and input without opening a terminal.
-
-The [guide](docs/start.md) covers layout, events, and headless testing.
-If you prefer RSX and signals, see [Dioxus](docs/dioxus.md). The adapter is optional
-and currently available from a source checkout.
-
-To try the demos, run these from this repository:
+Run the examples from the repository root:
 
 ```sh
 cargo run -p wove --example gallery
 cargo run -p wove-dioxus --example counter
 ```
 
-The gallery has editable filtering, keyboard selection, and scrolling. The
-counter shows how Dioxus signals and input events work together.
+`./x ui` checks input, resize, and terminal restoration through real PTYs on Unix.
+`./x bench` measures release builds and checks performance limits.
 
-## Growing wove
+See [AGENTS.md](AGENTS.md) for repository conventions and
+[architecture](docs/architecture.md) for the crate boundaries.
 
-wove is young, and its API is still changing. Multiline editing, rich text, and
-virtualized lists are [ahead of us](docs/roadmap.md).
+## Contributing
 
-Building something with it? We'd like to hear what works and what gets in your
-way. [Open an issue](https://github.com/intuitums/wove/issues) with an example,
-or read [Contributing](CONTRIBUTING.md) to work on the library.
+Contributions are welcome. Bring a small example of what you want to build or a
+reproduction of a bug. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, checks,
+documentation, and releases.
 
-For a look inside, [core](crates/core) owns the widgets and terminal behavior;
-[dioxus](crates/dioxus) adds the component adapter. The
-[architecture guide](docs/architecture.md) explains how they fit together.
+## License
+
+[MIT](LICENSE).

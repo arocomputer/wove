@@ -14,6 +14,8 @@ session, or other consumer-specific concepts to the library.
 - Run ./x hooks once per worktree, ./x check for changes, ./x ui for rendering
   or terminal changes, and ./x bench for performance-sensitive changes.
 - Tests pin behavior, not implementation details. Keep docs and changelog current.
+- Keep crate-specific guides beside their crate. Root docs cover the workspace;
+  CONTRIBUTING.md covers contribution and release instructions.
 - `main` is the default branch. Use short type/name topic branches, such as
   fix/resize, unless the user authorizes committing directly to main.
   Follow the naming rules in CONTRIBUTING.md.

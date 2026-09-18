@@ -38,4 +38,4 @@ and virtualized lists are not implemented yet.
 
 [API documentation](https://docs.rs/wove) ·
 [Source and examples](https://github.com/intuitums/wove/tree/main) ·
-[Guide](https://github.com/intuitums/wove/blob/main/docs/start.md)
+[Guide](https://github.com/intuitums/wove/blob/main/crates/core/docs/start.md)

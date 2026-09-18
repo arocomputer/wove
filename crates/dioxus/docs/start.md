@@ -62,4 +62,4 @@ For custom widgets, register a tag with `Registry::register`. Its factory create
 a detached core node, and its attribute function validates and applies values.
 Pass the registry to `View::with_registry`. Hyphenated custom RSX tags work without
 an element schema; applications can define a schema for short tags and completion.
-See `crates/dioxus/tests/view.rs` for a tested custom tag.
+See the [adapter tests](../tests/view.rs) for a tested custom tag.
