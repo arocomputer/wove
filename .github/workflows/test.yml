@@ -9,8 +9,8 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  check:
-    name: test (${{ matrix.name }})
+  unit:
+    name: unit (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
@@ -31,7 +31,7 @@ jobs:
       - run: ./x check
       - if: runner.os != 'Windows'
         run: ./x ui
-  web:
+  docs:
     name: docs
     runs-on: ubuntu-latest
     timeout-minutes: 10
