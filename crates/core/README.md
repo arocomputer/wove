@@ -1,6 +1,6 @@
 # Wove
 
-A Rust library to build terminal user interfaces.
+A Rust library for building terminal user interfaces.
 
 Start with a few elements. Arrange them with flex or grid, handle input, and let
 Wove draw the terminal. Build directly in Rust, or use the optional Dioxus adapter

@@ -1,0 +1,35 @@
+---
+// Inline geometry paints with the page and chooses its color without JavaScript.
+---
+
+<svg
+  class="wove-mark"
+  width="170"
+  height="40"
+  viewBox="0 0 170 40"
+  role="img"
+  aria-label="Wove"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <style is:inline>
+    .wove-mark {
+      display: block;
+      max-width: 100%;
+      fill: #171717;
+    }
+    @media (prefers-color-scheme: dark) {
+      .wove-mark {
+        fill: #ededed;
+      }
+    }
+  </style>
+  <path
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+    d="M60 0H90V40H60V0ZM80 10H70V30H80V10Z"
+  />
+  <path d="M100 40H120V30H130V0H120V30H110V0H100V40Z" />
+  <path d="M40 40V30H30V0H20V30H10V0H0V40H40Z" />
+  <path d="M40 30H50V0H40V30Z" />
+  <path d="M170 0H140V40H170V30H150V10H160V20H170V0Z" />
+</svg>

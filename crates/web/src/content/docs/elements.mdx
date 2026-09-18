@@ -8,11 +8,23 @@ An element supplies measurement, drawing, and input behavior. The tree owns its 
 
 ## Built-in elements
 
-`Container` groups children. `Panel` adds a border. `Text` draws a string, while `RichText` draws styled spans with optional word wrapping. `Input` edits a single line; `Textarea` edits multiple logical lines. `Select` handles a list of choices, and `Scroll` clips its children to a viewport.
+- `Container` groups children.
+- `Panel` draws a border around its content.
+- `Text` draws a string.
+- `RichText` draws styled spans with optional word wrapping.
+- `Input` edits a single line.
+- `Textarea` edits multiple logical lines.
+- `Select` handles a list of choices.
+- `Scroll` clips its children to a viewport.
 
 ## Editing
 
-Both editable elements use `wove::text::Editor`. Cursor positions are byte offsets on grapheme boundaries. Shift extends a selection; Ctrl+Z undoes an edit. The multiline editor accepts pasted newlines and preserves the display column when moving vertically through short lines.
+Both editable elements use `wove::text::Editor`. Cursor positions are byte offsets
+on grapheme boundaries.
+
+- Shift extends a selection; Ctrl+Z undoes an edit.
+- The multiline editor accepts pasted newlines.
+- Moving vertically through short lines preserves the display column.
 
 Undo keeps at most 100 edits and stores changed text rather than a copy of the entire document. Text storage is currently a `String`; large-document editing still needs profiling.
 

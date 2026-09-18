@@ -1,13 +1,21 @@
 ---
 import "../styles/site.css";
+import "@fontsource-variable/jetbrains-mono";
+import monoFont from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
+import Wordmark from "../components/Wordmark.astro";
+import Sidebar from "../components/Sidebar.astro";
 interface Props {
   title?: string;
   description?: string;
+  sidebar?: boolean;
 }
 const {
   title = "Documentation",
   description = "Wove development documentation.",
+  sidebar = false,
 } = Astro.props;
+const isDocs = Astro.url.pathname.startsWith("/docs");
+const isHome = Astro.url.pathname === "/" || sidebar;
 ---
 
 <!doctype html>
@@ -15,16 +23,98 @@ const {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
+    <link
+      rel="preload"
+      href={monoFont}
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <meta name="description" content={description} />
-    <title>{title} · Wove</title>
+    <meta
+      name="theme-color"
+      content="#ffffff"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#000000"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#EDEDED" />
+    <title>{title === "Wove" ? "Wove · Terminal interfaces in Rust" : `${title} · Wove`}</title>
   </head>
-  <body>
-    <header>
-      <a href="/">Wove</a> · <a href="/docs/">Docs</a> ·{" "}
-      <a href="https://github.com/intuitums/wove">Source</a>
-    </header>
-    <main>
+  <body
+    class:list={[
+      sidebar ? "sidebar-page" : "inner-page",
+      { "docs-page": isDocs },
+    ]}
+  >
+    <a class="skip-link" href="#main" target="_self">
+      Skip to content
+    </a>
+    {sidebar ? (
+      <Sidebar />
+    ) : (
+      <header class="site-header">
+        <a class="wordmark" href="/" aria-label="Wove home">
+          <Wordmark />
+        </a>
+        <nav aria-label="Primary">
+          <a href="/docs/" aria-current={isDocs ? "true" : undefined}>
+            Docs
+          </a>
+          <a
+            href="/crates/"
+            aria-current={
+              Astro.url.pathname.startsWith("/crates") ? "page" : undefined
+            }
+          >
+            Crates
+          </a>
+          <a href="https://github.com/intuitums/wove">GitHub</a>
+        </nav>
+      </header>
+    )}
+    <main id="main" tabindex="-1">
       <slot />
     </main>
+    {isHome && (
+      <footer class="site-footer">
+        <span>
+          MIT license. <strong>© 2026</strong>{" "}
+          <a href="https://intuitum.sh">Intuitum</a>.
+        </span>
+      </footer>
+    )}
+    <script>
+      // Keep site navigation in this tab; open external destinations separately.
+      document
+        .querySelectorAll<HTMLAnchorElement>("a[href]")
+        .forEach((link) => {
+          const destination = new URL(link.href);
+          if (
+            ["https:", "http:"].includes(destination.protocol) &&
+            destination.origin !== location.origin
+          ) {
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+          }
+        });
+      // Make horizontally scrolling code examples keyboard accessible.
+      document.querySelectorAll<HTMLElement>(".prose pre").forEach((pre) => {
+        pre.tabIndex = 0;
+        pre.setAttribute("role", "group");
+        pre.setAttribute("aria-label", "Code example");
+      });
+      document
+        .querySelectorAll<HTMLTableElement>(".prose table")
+        .forEach((table) => {
+          table.tabIndex = 0;
+        });
+    </script>
   </body>
 </html>
