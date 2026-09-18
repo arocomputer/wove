@@ -1,2 +1,2 @@
 pyte==0.8.2
-wcwidth==0.2.13
+wcwidth==0.8.3
