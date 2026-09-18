@@ -1,6 +1,6 @@
-# Contributing to wove
+# Contributing to Wove
 
-wove is a general-purpose terminal UI library. Propose features with a concrete
+Wove is a general-purpose terminal UI library. Propose features with a concrete
 use case and a small example. Keep application policy outside the library.
 
 Install Rust through rustup and Python 3.12 or newer. The checked-in toolchain
@@ -37,7 +37,7 @@ crate in its README. Repository-wide architecture and roadmap notes belong in
 
 ## Naming
 
-Use short, concrete names. The project is `wove`; crate imports are `wove`
+Use short, concrete names. The project is Wove; crate imports are `wove`
 and `wove_dioxus`. Prefer
 `Tree`, `Id`, `Text`, and `Scroll` to compound names with generic suffixes
 such as Manager, Handler, Provider, or Renderable. Use module paths to supply

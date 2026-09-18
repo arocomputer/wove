@@ -1,6 +1,7 @@
-# Working on wove
+# Working on Wove
 
-wove is a Rust library to build terminal user interfaces. Keep the name lowercase.
+Wove is a Rust library to build terminal user interfaces. Capitalize the project
+name in prose; keep package names and Rust imports lowercase.
 It must stand on its own across applications. Do not add agent, provider,
 session, or other consumer-specific concepts to the library.
 

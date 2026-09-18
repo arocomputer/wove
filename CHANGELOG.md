@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Update the wove wordmark and README with a runnable getting-started example.
+- Update the Wove wordmark and README with a runnable getting-started example.
 - Rename the source repository to `intuitums/wove`.
 
 ## 0.2.0

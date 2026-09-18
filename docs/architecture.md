@@ -1,6 +1,6 @@
 # Architecture
 
-wove has two crates. `core` owns terminal behavior; `dioxus` depends on its public
+Wove has two crates. `core` owns terminal behavior; `dioxus` depends on its public
 API. Core never depends on Dioxus. There is no facade crate and no application
 policy in either crate.
 
@@ -53,7 +53,7 @@ An adapter must use the same public tree operations available to every consumer.
 
 OpenTUI's core owns persistent renderables, layout, input, and widgets. Its React
 and Solid packages translate their respective reconciliation operations into
-that core. That separation informs wove's crate boundary. Its source was studied
+that core. That separation informs Wove's crate boundary. Its source was studied
 at commit `4954312d749f71e80664aa8b0e8a75384186eb99` in
 [anomalyco/opentui](https://github.com/anomalyco/opentui/tree/4954312d749f71e80664aa8b0e8a75384186eb99/packages).
-wove does not translate OpenTUI's TypeScript API or reproduce its Zig renderer.
+Wove does not translate OpenTUI's TypeScript API or reproduce its Zig renderer.

@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/dark.svg">
-    <img src="docs/assets/logo/light.svg" alt="wove logo" width="255" height="60">
+    <img src="docs/assets/logo/light.svg" alt="Wove logo" width="255" height="60">
   </picture>
 </p>
 
@@ -10,7 +10,7 @@
   <a href="https://github.com/intuitums/wove/actions/workflows/checks.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/intuitums/wove/checks.yml?branch=main&amp;style=flat-square" /></a>
 </div>
 
-wove is a Rust library to build terminal user interfaces.
+Wove is a Rust library to build terminal user interfaces.
 
 - Build with Rust widgets or Dioxus components and signals.
 - Arrange content with flexbox and grid layouts.
@@ -18,7 +18,7 @@ wove is a Rust library to build terminal user interfaces.
 - Handle keyboard and mouse input, with text selection and undo.
 - Test rendering and input without opening a terminal.
 
-wove is early in development, and its API is still changing.
+Wove is early in development, and its API is still changing.
 
 [Documentation](crates/core/docs/start.md) | [API reference](https://docs.rs/wove) | [Roadmap](docs/roadmap.md)
 
@@ -29,7 +29,7 @@ wove is early in development, and its API is still changing.
 
 ## Get started
 
-Add wove to your Rust project:
+Add Wove to your Rust project:
 
 ```sh
 cargo add wove

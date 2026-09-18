@@ -17,7 +17,7 @@ use wove_dioxus::{elements as dioxus_elements, View};
 fn app() -> Element {
     rsx! {
         view { direction: "column", gap: 1,
-            text { content: "Hello from wove" }
+            text { content: "Hello from Wove" }
             input { placeholder: "Type here" }
         }
     }
