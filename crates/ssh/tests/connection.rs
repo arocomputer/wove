@@ -244,3 +244,70 @@ async fn cancelling_server_releases_live_applications() {
     .await
     .unwrap();
 }
+
+/// A consumer panic must restore the remote terminal and close its channel.
+struct Panicking;
+impl App for Panicking {
+    fn frame(&mut self, _: u16, _: u16) -> Result<&Buffer, Error> {
+        panic!("consumer render failed");
+    }
+    fn event(&mut self, _: Event) -> Result<bool, Error> {
+        Ok(true)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn application_panic_restores_terminal_and_exits_with_failure() {
+    let host = key();
+    let host_public = host.public_key().clone();
+    let allowed = Arc::new(key());
+    let public = allowed.public_key().clone();
+    let server = Server::new(host, move |_, key| key == &public, |_| Ok(Panicking));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (stop, stopped) = oneshot::channel();
+    let running = tokio::spawn(server.serve(listener, async {
+        let _ = stopped.await;
+    }));
+    let mut client = client::connect(
+        Arc::new(client::Config::default()),
+        address,
+        Client(host_public),
+    )
+    .await
+    .unwrap();
+    assert!(client
+        .authenticate_publickey("guest", PrivateKeyWithHashAlg::new(allowed, None))
+        .await
+        .unwrap()
+        .success());
+    let mut channel = client.channel_open_session().await.unwrap();
+    channel
+        .request_pty(true, "xterm", 40, 8, 0, 0, &[])
+        .await
+        .unwrap();
+    assert!(matches!(message(&mut channel).await, ChannelMsg::Success));
+    channel.request_shell(true).await.unwrap();
+    let mut restored = false;
+    let mut status = None;
+    loop {
+        match message(&mut channel).await {
+            ChannelMsg::Data { data } => {
+                restored |= data.windows(8).any(|bytes| bytes == b"\x1b[?1049l");
+            }
+            ChannelMsg::ExitStatus { exit_status } => {
+                status = Some(exit_status);
+            }
+            ChannelMsg::Close => break,
+            _ => {}
+        }
+    }
+    assert!(restored);
+    assert_eq!(status, Some(1));
+    stop.send(()).unwrap();
+    timeout(Duration::from_secs(5), running)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+}

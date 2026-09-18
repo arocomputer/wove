@@ -1,83 +1,208 @@
 # Contributing to Wove
 
-Wove is a general-purpose terminal UI library. Propose features with a concrete
-use case and a small example. Keep application policy outside the library.
+Wove is a Rust library for building terminal user interfaces. Good contributions solve
+a concrete application need, keep dependencies optional where practical, and leave
+the code easy to understand and verify. Explain why a change needs a new crate,
+configuration option, or abstraction before adding one.
 
-Install Rust through rustup and Python 3.12 or newer. The checked-in toolchain
-file selects the compiler. Each contributing worktree installs hooks once:
+## Getting set up
 
 ```sh
+git clone https://github.com/intuitums/wove
+cd wove
 ./x hooks
-./x check
-./x ui
+cargo build --workspace
+./x test
 ```
 
-`./x check` checks formatting, lints, contracts, documentation, package contents,
-and repository rules. CI uses the same entry point. `./x ui` checks real PTYs
-on Unix and retains frames under `artifacts/ui/`. The optional
-`cargo run -p wove --release --example timing` command prints local frame timings.
-It has no thresholds and does not run in CI.
+Rustup uses the pinned `rust-toolchain.toml`. Install Python 3.12 or newer for
+repository tooling and Bun 1.4.2 or newer for documentation work. Contributors
+using the managed `~/Code` collection should follow its README and use a worktree.
 
-Required PR checks are `unit (linux)`, `unit (macos)`, `unit (windows)`,
-`e2e (linux)`, `e2e (macos)`, `docs`, and `audit`. Unit jobs run `./x check`,
-E2E jobs run `./x ui`, and the docs job runs `./x web`. The security audit runs
-on every PR so required checks cannot be skipped by path filters.
+Read [AGENTS.md](AGENTS.md) for the code map, focused test commands, and library
+boundaries. The [architecture guide](crates/web/src/content/docs/architecture.mdx)
+explains ownership and rendering. These rules apply to people and agents alike.
 
-Add focused tests for behavior changes. A regression test should fail for the
-original defect. Document public contracts beside the API and update guides
-when behavior changes. GitHub generates release notes from merged pull requests.
+## Commit checks
 
-Use conventional commit titles, such as `fix: preserve wide glyphs on resize`.
-Keep each change about one concern. Name branches `feat/input`,
-`fix/resize`, or another conventional type. Never commit secrets.
+Run `./x hooks` once in each contributing checkout or worktree. Setup preserves
+an existing executable pre-commit hook and refuses to silently disable other hooks.
+It configures only this worktree's hook path.
 
-Before 1.0, incompatible public API changes increment the minor version.
-Releases require an explicit maintainer decision; commits do not publish crates.
+The hook checks staged whitespace, conflict markers, and Rust formatting. It reads
+the staged files, leaves unstaged edits alone, and never rewrites or stages content.
+Builds and tests remain separate. CI runs the repository guard and full formatting
+checks, so local hooks are not the only verification.
+
+## Reporting issues
+
+Use the [bug or feature forms](https://github.com/intuitums/wove/issues/new/choose).
+A bug report needs a minimal example, expected and actual behavior, enabled Cargo
+features, and the affected version or commit. For terminal bugs, include the
+terminal, operating system, and relevant resize or input sequence.
+
+Feature requests should start with an application use case. Explain why existing
+elements or a custom element cannot meet it. Implementation sketches are welcome;
+a new package is not a requirement for a new capability.
+
+Report security-sensitive findings privately using [SECURITY.md](SECURITY.md).
+Never paste host keys, tokens, private application data, or unreviewed logs.
+
+## Before opening a PR
+
+```sh
+./x check    # formatting, lint, tests, rustdoc, packaged consumers, guard
+./x ui       # Unix PTY frames, input, resize, terminal cleanup
+./x web      # documentation types and static site build
+```
+
+Run `./x check` for every submission, `./x ui` for rendering or terminal/input
+changes, and `./x web` for documentation or website changes.
+
+CI is organized by library package. Every PR runs the following checks; workflows
+do not filter by changed paths, so required results are always reported.
+
+| Required check | Local command | Coverage |
+| --- | --- | --- |
+| Core - Build and Test | `./x core`, `./x ui` | All features, headless use, individual formatting features, and real terminal interaction |
+| Dioxus - Build and Test | `./x dioxus` | Component adapter with and without its default features |
+| Keymap - Build and Test | `./x keymap` | Command bindings and key sequences |
+| SSH - Build and Test | `./x ssh` | Authentication, remote input, connection lifecycle, and cleanup |
+| Validate | `./x quality` | Formatting, Clippy, rustdoc, examples, packaged consumers, and repository guards |
+| Build | `./x web` | Astro checks and the static site build |
+| Audit | `cargo audit` | Dependency advisories |
+
+Package and Quality workflows run on Linux, macOS, and Windows. Core runs the
+PTY suite on Linux and macOS. Each matrix has one required summary check that
+passes only when every platform succeeds, including terminal checks where
+applicable. Failed, cancelled, and skipped platform results cannot pass the
+summary. Audit also runs weekly to catch new advisories without a source change.
+
+GitHub displays workflow and job names together. Shared results appear as
+`Quality / Validate`, `Website / Build`, and `Dependencies / Audit`; package
+results keep unique summary names such as `Core / Core - Build and Test`.
+
+`./x check` combines Quality with workspace-wide tests. The package commands run
+their own tests and doctests independently, avoiding features enabled only by
+sibling crates in a workspace test run.
+
+A regression test must fail on the original defect. Keep tests focused on public
+behavior, and include a captured frame when appearance changes. Do not weaken
+assertions to make a regression pass. Update comments and guides with code changes.
+Describe user-visible changes and migration steps in the PR so maintainers can
+prepare release notes. GitHub Releases are the changelog; do not keep a second
+changelog file or roadmap.
+
+The optional `cargo run -p wove --release --example timing` command measures local
+frame timings. Include the setup and before/after measurements when claiming a
+speed improvement. Wove has no performance budgets or benchmark CI gate.
+
+## Review
+
+Use a short branch such as `fix/input-selection`. PR titles use conventional
+commits, for example `fix(core): preserve selection when undoing deletion`.
+Optional scopes are `core`, `dioxus`, `keymap`, `ssh`, `web`, `infra`, and `docs`.
+The title should make sense as a squash commit on main.
+
+Use the [PR template](.github/pull_request_template.md). Link a related issue when
+one exists, select the change type, explain the problem and why the change works,
+and list verification commands and results. Include screenshots or captured frames
+for visual changes; remove that section when it does not apply. Write enough detail
+to review the change without a fixed sentence limit.
+
+Keep each PR about one coherent change; leave unrelated cleanup for another
+contribution. API and Cargo feature changes need migration notes and updates to
+affected adapters and examples. Do not promise compatibility or performance that
+has not been checked.
+
+PRs do not use labels. Change types belong in the title and template, not automatic
+path-based or dependency labels. Issues can still use labels. Template guidance is
+for review; automation does not label or close PRs for template formatting.
+
+Maintainers decide whether a change merges. [CODEOWNERS](.github/CODEOWNERS) calls
+out terminal output, SSH, dependencies, and automation for review; it does not by
+itself configure branch protection. Passing checks are evidence for review, not
+permission to merge or publish.
+
+Main requires a pull request and a squash merge. The branch must be current,
+review conversations resolved, and all seven checks above successful.
+The active repository rule has no bypass actors.
+
+## AI/LLM assistance
+
+AI-assisted issues and pull requests are welcome when the contributor owns the
+result and can explain it.
+
+- Review generated code, tests, prose, and commit messages before requesting review.
+- Do not attribute commits to AI/LLM tools as author, co-author, committer, or
+  signatory. Do not add `Assisted-by`, AI `Co-authored-by`, or model/harness footers.
+- Answer maintainer questions yourself. Generated text is input to your response,
+  not a substitute for understanding the change.
+- Keep one AI-assisted pull request open at a time.
+
+If you cannot explain or maintain the proposed change, revise or close the
+submission rather than passing that responsibility to reviewers.
 
 ## Documentation
 
-Published guides and architecture live in `crates/web/src/content/docs/`.
-Crate READMEs introduce their package and link to these guides. Contribution and
-release instructions live here.
-
-## Naming
-
-Core building blocks are elements. Components compose elements through an
-optional framework adapter. Nodes identify elements within a tree.
-
-Use short, concrete names. The project is Wove; crate imports are `wove`
-and `wove_dioxus`. Prefer
-`Tree`, `Id`, `Text`, and `Scroll` to compound names with generic suffixes
-such as Manager, Handler, Provider, or Renderable. Use module paths to supply
-context instead of repeating it in every type name.
-
-Use conventional abbreviations only when they are familiar, such as `Rect`,
-`fg`, and `bg`. Keep meaningful Rust snake_case names when two words are needed.
-Prefer a single word for files and directories; use a directory when it groups
-related files. Preserve ecosystem names such as `rust-toolchain.toml` and
-`pre-commit`, which tools recognize. Do not rename dependencies or command flags.
+Published guides live in `crates/web/src/content/docs/`. Crate READMEs introduce
+their package and link to the guides. Root markdown files describe repository
+policy. Keep one authoritative account of each contract; use Git history for
+past decisions. Web is a Bun/Astro package under `crates/`, excluded from Cargo.
 
 ## Releases
 
+Wove is in development. Workspace version 0.0.1 is unpublished; the premature
+`wove` 0.2.0 package is yanked. Commits and pull requests do not authorize releases.
+
 Publishable packages are `wove`, `wove-dioxus`, `wove-keymap`, and `wove-ssh`.
-`crates/examples` is private. `crates/web` uses Bun and is excluded from Cargo. The core has no dependency on the other packages.
+Examples are private and Web is not a Cargo package.
 
-The workspace version is 0.0.1 and has not been published. The earlier `wove`
-0.2.0 package is yanked on crates.io. The other packages have not been published.
+After a maintainer explicitly authorizes a release:
 
-1. Run `./x check` and `./x ui` on the release commit.
-2. Choose the workspace version, update the adapter's exact core dependency,
-   update Cargo.lock, and commit.
-3. `./x package` builds the publishable archives and runs an external consumer against their
-   extracted contents, with and without the terminal backend.
-4. After a maintainer authorizes registry publication, publish core first, then
-   the dependent packages. Verify package ownership and credentials before the first release.
-5. Tag the release commit `v<version>` and push the tag. The workflow checks the
-   version and publishes the archives and their checksums to a GitHub release.
-   GitHub generates the release notes. It does not publish to crates.io.
+1. Choose the version and update the workspace version and every exact internal
+   dependency. Update Cargo.lock and migration guidance.
+2. Run `./x check`, `./x ui`, and `./x web` on the release commit. Review platform
+   CI and the scheduled dependency audit, including maintenance warnings.
+3. Inspect the archives produced by `./x package`. Its external consumer verifies
+   the extracted packages with optional features enabled and disabled.
+4. If registry publication is authorized, publish core before its dependent
+   packages. Verify owners and credentials; never place tokens in chat or Git.
+5. Push `v<version>` only when the GitHub release is authorized. The `publish`
+   workflow checks the version and uploads crate archives and checksums to a
+   draft GitHub release. Generated PR notes are a starting point for editing.
+6. Review the draft body using the format below, then publish it on GitHub. The
+   workflow does not publish packages to crates.io.
 
-Actions are pinned by commit. Only the release job has contents write permission.
-Do not publish from a pull request.
+Before 1.0, a published incompatible API change increments the minor version.
+For the unpublished initial version, describe breaking changes in the PR.
+Never publish from a pull request or weaken tag protection to run a release.
+
+## Release notes
+
+[GitHub Releases](https://github.com/intuitums/wove/releases) are the published
+history. Write a short release title and introduction, followed by these groups
+in order. Omit empty groups.
+
+```markdown
+### Release title
+
+A short explanation of the changes that matter to callers.
+
+### New features
+- Describe the new capability and where to use it.
+
+### Improvements
+- **Upgrade:** Describe required migration steps before other improvements.
+
+### Fixes
+- **Security:** Describe security fixes before other fixes.
+```
+
+Use concrete behavior, not commit subjects or implementation inventories.
+The release tag provides the version and GitHub supplies the publication date.
+Keep unreleased details in PRs until preparing a draft release. A future website
+changelog should consume published releases rather than duplicate their contents.
 
 ## Website
 
@@ -119,3 +244,8 @@ The production origin is `https://wovetui.com`, configured in
 
 GitHub Pages manages the custom domain in repository settings. This Actions
 deployment does not require a `CNAME` file in the build output.
+
+
+## License
+
+Contributions are released under the repository's [MIT license](LICENSE).

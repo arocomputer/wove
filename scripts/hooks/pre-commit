@@ -1,5 +1,8 @@
 #!/bin/sh
-# Reject whitespace defects and unformatted Rust before committing.
+# Preserve existing checks, then inspect staged content without touching the worktree.
 set -eu
-git diff --cached --check
-cargo fmt --all --check
+previous=$(git config --get wove.previousPreCommit || true)
+if [ -n "$previous" ] && [ -x "$previous" ]; then
+  "$previous" "$@"
+fi
+exec python3 scripts/hooks/check.py

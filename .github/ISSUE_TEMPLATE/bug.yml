@@ -1,17 +1,40 @@
-name: Bug report
-description: Report incorrect behavior in wove.
+name: Bug
+description: Report incorrect behavior in Wove.
+labels: [bug]
 body:
+  - type: markdown
+    attributes:
+      value: Report security-sensitive findings privately using our [security policy](https://github.com/intuitums/wove/blob/main/SECURITY.md). Remove credentials and private application content from examples and logs.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include expected behavior, actual behavior, and relevant errors.
+    validations:
+      required: true
   - type: textarea
     id: reproduce
     attributes:
       label: Reproduction
-      description: Include a minimal example and the expected and actual behavior.
+      description: Provide a minimal Rust example or repository and the commands or input sequence that trigger the problem.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Include affected Wove packages and enabled Cargo features.
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
       label: Environment
-      description: Include the wove revision, Rust version, operating system, and terminal.
+      description: Include Rust version, operating system, terminal and version, and whether this happens locally or over SSH.
     validations:
       required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Frames or logs
+      description: Attach a screenshot, captured frame, or relevant log excerpt after checking it for private information.

@@ -129,16 +129,27 @@ impl Editor {
         self.state.cursor = self.text().len();
     }
     pub fn backspace(&mut self) {
-        if self.selection().is_empty() {
-            self.left(true);
-        }
-        self.insert("");
+        self.erase(true);
     }
     pub fn delete(&mut self) {
+        self.erase(false);
+    }
+    /// Keep the user's selection separate from the range selected for deletion.
+    fn erase(&mut self, backward: bool) {
+        let before = (self.state.cursor, self.state.anchor);
         if self.selection().is_empty() {
-            self.right(true);
+            if backward {
+                self.left(true);
+            } else {
+                self.right(true);
+            }
+        }
+        if self.selection().is_empty() {
+            (self.state.cursor, self.state.anchor) = before;
+            return;
         }
         self.insert("");
+        self.undo.back_mut().expect("deletion recorded").before = before;
     }
     /// Move to a byte offset, snapping backward to a grapheme boundary.
     pub fn seek(&mut self, offset: usize, extend: bool) {

@@ -1,1 +1,15 @@
-* @fschrhunt
+# Maintainer ownership and paths requiring particular care during review.
+# This file routes review requests; branch protection is configured separately.
+*                                      @fschrhunt
+/crates/core/src/terminal/              @fschrhunt
+/crates/core/src/render/                @fschrhunt
+/crates/ssh/                            @fschrhunt
+/crates/*/Cargo.toml                    @fschrhunt
+/Cargo.toml                            @fschrhunt
+/Cargo.lock                            @fschrhunt
+/.github/                              @fschrhunt
+/scripts/                              @fschrhunt
+/x                                     @fschrhunt
+/AGENTS.md                             @fschrhunt
+/CONTRIBUTING.md                       @fschrhunt
+/SECURITY.md                           @fschrhunt

@@ -1,10 +1,23 @@
-name: Feature request
-description: Describe a terminal application use case.
+name: Feature
+description: Describe a terminal application need.
+labels: [enhancement]
 body:
   - type: textarea
-    id: use_case
+    id: problem
     attributes:
-      label: Use case
-      description: What application behavior needs this, and how would you use the API?
+      label: What problem does this solve?
+      description: Describe the application behavior you need before proposing an implementation.
     validations:
       required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Existing options
+      description: What have you tried with existing elements, custom elements, or adapters?
+    validations:
+      required: true
+  - type: textarea
+    id: sketch
+    attributes:
+      label: Proposed API or example
+      description: An API sketch or small usage example is welcome but optional.
