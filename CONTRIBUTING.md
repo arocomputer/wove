@@ -64,10 +64,10 @@ do not filter by changed paths, so required results are always reported.
 
 | Required check | Local command | Coverage |
 | --- | --- | --- |
-| Core | `./x core`, `./x ui` | All features, headless use, individual formatting features, and real terminal interaction |
-| Dioxus | `./x dioxus` | Component adapter with and without its default features |
-| Keymap | `./x keymap` | Command bindings and key sequences |
-| SSH | `./x ssh` | Authentication, remote input, connection lifecycle, and cleanup |
+| Core - Build and Test | `./x core`, `./x ui` | All features, headless use, individual formatting features, and real terminal interaction |
+| Dioxus - Build and Test | `./x dioxus` | Component adapter with and without its default features |
+| Keymap - Build and Test | `./x keymap` | Command bindings and key sequences |
+| SSH - Build and Test | `./x ssh` | Authentication, remote input, connection lifecycle, and cleanup |
 | Quality | `./x quality` | Formatting, Clippy, rustdoc, examples, packaged consumers, and repository guards |
 | Website | `./x web` | Astro checks and the static site build |
 | Audit | `cargo audit` | Dependency advisories |

@@ -1,4 +1,4 @@
-name: SSH
+name: Build SSH
 on:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
-    name: ${{ matrix.platform }}
+    name: SSH - ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - run: ./x ssh
   complete:
-    name: SSH
+    name: SSH - Build and Test
     needs: test
     if: always()
     runs-on: ubuntu-latest

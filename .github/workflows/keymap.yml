@@ -1,4 +1,4 @@
-name: Keymap
+name: Build Keymap
 on:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
-    name: ${{ matrix.platform }}
+    name: Keymap - ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - run: ./x keymap
   complete:
-    name: Keymap
+    name: Keymap - Build and Test
     needs: test
     if: always()
     runs-on: ubuntu-latest

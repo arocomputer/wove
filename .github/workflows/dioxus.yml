@@ -1,4 +1,4 @@
-name: Dioxus
+name: Build Dioxus
 on:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
-    name: ${{ matrix.platform }}
+    name: Dioxus - ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - run: ./x dioxus
   complete:
-    name: Dioxus
+    name: Dioxus - Build and Test
     needs: test
     if: always()
     runs-on: ubuntu-latest

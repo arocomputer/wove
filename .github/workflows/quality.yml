@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
-    name: ${{ matrix.platform }}
+    name: Quality - ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
