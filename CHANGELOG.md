@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.0
+
+- Name the core package `wove` and the optional adapter `wove-dioxus`.
+
 - Replace the initial drawing API with a retained widget tree in `crates/core`.
 - Add flex and grid layout, persistent node identity, focus, bubbling input,
   clipped scrolling, and custom widgets.

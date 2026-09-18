@@ -1,10 +1,10 @@
 use dioxus::prelude::*;
 use dioxus_core::AttributeValue;
-use weft_core::{
+use wove::{
     widgets::{Input, Text},
     Event as InputEvent, Id, Key, Tree,
 };
-use weft_dioxus::{elements as dioxus_elements, View};
+use wove_dioxus::{elements as dioxus_elements, View};
 fn descendants(tree: &Tree, id: Id) -> Vec<Id> {
     let mut out = vec![id];
     for child in tree.children(id).unwrap() {
@@ -80,13 +80,13 @@ fn invalid_attributes_fail_explicitly() {
     }
     assert!(matches!(
         View::new(VirtualDom::new(app)),
-        Err(weft_dioxus::Error::Unsupported(_))
+        Err(wove_dioxus::Error::Unsupported(_))
     ));
 }
 
 #[test]
 fn custom_tags_use_custom_widgets_without_changing_core() {
-    use weft_dioxus::{Error, Registry};
+    use wove_dioxus::{Error, Registry};
     fn create(t: &mut Tree) -> Result<Id, Error> {
         Ok(t.create(Text::new("custom"))?)
     }
@@ -128,7 +128,7 @@ fn stop_propagation_keeps_native_editing_and_skips_parent_listener() {
 #[test]
 fn typed_styles_reach_the_native_frame() {
     fn app() -> Element {
-        rsx! {text {content:"styled",style:AttributeValue::any_value(weft_core::Style{bold:true,..Default::default()})}}
+        rsx! {text {content:"styled",style:AttributeValue::any_value(wove::Style{bold:true,..Default::default()})}}
     }
     let mut v = View::new(VirtualDom::new(app)).unwrap();
     assert!(v.frame(10, 2).unwrap().cell(0, 0).unwrap().style().bold);
@@ -149,7 +149,7 @@ fn input_notifications_update_signals_without_resetting_undo() {
     assert!(text(&mut v).contains("Value: a界"));
     v.send(InputEvent::Key(
         Key::Char('z'),
-        weft_core::Modifiers {
+        wove::Modifiers {
             ctrl: true,
             ..Default::default()
         },

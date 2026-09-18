@@ -1,7 +1,7 @@
 # Releasing
 
-The workspace packages are `weft-core` and `weft-dioxus`. No registry release has
-been made. Package names remain provisional until the first publication.
+The workspace packages are `wove` and `wove-dioxus`. The core package lives
+in `crates/core`; the adapter lives in `crates/dioxus`.
 
 1. Run `./x check`, `./x ui`, and `./x bench` on the release commit.
 2. Choose the workspace version, update the adapter's exact core dependency,

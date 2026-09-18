@@ -1,4 +1,4 @@
-use weft_core::{text::Editor, Buffer, Style};
+use wove::{text::Editor, Buffer, Style};
 #[test]
 fn selection_replaces_whole_graphemes_and_undo_restores_it() {
     let mut e = Editor::new("a👩‍💻e\u{301}");
@@ -26,7 +26,7 @@ fn overwriting_a_wide_continuation_erases_the_entire_glyph() {
     let mut b = Buffer::new(4, 1);
     let area = b.area();
     b.write(area, "界x", Style::default());
-    b.write(weft_core::Rect::new(1, 0, 3, 1), "a", Style::default());
+    b.write(wove::Rect::new(1, 0, 3, 1), "a", Style::default());
     assert_eq!(b.cell(0, 0).unwrap().symbol(), " ");
     assert_eq!(b.cell(1, 0).unwrap().symbol(), "a");
     assert_eq!(b.cell(2, 0).unwrap().symbol(), "x");

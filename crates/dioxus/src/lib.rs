@@ -1,4 +1,4 @@
-//! Dioxus components rendered by weft's retained tree.
+//! Dioxus components rendered by wove's retained tree.
 #![forbid(unsafe_code)]
 pub mod elements;
 mod host;
@@ -7,7 +7,7 @@ pub use dioxus_core::AttributeValue;
 use dioxus_core::{Event as UiEvent, VirtualDom};
 pub use host::{Error, Registry};
 use std::{any::Any, rc::Rc};
-use weft_core::{Buffer, Dispatch, Event, Tree};
+use wove::{Buffer, Dispatch, Event, Tree};
 
 /// Owns a Dioxus application and its terminal nodes. The caller owns scheduling.
 pub struct View {
@@ -27,7 +27,7 @@ impl View {
     pub fn tree(&self) -> &Tree {
         &self.host.tree
     }
-    pub fn focus(&mut self, id: Option<weft_core::Id>) -> Result<(), Error> {
+    pub fn focus(&mut self, id: Option<wove::Id>) -> Result<(), Error> {
         self.host.check()?;
         self.host.tree.focus(id)?;
         Ok(())
@@ -70,7 +70,7 @@ impl View {
         let input = std::iter::successors(target, |id| self.host.tree.parent(*id)).find_map(|id| {
             self.host
                 .tree
-                .get::<weft_core::widgets::Input>(id)
+                .get::<wove::widgets::Input>(id)
                 .ok()
                 .map(|w| (id, w.editor.text().to_owned()))
         });
@@ -79,7 +79,7 @@ impl View {
             let value = self
                 .host
                 .tree
-                .get::<weft_core::widgets::Input>(id)?
+                .get::<wove::widgets::Input>(id)?
                 .editor
                 .text();
             if value != before {
@@ -89,7 +89,7 @@ impl View {
         self.render()?;
         Ok(result)
     }
-    fn emit(&self, target: Option<weft_core::Id>, name: &str, data: Rc<dyn Any>) -> bool {
+    fn emit(&self, target: Option<wove::Id>, name: &str, data: Rc<dyn Any>) -> bool {
         let mut node = target;
         while let Some(id) = node {
             if let Some(element) = self.host.listener(id, name) {

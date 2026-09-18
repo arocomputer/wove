@@ -1,8 +1,8 @@
-# weft
+# wove
 
 A Rust library to build terminal user interfaces.
 
-weft owns a persistent tree of widgets. Layout, focus, input, and rendering work
+wove owns a persistent tree of widgets. Layout, focus, input, and rendering work
 without a component framework. An optional Dioxus adapter adds RSX, signals, and
 component lifecycles over the same tree.
 
@@ -13,14 +13,14 @@ crates/
 ```
 
 The design follows OpenTUI's separation between its core and framework adapters.
-weft uses Rust widgets and Taffy layout, with no JavaScript runtime or native FFI
+wove uses Rust widgets and Taffy layout, with no JavaScript runtime or native FFI
 boundary in its own code. It is independent of any consuming application.
 
 ## Try it
 
 ```sh
-cargo run -p weft-core --example gallery
-cargo run -p weft-dioxus --example counter
+cargo run -p wove --example gallery
+cargo run -p wove-dioxus --example counter
 ```
 
 The [captured gallery](docs/assets/gallery.txt) demonstrates filtering, selection,
@@ -31,13 +31,13 @@ Escape or Ctrl-C.
 ## Use the core
 
 ```rust
-use weft_core::{Tree, widgets::Text};
+use wove::{Tree, widgets::Text};
 
 let mut tree = Tree::new();
 let greeting = tree.add(tree.root(), Text::new("Hello, terminal"))?;
 tree.update::<Text>(greeting, |text| text.content.push('!'))?;
 let frame = tree.frame(80, 24)?;
-# Ok::<(), weft_core::Error>(())
+# Ok::<(), wove::Error>(())
 ```
 
 Widgets retain state when moved. Removing a subtree drops its widgets and

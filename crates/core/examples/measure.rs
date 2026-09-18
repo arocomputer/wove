@@ -1,9 +1,9 @@
 //! Reproducible construction, changed-frame, and cached-frame measurements.
 use std::{hint::black_box, time::Instant};
-use weft_core::{widgets::Text, Tree};
+use wove::{widgets::Text, Tree};
 fn main() {
     let mut tree = Tree::new();
-    let text = tree.add(tree.root(), Text::new("weft")).unwrap();
+    let text = tree.add(tree.root(), Text::new("wove")).unwrap();
     tree.frame(100, 30).unwrap();
     if std::env::args().any(|a| a == "--startup") {
         return;

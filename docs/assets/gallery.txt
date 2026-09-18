@@ -1,4 +1,4 @@
-weft · widget gallery
+wove · widget gallery
 scroll
 Scroll            ┌────────────────────────────────────────────────────────────┐
                   │Scroll                                                      │

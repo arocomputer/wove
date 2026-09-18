@@ -109,14 +109,14 @@ impl Terminal {
     pub fn new() -> io::Result<Self> {
         if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
             return Err(io::Error::other(
-                "weft needs an interactive stdin and stdout",
+                "wove needs an interactive stdin and stdout",
             ));
         }
         if OWNED
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            return Err(io::Error::other("a weft terminal is already active"));
+            return Err(io::Error::other("a wove terminal is already active"));
         }
         let mut session = Self {
             output: io::stdout(),

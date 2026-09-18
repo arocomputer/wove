@@ -1,6 +1,6 @@
-# Working on weft
+# Working on wove
 
-weft is a Rust library to build terminal user interfaces. Keep the name lowercase.
+wove is a Rust library to build terminal user interfaces. Keep the name lowercase.
 It must stand on its own across applications. Do not add agent, provider,
 session, or other consumer-specific concepts to the library.
 

@@ -1,6 +1,6 @@
-# Contributing to weft
+# Contributing to wove
 
-weft is a general-purpose terminal UI library. Propose features with a concrete
+wove is a general-purpose terminal UI library. Propose features with a concrete
 use case and a small example. Keep application policy outside the library.
 
 Install Rust through rustup and Python 3.12 or newer. The checked-in toolchain
@@ -32,8 +32,8 @@ See [releasing](contributing/releases.md).
 
 ## Naming
 
-Use short, concrete names. The project is `weft`; crate imports are `weft_core`
-and `weft_dioxus`. Prefer
+Use short, concrete names. The project is `wove`; crate imports are `wove`
+and `wove_dioxus`. Prefer
 `Tree`, `Id`, `Text`, and `Scroll` to compound names with generic suffixes
 such as Manager, Handler, Provider, or Renderable. Use module paths to supply
 context instead of repeating it in every type name.

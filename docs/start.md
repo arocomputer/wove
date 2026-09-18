@@ -1,18 +1,18 @@
 # Start
 
 Use Rust 1.98 or newer. Until registry publication, depend on a reviewed Git
-revision or a local checkout. The Cargo packages are `weft-core` and
-`weft-dioxus`; their Rust imports are `weft_core` and `weft_dioxus`.
+revision or a local checkout. The Cargo packages are `wove` and
+`wove-dioxus`; their Rust imports are `wove` and `wove_dioxus`.
 
 ```toml
 [dependencies]
-weft-core = { path = "../weft/crates/core" }
+wove = { path = "../wove/crates/core" }
 ```
 
 ## Build a tree
 
 ```rust
-use weft_core::{Tree, widgets::{Input, Text}, terminal};
+use wove::{Tree, widgets::{Input, Text}, terminal};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tree = Tree::new();
@@ -30,7 +30,7 @@ invalidates layout and paint. `remove` drops a subtree. IDs cannot be reused or
 passed to another tree.
 
 The root fills the frame and arranges children in a column. Set a node's `Layout`
-using the types in `weft_core::layout` for flex, grid, spacing, and alignment.
+using the types in `wove::layout` for flex, grid, spacing, and alignment.
 Lengths are terminal cells. `Panel` reserves its border in its default layout;
 when replacing a layout, start from `tree.layout(id)?.clone()` to retain defaults.
 Text defaults to clipping. Set `Text::wrap` for hard wrapping at grapheme boundaries.
@@ -60,14 +60,14 @@ own loop. Do not print over a live session without invalidating its renderer.
 ## Test without a terminal
 
 ```rust
-use weft_core::{testing::Screen, widgets::Input, Key};
+use wove::{testing::Screen, widgets::Input, Key};
 
 let mut screen = Screen::new(20, 3);
 let input = screen.tree.add(screen.tree.root(), Input::default())?;
 screen.tree.focus(Some(input))?;
 screen.send(Key::Char('界'))?;
 assert_eq!(screen.frame()?.cell(0, 0).unwrap().symbol(), "界");
-# Ok::<(), weft_core::Error>(())
+# Ok::<(), wove::Error>(())
 ```
 
 Headless tests use the same layout, widgets, clipping, and input routing as a

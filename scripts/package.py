@@ -12,9 +12,9 @@ version = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))["work
 subprocess.run(["cargo", "package", "--workspace", "--locked", "--allow-dirty", "--no-verify"], cwd=root, check=True)
 # A fresh consumer avoids Cargo's temporary-registry cache retaining an older
 # archive when contributors package the same unpublished version repeatedly.
-with tempfile.TemporaryDirectory(prefix="weft-package-") as directory:
+with tempfile.TemporaryDirectory(prefix="wove-package-") as directory:
     consumer = Path(directory)
-    for name in ("weft-core", "weft-dioxus"):
+    for name in ("wove", "wove-dioxus"):
         with tarfile.open(root / f"target/package/{name}-{version}.crate") as archive:
             archive.extractall(consumer, filter="data")
     (consumer / "Cargo.toml").write_text(f'''[package]
@@ -23,23 +23,23 @@ version = "0.0.0"
 edition = "2021"
 [features]
 default = ["terminal"]
-terminal = ["weft-core/terminal", "weft-dioxus/terminal"]
+terminal = ["wove/terminal", "wove-dioxus/terminal"]
 [dependencies]
-weft-core = {{ path = "weft-core-{version}", default-features = false }}
-weft-dioxus = {{ path = "weft-dioxus-{version}", default-features = false }}
+wove = {{ path = "wove-{version}", default-features = false }}
+wove-dioxus = {{ path = "wove-dioxus-{version}", default-features = false }}
 [patch.crates-io]
-weft-core = {{ path = "weft-core-{version}" }}
+wove = {{ path = "wove-{version}" }}
 ''', encoding="utf-8")
     (consumer / "src").mkdir()
-    (consumer / "src/main.rs").write_text('''use weft_core::{Tree, widgets::Text};
+    (consumer / "src/main.rs").write_text('''use wove::{Tree, widgets::Text};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tree = Tree::new();
     tree.add(tree.root(), Text::new("packed consumer"))?;
     let frame = tree.frame(20, 2)?;
     assert_eq!(frame.cell(0, 0).unwrap().symbol(), "p");
-    let _registry = weft_dioxus::Registry::default();
+    let _registry = wove_dioxus::Registry::default();
     #[cfg(feature = "terminal")]
-    weft_core::terminal::Renderer::default().draw(&mut Vec::new(), frame)?;
+    wove::terminal::Renderer::default().draw(&mut Vec::new(), frame)?;
     Ok(())
 }
 ''', encoding="utf-8")

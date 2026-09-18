@@ -1,5 +1,5 @@
 name: Bug report
-description: Report incorrect behavior in weft.
+description: Report incorrect behavior in wove.
 body:
   - type: textarea
     id: reproduce
@@ -12,6 +12,6 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Include the weft revision, Rust version, operating system, and terminal.
+      description: Include the wove revision, Rust version, operating system, and terminal.
     validations:
       required: true

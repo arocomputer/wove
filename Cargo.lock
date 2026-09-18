@@ -877,25 +877,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "weft-core"
-version = "0.2.0"
-dependencies = [
- "crossterm",
- "taffy",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
-name = "weft-dioxus"
-version = "0.2.0"
-dependencies = [
- "dioxus",
- "dioxus-core",
- "weft-core",
-]
-
-[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -930,4 +911,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
+]
+
+[[package]]
+name = "wove"
+version = "0.2.0"
+dependencies = [
+ "crossterm",
+ "taffy",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
+name = "wove-dioxus"
+version = "0.2.0"
+dependencies = [
+ "dioxus",
+ "dioxus-core",
+ "wove",
 ]

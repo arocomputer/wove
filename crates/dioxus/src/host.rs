@@ -3,20 +3,20 @@ use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
 use std::collections::HashMap;
-use weft_core::{
+use wove::{
     widgets::{Container, Input, Panel, Scroll, Text},
     Id, Layout, Style, Tree, Widget,
 };
 
 #[derive(Debug)]
 pub enum Error {
-    Core(weft_core::Error),
+    Core(wove::Error),
     Unsupported(String),
     Protocol(&'static str),
     Poisoned,
 }
-impl From<weft_core::Error> for Error {
-    fn from(e: weft_core::Error) -> Self {
+impl From<wove::Error> for Error {
+    fn from(e: wove::Error) -> Self {
         Self::Core(e)
     }
 }
@@ -124,7 +124,7 @@ impl Host {
         self.tree.set_layout(
             id,
             Layout {
-                display: weft_core::layout::Display::None,
+                display: wove::layout::Display::None,
                 ..Layout::default()
             },
         )?;
@@ -304,8 +304,8 @@ impl Host {
                 if name == "direction" {
                     style.flex_direction = match text.as_str() {
                         "" if absent => self.default_layout(id).flex_direction,
-                        "row" => weft_core::layout::FlexDirection::Row,
-                        "column" => weft_core::layout::FlexDirection::Column,
+                        "row" => wove::layout::FlexDirection::Row,
+                        "column" => wove::layout::FlexDirection::Column,
                         _ => return Err(invalid()),
                     };
                 } else {
@@ -317,7 +317,7 @@ impl Host {
                     if !n.is_finite() || n < 0.0 {
                         return Err(invalid());
                     }
-                    use weft_core::layout::*;
+                    use wove::layout::*;
                     match name {
                         "width" => {
                             style.size.width = if absent {

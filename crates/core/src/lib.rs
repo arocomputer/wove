@@ -1,13 +1,13 @@
 //! Persistent terminal components with layout, input routing, and headless rendering.
 //!
 //! ```
-//! use weft_core::{Tree, widgets::Text};
+//! use wove::{Tree, widgets::Text};
 //! let mut tree = Tree::new();
 //! let text = tree.add(tree.root(), Text::new("Hello"))?;
 //! tree.update::<Text>(text, |w| w.content.push('!'))?;
 //! let frame = tree.frame(80, 24)?;
 //! assert_eq!(frame.cell(5, 0).unwrap().symbol(), "!");
-//! # Ok::<(), weft_core::Error>(())
+//! # Ok::<(), wove::Error>(())
 //! ```
 #![forbid(unsafe_code)]
 

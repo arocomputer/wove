@@ -1,8 +1,8 @@
 //! A small catalogue demonstrates direct tree ownership and independent widgets.
-use weft_core::{layout::*, terminal, widgets::*, Color, Layout, Style, Tree};
+use wove::{layout::*, terminal, widgets::*, Color, Layout, Style, Tree};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tree = Tree::new();
-    let title = tree.add(tree.root(), Text::new("weft · widget gallery"))?;
+    let title = tree.add(tree.root(), Text::new("wove · widget gallery"))?;
     tree.update::<Text>(title, |w| {
         w.style = Style {
             fg: Color::Rgb(104, 211, 192),

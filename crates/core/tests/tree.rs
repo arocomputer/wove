@@ -1,5 +1,5 @@
 use std::{cell::Cell, rc::Rc};
-use weft_core::{
+use wove::{
     layout::{length, FlexDirection, Size},
     widgets::*,
     *,

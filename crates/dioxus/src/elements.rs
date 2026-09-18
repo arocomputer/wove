@@ -48,9 +48,9 @@ pub mod events {
         )*};
     }
     events!(
-        (onkey, weft_core::Event),
-        (onpaste, weft_core::Event),
-        (onmouse, weft_core::Event),
+        (onkey, wove::Event),
+        (onpaste, wove::Event),
+        (onmouse, wove::Event),
         (oninput, String)
     );
 }

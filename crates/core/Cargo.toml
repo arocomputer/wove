@@ -1,12 +1,15 @@
 [package]
-name = "weft-core"
+name = "wove"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "A Rust library to build terminal user interfaces"
-readme = "../../README.md"
+readme = "README.md"
+documentation = "https://docs.rs/wove"
+keywords = ["terminal", "tui", "widgets", "layout"]
+categories = ["command-line-interface"]
 
 [features]
 default = ["terminal"]

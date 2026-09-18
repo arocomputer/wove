@@ -1,9 +1,9 @@
-# weft-dioxus
+# wove-dioxus
 
-Dioxus components for weft terminal user interfaces. This optional adapter maps
-RSX elements and component updates onto `weft-core`'s persistent widget tree.
+Dioxus components for wove terminal user interfaces. This optional adapter maps
+RSX elements and component updates onto `wove`'s persistent widget tree.
 
-See the [guide](https://github.com/intuitums/weft/blob/feat/core/docs/dioxus.md)
-and run `cargo run -p weft-dioxus --example counter` from the workspace.
+See the [guide](https://github.com/intuitums/weft/blob/chore/wove/docs/dioxus.md)
+and run `cargo run -p wove-dioxus --example counter` from the workspace.
 
 The API is experimental. Applications own their event loop and executor.

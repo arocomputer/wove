@@ -1,23 +1,23 @@
 # Dioxus
 
-Use `weft-dioxus` when an application wants components, signals, and RSX.
+Use `wove-dioxus` when an application wants components, signals, and RSX.
 Direct core use does not require it.
 
 ```toml
 [dependencies]
-weft-core = { path = "../weft/crates/core" }
-weft-dioxus = { path = "../weft/crates/dioxus" }
+wove = { path = "../wove/crates/core" }
+wove-dioxus = { path = "../wove/crates/dioxus" }
 dioxus = { version = "=0.7.10", default-features = false, features = ["macro", "hooks", "signals"] }
 ```
 
 ```rust
 use dioxus::prelude::*;
-use weft_dioxus::{elements as dioxus_elements, View};
+use wove_dioxus::{elements as dioxus_elements, View};
 
 fn app() -> Element {
     rsx! {
         view { direction: "column", gap: 1,
-            text { content: "Hello from weft" }
+            text { content: "Hello from wove" }
             input { placeholder: "Type here" }
         }
     }
@@ -25,7 +25,7 @@ fn app() -> Element {
 
 let mut view = View::new(VirtualDom::new(app))?;
 let frame = view.frame(80, 24)?;
-# Ok::<(), weft_dioxus::Error>(())
+# Ok::<(), wove_dioxus::Error>(())
 ```
 
 Tags are `view`, `panel`, `text`, `input`, and `scroll`. Bare RSX strings create
@@ -35,12 +35,12 @@ are not merged into rich text.
 Layout attributes are `width`, `height`, `grow`, `gap`, `padding`, and `direction`.
 Numeric values are nonnegative cell lengths, and direction is `row` or `column`.
 `text` accepts `content` and `wrap`; `input` accepts `value` and `placeholder`.
-For full Taffy layout, pass `weft_dioxus::AttributeValue::any_value(layout)` as
+For full Taffy layout, pass `wove_dioxus::AttributeValue::any_value(layout)` as
 `layout`. Likewise, `style` accepts an `AttributeValue::any_value(Style)` on text,
 input, and panel. Use either a complete layout or individual layout attributes
 for a node, to avoid relying on attribute application order.
 
-`onkey`, `onpaste`, and `onmouse` receive `dioxus_core::Event<weft_core::Event>`.
+`onkey`, `onpaste`, and `onmouse` receive `dioxus_core::Event<wove::Event>`.
 The data is the portable core event. Listeners can call `prevent_default` or
 `stop_propagation`. Initial focus is explicit: call `view.focus_next(false)`, send Tab, or let the
 user choose a widget with the mouse. Event handlers on unfocused descendants do

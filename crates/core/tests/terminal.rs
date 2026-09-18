@@ -1,6 +1,6 @@
 #![cfg(feature = "terminal")]
 use std::io::{self, Write};
-use weft_core::{terminal::Renderer, Buffer, Rect, Style};
+use wove::{terminal::Renderer, Buffer, Rect, Style};
 #[test]
 fn unchanged_frames_emit_nothing_and_failed_output_forces_a_full_repaint() {
     struct Broken;
