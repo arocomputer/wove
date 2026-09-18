@@ -4,7 +4,18 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: bun
+    directory: /crates/web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: pip
+    directory: /scripts/ui
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

@@ -35,10 +35,12 @@ case "$command" in
     bun run check
     bun run build
     ;;
-  guard) python3 scripts/guard.py ;;
+  guard)
+    python3 scripts/guard.py
+    python3 -m unittest discover -s scripts/hooks -p 'test_*.py'
+    ;;
   hooks)
-    git config extensions.worktreeConfig true
-    git config --worktree core.hooksPath "$PWD/scripts/hooks"
+    python3 scripts/hooks/install.py
     ;;
   ui)
     cargo build --workspace --locked --examples --bins
