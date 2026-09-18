@@ -1,4 +1,4 @@
-name: security
+name: Audit
 on:
   schedule:
     - cron: '17 6 * * 1'
@@ -8,6 +8,7 @@ permissions:
   contents: read
 jobs:
   audit:
+    name: Audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

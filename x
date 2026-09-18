@@ -6,9 +6,12 @@ command=${1:-check}
 if [ "$#" -gt 0 ]; then shift; fi
 case "$command" in
   check)
+    ./x quality
+    ./x test
+    ;;
+  quality)
     ./x fmt --check
     ./x lint
-    ./x test
     ./x docs
     ./x package
     ./x guard
@@ -26,6 +29,19 @@ case "$command" in
     for feature in markdown syntax diff; do
       cargo test -p wove --locked --no-default-features --features "$feature"
     done
+    ;;
+  core|dioxus|keymap|ssh)
+    # Package workflows exercise their crate without enabling sibling features.
+    package="wove-$command"
+    if [ "$command" = core ]; then package=wove; fi
+    cargo test -p "$package" --locked --all-features --all-targets "$@"
+    cargo test -p "$package" --locked --all-features --doc
+    cargo test -p "$package" --locked --no-default-features
+    if [ "$command" = core ]; then
+      for feature in markdown syntax diff; do
+        cargo test -p wove --locked --no-default-features --features "$feature"
+      done
+    fi
     ;;
   docs) RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked ;;
   package) python3 scripts/package.py ;;
@@ -48,5 +64,5 @@ case "$command" in
     target/ui/bin/python -m pip install --quiet -r scripts/ui/requirements.txt
     target/ui/bin/python scripts/ui.py
     ;;
-  *) echo 'usage: ./x [hooks|check|fmt|lint|test|docs|package|guard|ui|web]' >&2; exit 2 ;;
+  *) echo 'usage: ./x [hooks|check|quality|core|dioxus|keymap|ssh|fmt|lint|test|docs|package|guard|ui|web]' >&2; exit 2 ;;
 esac

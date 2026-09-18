@@ -36,6 +36,13 @@ Bun 1.4.2 or newer is needed for `crates/web`. CI runs the same `./x` commands.
 `./x check` covers all workspace crates, all optional core features, headless
 core builds, and a consumer compiled from the packaged crates.
 
+CI reports `Core`, `Dioxus`, `Keymap`, `SSH`, `Quality`, `Website`, and `Audit`.
+Use `./x core`, `./x dioxus`, `./x keymap`, or `./x ssh` for a package's CI test
+sequence. `./x quality` runs shared formatting, lint, documentation, packaging,
+and guard checks. Platform jobs feed a required summary for each package;
+Core also includes Unix PTY checks. Keep required names aligned with repository
+rules, and never report success for a failed, cancelled, or skipped dependency.
+
 Run `./x check` before submitting changes. Rendering, input, or terminal changes
 also need `./x ui`; documentation or website changes need `./x web`. The PTY suite
 runs on Unix and retains frames and terminal bytes in `artifacts/ui/`.

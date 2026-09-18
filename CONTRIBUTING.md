@@ -57,14 +57,30 @@ Never paste host keys, tokens, private application data, or unreviewed logs.
 ```
 
 Run `./x check` for every submission, `./x ui` for rendering or terminal/input
-changes, and `./x web` for documentation or website changes. The `unit` workflow
-checks Rust on Linux, macOS, and Windows. The `e2e` workflow runs the PTY suite
-on Linux and macOS; `docs` builds the website. Workflow commands come from `./x`.
+changes, and `./x web` for documentation or website changes.
 
-Required PR checks are `unit (linux)`, `unit (macos)`, `unit (windows)`,
-`e2e (linux)`, `e2e (macos)`, `docs`, and `audit`. Unit jobs run `./x check`,
-E2E jobs run `./x ui`, and the docs job runs `./x web`. The security audit runs
-on every PR so required checks cannot be skipped by path filters.
+CI is organized by library package. Every PR runs the following checks; workflows
+do not filter by changed paths, so required results are always reported.
+
+| Required check | Local command | Coverage |
+| --- | --- | --- |
+| Core | `./x core`, `./x ui` | All features, headless use, individual formatting features, and real terminal interaction |
+| Dioxus | `./x dioxus` | Component adapter with and without its default features |
+| Keymap | `./x keymap` | Command bindings and key sequences |
+| SSH | `./x ssh` | Authentication, remote input, connection lifecycle, and cleanup |
+| Quality | `./x quality` | Formatting, Clippy, rustdoc, examples, packaged consumers, and repository guards |
+| Website | `./x web` | Astro checks and the static site build |
+| Audit | `cargo audit` | Dependency advisories |
+
+Package and Quality workflows run on Linux, macOS, and Windows. Core runs the
+PTY suite on Linux and macOS. Each matrix has one required summary check that
+passes only when every platform succeeds, including terminal checks where
+applicable. Failed, cancelled, and skipped platform results cannot pass the
+summary. Audit also runs weekly to catch new advisories without a source change.
+
+`./x check` combines Quality with workspace-wide tests. The package commands run
+their own tests and doctests independently, avoiding features enabled only by
+sibling crates in a workspace test run.
 
 A regression test must fail on the original defect. Keep tests focused on public
 behavior, and include a captured frame when appearance changes. Do not weaken
@@ -105,8 +121,8 @@ itself configure branch protection. Passing checks are evidence for review, not
 permission to merge or publish.
 
 Main requires a pull request and a squash merge. The branch must be current,
-review conversations resolved, and unit, e2e, docs, and audit checks
-successful. The active repository rule has no bypass actors.
+review conversations resolved, and all seven checks above successful.
+The active repository rule has no bypass actors.
 
 ## AI/LLM assistance
 
