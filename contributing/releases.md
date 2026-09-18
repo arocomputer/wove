@@ -3,6 +3,8 @@
 The workspace packages are `wove` and `wove-dioxus`. The core package lives
 in `crates/core`; the adapter lives in `crates/dioxus`.
 
+`wove` 0.2.0 is published on crates.io. The adapter has not been published.
+
 1. Run `./x check`, `./x ui`, and `./x bench` on the release commit.
 2. Choose the workspace version, update the adapter's exact core dependency,
    move Unreleased changes into that version, update Cargo.lock, and commit.

@@ -1,12 +1,12 @@
 # Start
 
-Use Rust 1.98 or newer. Until registry publication, depend on a reviewed Git
-revision or a local checkout. The Cargo packages are `wove` and
-`wove-dioxus`; their Rust imports are `wove` and `wove_dioxus`.
+Use Rust 1.98 or newer. The core is published as [`wove`](https://crates.io/crates/wove).
+The optional `wove-dioxus` adapter currently requires a local checkout.
+Their Rust imports are `wove` and `wove_dioxus`.
 
 ```toml
 [dependencies]
-wove = { path = "../wove/crates/core" }
+wove = "0.2"
 ```
 
 ## Build a tree
