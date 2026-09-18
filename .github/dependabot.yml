@@ -1,20 +1,24 @@
 version: 2
 updates:
   - package-ecosystem: cargo
+    labels: []
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
   - package-ecosystem: github-actions
+    labels: []
     directory: /
     schedule:
       interval: weekly
   - package-ecosystem: bun
+    labels: []
     directory: /crates/web
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
   - package-ecosystem: pip
+    labels: []
     directory: /scripts/ui
     schedule:
       interval: weekly

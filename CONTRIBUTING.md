@@ -1,6 +1,6 @@
 # Contributing to Wove
 
-Wove is a Rust library to build terminal user interfaces. Good contributions solve
+Wove is a Rust library for building terminal user interfaces. Good contributions solve
 a concrete application need, keep dependencies optional where practical, and leave
 the code easy to understand and verify. Explain why a change needs a new crate,
 configuration option, or abstraction before adding one.
@@ -57,8 +57,14 @@ Never paste host keys, tokens, private application data, or unreviewed logs.
 ```
 
 Run `./x check` for every submission, `./x ui` for rendering or terminal/input
-changes, and `./x web` for documentation or website changes. The `unit` workflow checks Rust on Linux, macOS, and Windows. The `e2e` workflow
-runs the PTY suite on Linux and macOS; `docs` builds the website. Workflow commands come from `./x`.
+changes, and `./x web` for documentation or website changes. The `unit` workflow
+checks Rust on Linux, macOS, and Windows. The `e2e` workflow runs the PTY suite
+on Linux and macOS; `docs` builds the website. Workflow commands come from `./x`.
+
+Required PR checks are `unit (linux)`, `unit (macos)`, `unit (windows)`,
+`e2e (linux)`, `e2e (macos)`, `docs`, and `audit`. Unit jobs run `./x check`,
+E2E jobs run `./x ui`, and the docs job runs `./x web`. The security audit runs
+on every PR so required checks cannot be skipped by path filters.
 
 A regression test must fail on the original defect. Keep tests focused on public
 behavior, and include a captured frame when appearance changes. Do not weaken
@@ -78,10 +84,20 @@ commits, for example `fix(core): preserve selection when undoing deletion`.
 Optional scopes are `core`, `dioxus`, `keymap`, `ssh`, `web`, `infra`, and `docs`.
 The title should make sense as a squash commit on main.
 
-State the problem, resulting behavior, and validation. Keep each PR about one
-coherent change; leave unrelated cleanup for another contribution. API and Cargo
-feature changes need migration notes and updates to affected adapters and examples.
-Do not promise compatibility or performance that has not been checked.
+Use the [PR template](.github/pull_request_template.md). Link a related issue when
+one exists, select the change type, explain the problem and why the change works,
+and list verification commands and results. Include screenshots or captured frames
+for visual changes; remove that section when it does not apply. Write enough detail
+to review the change without a fixed sentence limit.
+
+Keep each PR about one coherent change; leave unrelated cleanup for another
+contribution. API and Cargo feature changes need migration notes and updates to
+affected adapters and examples. Do not promise compatibility or performance that
+has not been checked.
+
+PRs do not use labels. Change types belong in the title and template, not automatic
+path-based or dependency labels. Issues can still use labels. Template guidance is
+for review; automation does not label or close PRs for template formatting.
 
 Maintainers decide whether a change merges. [CODEOWNERS](.github/CODEOWNERS) calls
 out terminal output, SSH, dependencies, and automation for review; it does not by

@@ -1,21 +1,32 @@
-<!-- Use a conventional title, such as fix(core): preserve selection on undo.
-     Describe the problem, resulting behavior, and evidence. Remove this comment. -->
+<!-- Use a conventional title, such as fix(core): preserve selection on undo. -->
 
-## Change
+### Related issue
 
-Describe the trigger and what changes for the caller. Include migration notes for
-API, Cargo feature, or behavior changes.
+<!-- Link an issue when applicable, for example Closes #123. -->
 
-## Validation
+### Type of change
 
-List the checks run and their results. Include captured frames for rendering
-changes and reproducible measurements for performance claims.
+- [ ] Bug fix
+- [ ] Feature
+- [ ] Refactor
+- [ ] Documentation
+- [ ] Repository tooling
 
-## Checklist
+### What does this PR do?
 
-- [ ] `./x check` passes; relevant PTY and documentation checks pass
-- [ ] Bug fixes include regression tests that fail on the original defect
-- [ ] Affected adapters, examples, comments, and guides are updated
-- [ ] User-visible changes and migration steps are described for the release notes
-- [ ] Security-boundary or dependency changes are explained
-- [ ] I reviewed the complete change and can explain and maintain it, including any AI-assisted work
+<!-- Explain the problem, what changed, and why it works.
+     Include migration notes for API or Cargo feature changes. -->
+
+### How was it verified?
+
+<!-- List the checks run and their results. -->
+
+### Screenshots or recordings
+
+<!-- Include these for visual changes; otherwise remove this section. -->
+
+### Checklist
+
+- [ ] Relevant checks pass
+- [ ] Affected documentation is updated
+- [ ] The PR contains no unrelated changes

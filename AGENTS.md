@@ -4,7 +4,7 @@ Instructions for agents and contributors editing this repository. Read
 [CONTRIBUTING.md](CONTRIBUTING.md) for contribution and AI/LLM rules, and
 [architecture](crates/web/src/content/docs/architecture.mdx) before changing contracts.
 
-Wove is a Rust library to build terminal user interfaces. It must serve applications
+Wove is a Rust library for building terminal user interfaces. It must serve applications
 with different designs and runtimes. Keep application policy out of the library.
 Capitalize Wove in prose; keep Cargo packages and Rust imports lowercase.
 
@@ -133,8 +133,12 @@ hosting changes require a task that asks for them.
   explicit maintainer instruction.
 - Use conventional commit titles. Scopes, when useful, are `core`, `dioxus`,
   `keymap`, `ssh`, `web`, `infra`, and `docs`.
-- Explain the trigger, changed behavior, and verification. Include captured frames
-  for rendering changes and migration notes for API or feature changes.
+- Use `.github/pull_request_template.md`. Explain the problem, what changed, why
+  it works, and the checks run with their results. Link an issue when applicable.
+  Include captured frames for visual changes and migration notes for API or
+  feature changes. Use enough detail for review; there is no fixed sentence limit.
+- Do not apply PR labels or add automatic PR labeling. Describe the change type
+  in the title and template. Issue labels are separate.
 - Describe user-visible changes and migration steps in the PR. GitHub Releases
   are the changelog; use the release-note format in CONTRIBUTING.md. Do not add
   a changelog file or a roadmap.
