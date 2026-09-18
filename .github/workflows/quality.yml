@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
-    name: Quality - ${{ matrix.platform }}
+    name: ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - run: ./x quality
   complete:
-    name: Quality
+    name: Validate
     needs: check
     if: always()
     runs-on: ubuntu-latest

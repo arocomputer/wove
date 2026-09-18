@@ -1,4 +1,4 @@
-name: Build Dioxus
+name: Dioxus
 on:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
-    name: Dioxus - ${{ matrix.platform }}
+    name: ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:

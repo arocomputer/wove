@@ -68,8 +68,8 @@ do not filter by changed paths, so required results are always reported.
 | Dioxus - Build and Test | `./x dioxus` | Component adapter with and without its default features |
 | Keymap - Build and Test | `./x keymap` | Command bindings and key sequences |
 | SSH - Build and Test | `./x ssh` | Authentication, remote input, connection lifecycle, and cleanup |
-| Quality | `./x quality` | Formatting, Clippy, rustdoc, examples, packaged consumers, and repository guards |
-| Website | `./x web` | Astro checks and the static site build |
+| Validate | `./x quality` | Formatting, Clippy, rustdoc, examples, packaged consumers, and repository guards |
+| Build | `./x web` | Astro checks and the static site build |
 | Audit | `cargo audit` | Dependency advisories |
 
 Package and Quality workflows run on Linux, macOS, and Windows. Core runs the
@@ -77,6 +77,10 @@ PTY suite on Linux and macOS. Each matrix has one required summary check that
 passes only when every platform succeeds, including terminal checks where
 applicable. Failed, cancelled, and skipped platform results cannot pass the
 summary. Audit also runs weekly to catch new advisories without a source change.
+
+GitHub displays workflow and job names together. Shared results appear as
+`Quality / Validate`, `Website / Build`, and `Dependencies / Audit`; package
+results keep unique summary names such as `Core / Core - Build and Test`.
 
 `./x check` combines Quality with workspace-wide tests. The package commands run
 their own tests and doctests independently, avoiding features enabled only by

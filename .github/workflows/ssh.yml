@@ -1,4 +1,4 @@
-name: Build SSH
+name: SSH
 on:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
-    name: SSH - ${{ matrix.platform }}
+    name: ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
