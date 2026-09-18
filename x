@@ -15,15 +15,19 @@ case "$command" in
     ;;
   fmt) cargo fmt --all "$@" ;;
   lint)
-    cargo clippy --workspace --all-targets --locked -- -D warnings
+    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
     cargo clippy --workspace --all-targets --locked --no-default-features -- -D warnings
     ;;
   test)
-    cargo test --workspace --locked --all-targets "$@"
-    cargo test --workspace --locked --doc
+    cargo test --workspace --locked --all-features --all-targets "$@"
+    cargo test --workspace --locked --all-features --doc
     cargo test --workspace --locked --no-default-features
+    cargo test -p wove --locked --no-default-features
+    for feature in markdown syntax diff keymap; do
+      cargo test -p wove --locked --no-default-features --features "$feature"
+    done
     ;;
-  docs) RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked ;;
+  docs) RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked ;;
   package) python3 scripts/package.py ;;
   web)
     cd crates/web

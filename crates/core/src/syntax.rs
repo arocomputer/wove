@@ -1,13 +1,13 @@
+use crate::{
+    elements::RichText,
+    text::{Span, Wrap},
+    Color, Style,
+};
 use syntect::{
     easy::HighlightLines,
     highlighting::{FontStyle, Theme},
     parsing::SyntaxSet,
     util::LinesWithEndings,
-};
-use wove::{
-    elements::RichText,
-    text::{Span, Wrap},
-    Color, Style,
 };
 
 /// Reuse a syntax set and application-selected theme across documents.

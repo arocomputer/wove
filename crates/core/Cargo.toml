@@ -14,8 +14,15 @@ categories = ["command-line-interface"]
 [features]
 default = ["terminal"]
 terminal = ["dep:crossterm"]
+markdown = ["dep:pulldown-cmark"]
+syntax = ["dep:syntect"]
+diff = ["dep:similar"]
+keymap = []
 
 [dependencies]
+pulldown-cmark = { version = "0.13", default-features = false, optional = true }
+similar = { version = "2.7", optional = true }
+syntect = { version = "5.3", default-features = false, features = ["default-fancy"], optional = true }
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
 taffy = { version = "0.14", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "content_size"] }

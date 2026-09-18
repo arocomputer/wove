@@ -2748,19 +2748,12 @@ name = "wove"
 version = "0.0.1"
 dependencies = [
  "crossterm",
- "taffy",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
-name = "wove-format"
-version = "0.0.1"
-dependencies = [
  "pulldown-cmark",
  "similar",
  "syntect",
- "wove",
+ "taffy",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
@@ -2775,14 +2768,6 @@ dependencies = [
 
 [[package]]
 name = "wove-examples"
-version = "0.0.1"
-dependencies = [
- "wove",
- "wove-keymap",
-]
-
-[[package]]
-name = "wove-keymap"
 version = "0.0.1"
 dependencies = [
  "wove",

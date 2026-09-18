@@ -1,9 +1,9 @@
-use pulldown_cmark::{Event, Parser, Tag, TagEnd};
-use wove::{
+use crate::{
     elements::RichText,
     text::{Span, Wrap},
     Style,
 };
+use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 
 /// Complete styles for Markdown roles, chosen by the application.
 #[derive(Clone, Copy, Default)]
@@ -16,7 +16,7 @@ pub struct Palette {
 
 /// Render CommonMark as styled text. HTML remains literal text; links display
 /// their destination. Block layout is linear and does not implement HTML layout.
-pub fn markdown(source: &str, palette: Palette) -> RichText {
+pub fn render(source: &str, palette: Palette) -> RichText {
     let mut spans = Vec::new();
     let mut styles = vec![palette.text];
     let mut links = Vec::new();

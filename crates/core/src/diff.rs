@@ -1,13 +1,13 @@
-use similar::{ChangeTag, TextDiff};
-use wove::{
+use crate::{
     elements::RichText,
     text::{Span, Wrap},
     Style,
 };
+use similar::{ChangeTag, TextDiff};
 
 /// Produce a line diff with explicit addition and deletion styles. Unchanged
 /// lines retain the base style; missing final newlines remain separate rows.
-pub fn diff(before: &str, after: &str, base: Style, added: Style, removed: Style) -> RichText {
+pub fn render(before: &str, after: &str, base: Style, added: Style, removed: Style) -> RichText {
     let changes = TextDiff::from_lines(before, after);
     let spans = changes
         .iter_all_changes()

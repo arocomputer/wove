@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 wove = { path = "../core" }
-wove-keymap = { path = "../keymap" }
 
 [[bin]]
 name = "editor"

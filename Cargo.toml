@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/format", "crates/dioxus", "crates/keymap", "crates/ssh", "crates/examples"]
+members = ["crates/core", "crates/dioxus", "crates/ssh", "crates/examples"]
 exclude = ["crates/web"]
 resolver = "2"
 

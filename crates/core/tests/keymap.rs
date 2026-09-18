@@ -1,6 +1,7 @@
+#![cfg(feature = "keymap")]
 use std::time::Duration;
+use wove::keymap::{Keymap, Match};
 use wove::{elements::Input, Key, Tree};
-use wove_keymap::{Keymap, Match};
 
 #[test]
 fn focused_bindings_override_global_bindings_and_removal_reveals_global() {
