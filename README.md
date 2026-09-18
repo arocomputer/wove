@@ -25,15 +25,16 @@ Wove is early in development, and its API is still changing.
 
 | Library | Purpose |
 | --- | --- |
-| [Core](crates/core) | Elements, layout, text editing, rendering, and optional formatting and keymaps. |
+| [Core](crates/core) | Elements, layout, text editing, rendering, and optional formatting. |
 | [Dioxus](crates/dioxus) | Optional RSX components, signals, and lifecycles. |
+| [Keymap](crates/keymap) | Scoped command bindings and key sequences. |
 | [SSH](crates/ssh) | Authenticated remote terminal applications. |
 
 [Examples](crates/examples) contains runnable applications.
 [Web](crates/web) contains the documentation and minimal Astro setup.
 All packages live under `crates/`; Web uses Bun and is excluded from Cargo.
 
-Core offers optional `markdown`, `syntax`, `diff`, and `keymap` features.
+Core offers optional `markdown`, `syntax`, and `diff` features.
 Enable only the features your application uses.
 
 ## Get started

@@ -25,14 +25,14 @@ name = "consumer"
 version = "0.0.0"
 edition = "2021"
 [features]
-default = ["terminal", "markdown", "syntax", "diff", "keymap"]
+default = ["terminal", "markdown", "syntax", "diff"]
 terminal = ["wove/terminal", "wove-dioxus/terminal", "dep:wove-ssh"]
 markdown = ["wove/markdown"]
 syntax = ["wove/syntax"]
 diff = ["wove/diff"]
-keymap = ["wove/keymap"]
 [dependencies]
 wove = {{ path = "wove-{version}", default-features = false }}
+wove-keymap = {{ path = "wove-keymap-{version}" }}
 wove-dioxus = {{ path = "wove-dioxus-{version}", default-features = false }}
 wove-ssh = {{ path = "wove-ssh-{version}", optional = true }}
 [patch.crates-io]
@@ -51,8 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _syntax = wove::syntax::Syntaxes::new();
     #[cfg(feature = "diff")]
     let _diff = wove::diff::render("old", "new", wove::Style::default(), wove::Style::default(), wove::Style::default());
-    #[cfg(feature = "keymap")]
-    let _keys = wove::keymap::Keymap::<()>::new(std::time::Duration::from_millis(300));
+    let _keys = wove_keymap::Keymap::<()>::new(std::time::Duration::from_millis(300));
     let _registry = wove_dioxus::Registry::default();
     #[cfg(feature = "terminal")]
     let _remote = std::mem::size_of::<wove_ssh::Server>();

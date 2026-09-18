@@ -1,0 +1,11 @@
+[package]
+name = "wove-keymap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Scoped key sequences for Wove terminal interfaces"
+
+[dependencies]
+wove = { path = "../core", version = "=0.0.1", default-features = false }

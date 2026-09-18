@@ -2774,6 +2774,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "wove-keymap"
+version = "0.0.1"
+dependencies = [
+ "wove",
+]
+
+[[package]]
 name = "wove-ssh"
 version = "0.0.1"
 dependencies = [

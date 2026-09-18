@@ -17,7 +17,6 @@ terminal = ["dep:crossterm"]
 markdown = ["dep:pulldown-cmark"]
 syntax = ["dep:syntect"]
 diff = ["dep:similar"]
-keymap = []
 
 [dependencies]
 pulldown-cmark = { version = "0.13", default-features = false, optional = true }

@@ -23,7 +23,7 @@ case "$command" in
     cargo test --workspace --locked --all-features --doc
     cargo test --workspace --locked --no-default-features
     cargo test -p wove --locked --no-default-features
-    for feature in markdown syntax diff keymap; do
+    for feature in markdown syntax diff; do
       cargo test -p wove --locked --no-default-features --features "$feature"
     done
     ;;

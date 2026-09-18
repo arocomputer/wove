@@ -36,9 +36,6 @@ pub mod terminal;
 /// Styled line differences. Enable the `diff` feature.
 #[cfg(feature = "diff")]
 pub mod diff;
-/// Scoped key bindings and sequences. Enable the `keymap` feature.
-#[cfg(feature = "keymap")]
-pub mod keymap;
 /// Markdown formatted as styled text. Enable the `markdown` feature.
 #[cfg(feature = "markdown")]
 pub mod markdown;

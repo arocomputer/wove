@@ -49,12 +49,13 @@ Only `terminal` is enabled by default. Add any of these independently:
 | `markdown` | `wove::markdown::render` | Markdown as styled text. |
 | `syntax` | `wove::syntax::Highlighter` | Syntax highlighting with custom grammars and themes. |
 | `diff` | `wove::diff::render` | Styled line differences. |
-| `keymap` | `wove::keymap::Keymap` | Scoped key bindings and sequences. |
 
 ```toml
-wove = { git = "https://github.com/intuitums/wove", branch = "main", features = ["markdown", "keymap"] }
+wove = { git = "https://github.com/intuitums/wove", branch = "main", features = ["markdown"] }
 ```
 
-All four features work with `default-features = false`, without a terminal backend.
+All three features work with `default-features = false`, without a terminal backend.
 Markdown, syntax highlighting, and diffs return ordinary `RichText` elements;
 applications can also construct styled text themselves.
+
+Command bindings and key sequences live in the separate [Keymap package](../keymap).

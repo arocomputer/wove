@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Consolidate formatting and keymaps into core behind optional `markdown`, `syntax`, `diff`, and `keymap` features.
+- Consolidate formatting into core behind optional `markdown`, `syntax`, and `diff` features.
+- Keep command bindings and key sequences in the separate `wove-keymap` package.
 
 - Add an SSH package with public-key authentication, isolated applications, remote input, and resize handling.
 - Move the documentation website into `crates/web`, outside the Cargo member list.

@@ -1,6 +1,7 @@
 //! Scoped key sequences. Callers supply focus ancestry and a monotonic clock.
-use crate::{Id, Key, Modifiers};
+#![forbid(unsafe_code)]
 use std::time::Duration;
+use wove::{Id, Key, Modifiers};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Stroke {
