@@ -14,5 +14,5 @@ The example listens on loopback and accepts only the public key supplied on the
 command line. Ctrl-C exits a client; Ctrl-C in the server stops all connections.
 The host key file is private. Keep it outside the repository.
 
-See the [SSH guide](https://github.com/intuitums/wove/blob/main/crates/web/src/content/docs/ssh.mdx)
+See the [SSH guide](https://github.com/arocomputer/wove/blob/main/crates/web/src/content/docs/ssh.mdx)
 for the application contract and limits.

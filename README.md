@@ -8,7 +8,7 @@
 </p>
 
 <div align="center">
-  <a href="https://github.com/intuitums/wove/actions/workflows/core.yml"><img alt="Core build status" src="https://img.shields.io/github/actions/workflow/status/intuitums/wove/core.yml?branch=main&amp;style=flat-square" /></a>
+  <a href="https://github.com/arocomputer/wove/actions/workflows/core.yml"><img alt="Core build status" src="https://img.shields.io/github/actions/workflow/status/arocomputer/wove/core.yml?branch=main&amp;style=flat-square" /></a>
 </div>
 
 Wove is a Rust library for building terminal user interfaces.
@@ -45,7 +45,7 @@ Add the current Wove source to your Rust project. Version 0.0.1 is not yet
 published. The earlier crates.io version was withdrawn:
 
 ```sh
-cargo add wove --git https://github.com/intuitums/wove --branch main
+cargo add wove --git https://github.com/arocomputer/wove --branch main
 ```
 
 The [core guide](crates/web/src/content/docs/start.mdx) starts with a runnable terminal app.
