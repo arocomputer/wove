@@ -8,7 +8,7 @@ for components and signals.
 
 ```toml
 [dependencies]
-wove = { git = "https://github.com/intuitums/wove", branch = "main", version = "0.0.1" }
+wove = { git = "https://github.com/arocomputer/wove", branch = "main", version = "0.0.1" }
 ```
 
 ```rust
@@ -37,8 +37,8 @@ This is an early release with an unstable API. Current elements are `Container`,
 `Scroll`. `List` requests only visible rows from its provider. `Textarea` supports
 logical lines and horizontal scrolling; soft-wrapped editing is not implemented.
 
-[Source and examples](https://github.com/intuitums/wove/tree/main) ·
-[Guide](https://github.com/intuitums/wove/blob/main/crates/web/src/content/docs/start.mdx)
+[Source and examples](https://github.com/arocomputer/wove/tree/main) ·
+[Guide](https://github.com/arocomputer/wove/blob/main/crates/web/src/content/docs/start.mdx)
 
 ## Optional features
 
@@ -51,7 +51,7 @@ Only `terminal` is enabled by default. Add any of these independently:
 | `diff` | `wove::diff::render` | Styled line differences. |
 
 ```toml
-wove = { git = "https://github.com/intuitums/wove", branch = "main", features = ["markdown"] }
+wove = { git = "https://github.com/arocomputer/wove", branch = "main", features = ["markdown"] }
 ```
 
 All three features work with `default-features = false`, without a terminal backend.

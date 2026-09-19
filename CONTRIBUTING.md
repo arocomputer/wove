@@ -8,7 +8,7 @@ configuration option, or abstraction before adding one.
 ## Getting set up
 
 ```sh
-git clone https://github.com/intuitums/wove
+git clone https://github.com/arocomputer/wove
 cd wove
 ./x hooks
 cargo build --workspace
@@ -36,7 +36,7 @@ checks, so local hooks are not the only verification.
 
 ## Reporting issues
 
-Use the [bug or feature forms](https://github.com/intuitums/wove/issues/new/choose).
+Use the [bug or feature forms](https://github.com/arocomputer/wove/issues/new/choose).
 A bug report needs a minimal example, expected and actual behavior, enabled Cargo
 features, and the affected version or commit. For terminal bugs, include the
 terminal, operating system, and relevant resize or input sequence.
@@ -215,7 +215,7 @@ Never publish from a pull request or weaken tag protection to run a release.
 
 ## Release notes
 
-[GitHub Releases](https://github.com/intuitums/wove/releases) are the published
+[GitHub Releases](https://github.com/arocomputer/wove/releases) are the published
 history. Write a short release title and introduction, followed by these groups
 in order. Omit empty groups.
 
@@ -254,7 +254,7 @@ credentials and does not require a separate hosting secret.
 The production origin is `https://wovetui.com`, configured in
 `crates/web/astro.config.mjs`. To set up hosting:
 
-1. An `intuitums` organization owner must allow public GitHub Pages sites in
+1. An `arocomputer` organization owner must allow public GitHub Pages sites in
    the organization's Settings → Member privileges → Pages creation.
 2. In the repository's Settings → Pages, select **GitHub Actions** as the source
    and save `wovetui.com` as the custom domain before changing DNS.
@@ -267,7 +267,7 @@ The production origin is `https://wovetui.com`, configured in
    | A | `@` | `185.199.109.153` |
    | A | `@` | `185.199.110.153` |
    | A | `@` | `185.199.111.153` |
-   | CNAME | `www` | `intuitums.github.io` |
+   | CNAME | `www` | `arocomputer.github.io` |
 
    Remove old apex AAAA records or replace them with GitHub Pages IPv6 records
    from the [custom-domain documentation](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site).

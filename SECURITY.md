@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Use [GitHub private vulnerability reporting](https://github.com/intuitums/wove/security/advisories/new)
+Use [GitHub private vulnerability reporting](https://github.com/arocomputer/wove/security/advisories/new)
 or email [security@intuitum.sh](mailto:security@intuitum.sh) with SECURITY in the
 subject. Do not open a public issue containing an exploit or private information.
 

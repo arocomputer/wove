@@ -4,7 +4,7 @@ labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Report security-sensitive findings privately using our [security policy](https://github.com/intuitums/wove/blob/main/SECURITY.md). Remove credentials and private application content from examples and logs.
+      value: Report security-sensitive findings privately using our [security policy](https://github.com/arocomputer/wove/blob/main/SECURITY.md). Remove credentials and private application content from examples and logs.
   - type: textarea
     id: behavior
     attributes:
