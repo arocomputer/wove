@@ -49,8 +49,11 @@ Only an explicitly unaffected package may pass with a skipped platform matrix.
 Keep required names aligned with repository rules.
 
 Lockfile changes follow dependency ownership instead of selecting every crate.
-Crate READMEs use metadata checks; terminal-harness changes select PTYs without
-unrelated unit tests. Quality skips compilation for metadata-only changes.
+Non-published docs, including AGENTS.md and crate READMEs, select no builds or
+test suites; diff validation still checks whitespace and conflict markers.
+Root README and published docs select only Website. Terminal-harness changes
+select PTYs without unrelated unit tests. Tooling-only changes use lightweight
+Quality checks rather than compilation.
 
 Core runs `./x ui gallery editor` on Unix; Dioxus runs `./x ui counter`. An
 unfiltered `./x ui` runs all scenarios. Keep selection and its tests current when
