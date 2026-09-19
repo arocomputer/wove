@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       run: ${{ steps.affected.outputs.run }}
+      code: ${{ steps.affected.outputs.code }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,6 +47,12 @@ jobs:
         with:
           persist-credentials: false
       - run: ./x quality
+        if: needs.changes.outputs.code == 'true'
+      - name: Metadata and tooling checks
+        if: needs.changes.outputs.code == 'false'
+        run: |
+          ./x fmt --check
+          ./x guard
   complete:
     name: Validate
     needs: [changes, check]

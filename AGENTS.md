@@ -48,6 +48,10 @@ paths and shared CI changes run everything. Selection failures must fail CI.
 Only an explicitly unaffected package may pass with a skipped platform matrix.
 Keep required names aligned with repository rules.
 
+Lockfile changes follow dependency ownership instead of selecting every crate.
+Crate READMEs use metadata checks; terminal-harness changes select PTYs without
+unrelated unit tests. Quality skips compilation for metadata-only changes.
+
 Core runs `./x ui gallery editor` on Unix; Dioxus runs `./x ui counter`. An
 unfiltered `./x ui` runs all scenarios. Keep selection and its tests current when
 adding dependencies, packages, or shared build inputs.

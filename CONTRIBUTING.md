@@ -86,8 +86,16 @@ Selection follows the dependencies, not just the directory being edited:
 - Dioxus, Keymap, or SSH changes test that package and Quality.
 - Website-only changes run Website; root README changes also run Website because
   the homepage reads its feature list from that file.
-- Cargo manifests, Cargo.lock, and the Rust toolchain select every Rust package,
-  Quality, and Audit. Manifest edits can introduce new dependencies.
+- Crate README changes run lightweight metadata checks, without Rust compilation
+  or package tests. Root README changes also build the website.
+- Terminal-harness changes run the Core and Dioxus PTY scenarios without their
+  unrelated Rust unit suites. Example-only changes select their terminal scenarios.
+- Crate manifests select that crate and its consumers, plus Quality and Audit.
+  Cargo.lock changes follow old and new dependency graphs to find their owners:
+  an SSH-only dependency update does not select Core. Ambiguous or missing lockfile
+  data conservatively selects all Rust packages. Quality still validates the lockfile.
+- The root Cargo manifest and Rust toolchain select every Rust package, Quality,
+  and Audit because they are shared build inputs.
 - Shared CI logic, the `./x` entry point, and unclassified paths run everything.
 - Manual and scheduled workflow runs do not filter their work.
 
@@ -96,6 +104,10 @@ includes both paths of renamed files, and checks the whole pushed range on main.
 Its tests also verify that local crate dependency edges are covered. A small
 change-detection job gates each package matrix; the summaries retain the same
 required names. Website and Audit perform detection in their existing jobs.
+
+Selection distinguishes Rust code from terminal-harness work. For metadata and
+tooling-only changes, Quality runs formatting and guards instead of Clippy,
+rustdoc, and packaged-consumer builds. These refinements reuse the existing jobs.
 
 GitHub displays workflow and job names together. Shared results appear as
 `Quality / Validate`, `Website / Build`, and `Dependencies / Audit`; package
