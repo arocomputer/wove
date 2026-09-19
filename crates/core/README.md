@@ -8,7 +8,7 @@ for components and signals.
 
 ```toml
 [dependencies]
-wove = { git = "https://github.com/intuitums/wove", branch = "main", version = "0.0.1" }
+wove = { git = "https://github.com/arocomputer/wove", branch = "main", version = "0.0.1" }
 ```
 
 ```rust
@@ -49,8 +49,8 @@ frames that grow downward from the shell prompt while finished rows stay in the
 terminal's own scrollback. `Renderer`, `Inline`, and `input::Decoder` do the same
 work on plain bytes, without a terminal, for transports such as SSH.
 
-[Source and examples](https://github.com/intuitums/wove/tree/main) ·
-[Guide](https://github.com/intuitums/wove/blob/main/crates/web/src/content/docs/start.mdx)
+[Source and examples](https://github.com/arocomputer/wove/tree/main) ·
+[Guide](https://github.com/arocomputer/wove/blob/main/crates/web/src/content/docs/start.mdx)
 
 ## Optional features
 
@@ -63,7 +63,7 @@ Only `terminal` is enabled by default. Add any of these independently:
 | `diff` | `wove::diff::render` | Styled line differences. |
 
 ```toml
-wove = { git = "https://github.com/intuitums/wove", branch = "main", features = ["markdown"] }
+wove = { git = "https://github.com/arocomputer/wove", branch = "main", features = ["markdown"] }
 ```
 
 All three features work with `default-features = false`, without a terminal backend.
