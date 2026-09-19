@@ -19,9 +19,10 @@ Wove is a Rust library for building terminal user interfaces.
 - Handle keyboard and mouse input, with text selection and undo.
 - Test rendering and input without opening a terminal.
 
-Wove is early in development, and its API is still changing.
+> [!NOTE]
+> Wove is early in development, and its API is still changing.
 
-[Documentation](crates/web/README.md)
+[Website](https://wovetui.com) | [Documentation](https://wovetui.com/docs) | [Crates](https://wovetui.com/crates)
 
 ## Libraries
 
@@ -84,4 +85,4 @@ documentation, and releases.
 
 ## License
 
-MIT.
+Wove is released under the [MIT License](LICENSE).
