@@ -42,7 +42,18 @@ def affected(paths, lock_owners=None):
     """Follow the current crate dependencies; unknown paths conservatively run everything."""
     result = set()
     for path in paths:
-        if path == "x" or path.startswith("scripts/ci/"):
+        if path.startswith("crates/web/src/content/docs/"):
+            result.add("website")
+        elif path in {"AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "LICENSE"} or path.endswith("/AGENTS.md"):
+            continue
+        elif path == "README.md":
+            # The homepage imports this file; other repository prose is not built.
+            result.add("website")
+        elif path.startswith("crates/") and path.endswith("/README.md") and len(Path(path).parts) == 3:
+            continue
+        elif path.startswith(("docs/", "contributing/")) and path.endswith((".md", ".mdx", ".txt")):
+            continue
+        elif path == "x" or path.startswith("scripts/ci/"):
             result.update(AREAS)
         elif path == "Cargo.lock":
             result.update({"quality", "quality-rust", "audit"})
@@ -50,8 +61,6 @@ def affected(paths, lock_owners=None):
                 result.update(package_work(package))
         elif path in {"Cargo.toml", "rust-toolchain.toml"}:
             result.update(RUST | {"audit"})
-        elif path.startswith("crates/") and path.endswith("/README.md"):
-            result.add("website" if path.startswith("crates/web/") else "quality")
         elif path.startswith("crates/core/examples/"):
             result.update({"core-ui", "quality", "quality-rust"})
         elif path.startswith("crates/dioxus/examples/"):
@@ -70,14 +79,13 @@ def affected(paths, lock_owners=None):
             result.update({"quality", "quality-rust"})
         elif path.startswith("scripts/"):
             result.add("quality")
-        elif path.startswith(".github/workflows/"):
+        elif path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml")):
             result.update(WORKFLOWS.get(Path(path).stem, AREAS) | {"quality"})
-        elif path.startswith(".github/"):
-            result.add("quality")
-        elif path in {"README.md", "CONTRIBUTING.md", "AGENTS.md", "SECURITY.md"}:
-            result.update({"quality", "website"})
-        elif path == "LICENSE":
-            result.add("quality")
+        elif path.startswith(".github/") and (
+            path.endswith(".md") or path.startswith(".github/ISSUE_TEMPLATE/")
+            or path in {".github/CODEOWNERS", ".github/dependabot.yml"}
+        ):
+            continue
         else:
             result.update(AREAS)
         if path.endswith("Cargo.toml"):
@@ -164,6 +172,7 @@ def changed_paths(event_name, event, root=ROOT):
     if set(before) == {"0"}:
         return None
     revisions = [f"{before}...{after}"] if event_name == "pull_request" else [before, after]
+    subprocess.run(["git", "diff", "--check", *revisions, "--"], cwd=root, check=True)
     output = subprocess.check_output(
         ["git", "diff", "--no-renames", "--name-only", "-z", *revisions, "--"], cwd=root,
     )
