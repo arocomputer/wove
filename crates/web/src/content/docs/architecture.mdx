@@ -30,8 +30,8 @@ behavior. `Canvas` clips drawing, expands tabs, and filters other terminal
 control characters. Applications can implement elements without registering
 them globally. `Text` and `RichText` share measurement and wrapping logic and
 keep their wrapped layout between frames. Their fields are public, so there is
-no moment of change to hook; the layout is reused when its inputs equal the text
-it already holds, which is exact and costs a memory comparison. ASCII text, the
+no moment of change to hook; cache reuse compares each span's text, boundaries,
+style, and link with the saved layout. ASCII text, the
 common case, skips Unicode segmentation and is painted a byte per cell with its
 style resolved once per run.
 
@@ -52,7 +52,10 @@ example, reuses the computed layout.
 
 Mouse events are delivered with positions relative to the receiving node's
 top-left cell as last painted, translated again for each node they bubble to.
-The node that handles a press captures the pointer until release. A press that
+The node that handles a press captures the pointer until release. `Tree::target`
+includes capture, so adapters and native dispatch route drags to the same node.
+An adapter that prevents a press or release calls `Tree::release_pointer` to end
+the previous gesture. A press that
 no node handles anchors a selection of the painted frame: it is kept as two
 cells, shown by inverting them after the paint pass, and read back from the
 frame's own cells, so it works across every element, custom ones included, and
@@ -101,7 +104,10 @@ kitty keyboard query, the background color, the cursor position, and last a
 device-attributes request, which every terminal answers and which therefore ends
 the wait without a timeout. Replies are picked out of what arrives, read with
 safe polling from rustix on Unix, and the rest is decoded as typed-ahead keys.
-The modes to undo live in one place that the session, the panic hook, and the
+The core and Dioxus runners dispatch those keys before reading more input.
+Raw-mode cleanup is registered before the probe waits; screen and input-mode
+cleanup is added when those modes are entered. The restoration state lives in
+one place that the session, the panic hook, and the
 signal thread each try to take, so the terminal is restored exactly once however
 the process ends; only an abort or an uncatchable signal leaves them behind.
 Each frame goes out in a single write, so a restore from another thread cannot

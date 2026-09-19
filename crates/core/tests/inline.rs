@@ -196,3 +196,30 @@ fn finishing_parks_the_cursor_on_a_fresh_line_below_the_frame() {
     vt.feed(b"$ ");
     assert_eq!(vt.history(), ["a", "b", "c", "$"]);
 }
+
+#[test]
+fn finishing_after_committing_every_row_preserves_the_bottom_row() {
+    for height in [2, 3, 4] {
+        let mut vt = Vt::new(8, height);
+        let mut inline = Inline::new(0, Depth::Rgb);
+        draw(&mut inline, &mut vt, &["a", "b", "done"]);
+        inline.commit(3);
+        let mut bytes = Vec::new();
+        inline.finish(&mut bytes).unwrap();
+        vt.feed(&bytes);
+        vt.feed(b"$ ");
+        assert_eq!(vt.history(), ["a", "b", "done", "$"]);
+    }
+}
+
+#[test]
+fn finishing_without_drawing_keeps_the_launch_cursor() {
+    let mut vt = Vt::new(8, 3);
+    vt.feed(b"$ app\r\n");
+    let mut inline = Inline::new(1, Depth::Rgb);
+    let mut bytes = Vec::new();
+    inline.finish(&mut bytes).unwrap();
+    vt.feed(&bytes);
+    vt.feed(b"$ ");
+    assert_eq!(vt.history(), ["$ app", "$"]);
+}

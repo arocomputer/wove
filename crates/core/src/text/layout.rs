@@ -98,6 +98,8 @@ struct Run {
 pub struct TextLayout {
     content: String,
     styles: Vec<(Style, Option<Arc<str>>)>,
+    /// Original span boundaries, including empty spans, for exact cache reuse.
+    ends: Vec<usize>,
     rows: Vec<Vec<Run>>,
     width: usize,
 }
@@ -153,6 +155,7 @@ impl TextLayout {
         }
         Self {
             styles: spans.iter().map(|s| (s.style, s.link.clone())).collect(),
+            ends,
             content,
             rows,
             width: widest,
@@ -169,7 +172,10 @@ impl TextLayout {
         let (mut at, mut count) = (0, 0);
         for (text, style, link) in parts {
             let same = self.styles.get(count).is_some_and(|(s, l)| {
-                *s == style && l.as_ref() == link && self.content[at..].starts_with(text)
+                *s == style
+                    && l.as_ref() == link
+                    && self.ends[count] - at == text.len()
+                    && self.content[at..self.ends[count]] == *text
             });
             if !same {
                 return false;

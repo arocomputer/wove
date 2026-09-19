@@ -30,6 +30,8 @@ def scenario(name, steps, fullscreen=True):
     screen = pyte.Screen(80, 24)
     stream = pyte.ByteStream(screen)
     raw = bytearray()
+    cursor_answered = False
+    attributes_answered = False
     binary = ROOT / "target/debug" / name if name == "editor" else ROOT / "target/debug/examples" / name
     process = subprocess.Popen([str(binary)],
                                stdin=slave, stdout=slave, stderr=slave,
@@ -37,6 +39,7 @@ def scenario(name, steps, fullscreen=True):
 
     def receive(expected, after=-1):
         """Drain complete output until the expected frame appears or time expires."""
+        nonlocal cursor_answered, attributes_answered
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             if select.select([master], [], [], 0.05)[0]:
@@ -48,14 +51,18 @@ def scenario(name, steps, fullscreen=True):
                     raise
                 raw.extend(chunk)
                 stream.feed(chunk)
-                if b"\x1b[6n" in chunk:
-                    # pyte answers no requests itself. A session asks for the
-                    # cursor position and then for device attributes, whose
-                    # reply ends its startup probe.
-                    reply = f"\x1b[{screen.cursor.y + 1};{screen.cursor.x + 1}R"
-                    if b"\x1b[c" in chunk:
-                        reply += "\x1b[?62c"
-                    os.write(master, reply.encode())
+                # Requests can cross reads. The first step arrives during the
+                # probe, so both library runners must preserve typed-ahead input.
+                reply = bytearray()
+                if not cursor_answered and b"\x1b[6n" in raw:
+                    cursor_answered = True
+                    reply.extend(f"\x1b[{screen.cursor.y + 1};{screen.cursor.x + 1}R".encode())
+                if not attributes_answered and b"\x1b[c" in raw:
+                    attributes_answered = True
+                    reply.extend(steps[0][0])
+                    reply.extend(b"\x1b[?62c")
+                if reply:
+                    os.write(master, reply)
             if len(raw) > after and expected in "\n".join(screen.display):
                 return
             if process.poll() is not None:
@@ -84,7 +91,8 @@ def scenario(name, steps, fullscreen=True):
     try:
         receive("Wove")
         for index, (keys, expected) in enumerate(steps):
-            os.write(master, keys)
+            if index > 0:
+                os.write(master, keys)
             receive(expected)
             check_border()
             (OUT / f"{name}-{index}.txt").write_text("\n".join(screen.display) + "\n")
@@ -114,6 +122,39 @@ def scenario(name, steps, fullscreen=True):
         os.close(slave)
 
 
+def startup_signal():
+    """A fatal signal while the startup probe waits must restore raw mode only."""
+    master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+    original = termios.tcgetattr(slave)
+    process = subprocess.Popen([str(ROOT / "target/debug/examples/gallery")],
+                               stdin=slave, stdout=slave, stderr=slave,
+                               start_new_session=True)
+    raw = bytearray()
+    try:
+        deadline = time.monotonic() + 10
+        while b"\x1b[6n" not in raw:
+            assert time.monotonic() < deadline, "startup probe was not sent"
+            if select.select([master], [], [], 0.05)[0]:
+                raw.extend(os.read(master, 65536))
+        assert termios.tcgetattr(slave) != original, "probe must run in raw mode"
+        process.send_signal(signal.SIGTERM)
+        assert process.wait(timeout=10) == -signal.SIGTERM
+        while select.select([master], [], [], 0.05)[0]:
+            raw.extend(os.read(master, 65536))
+        assert termios.tcgetattr(slave) == original, "startup signal left raw mode enabled"
+        assert b"\x1b[?1049l" not in raw, "startup must not leave a screen it never entered"
+        assert b"\x1b[<1u" not in raw, "startup must not pop the shell's keyboard mode"
+        print("gallery: startup signal restoration passed")
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        (OUT / "startup-signal.ansi").write_bytes(raw)
+        os.close(master)
+        os.close(slave)
+
+
 scenarios = {
     "counter": [(b"++", "Count: 2")],
     "gallery": [(b"\x1b[200~scroll\x1b[201~", "A clipped viewport.")],
@@ -125,4 +166,6 @@ selected = sys.argv[1:] or list(scenarios)
 if unknown := set(selected) - scenarios.keys():
     raise SystemExit(f"Unknown scenarios: {', '.join(sorted(unknown))}")
 for name in selected:
+    if name == "gallery":
+        startup_signal()
     scenario(name, scenarios[name], fullscreen=name != "inline")

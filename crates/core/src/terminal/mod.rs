@@ -13,7 +13,8 @@ pub use query::Capabilities;
 static OWNED: AtomicBool = AtomicBool::new(false);
 /// What to undo if the process ends without dropping the session.
 struct Active {
-    options: Options,
+    /// Raw mode is already owned; screen and input modes may not be entered yet.
+    options: Option<Options>,
     /// Puts the cursor beneath an inline frame, so that what prints next
     /// lands under the frame instead of over it.
     park: Vec<u8>,
@@ -37,7 +38,9 @@ fn rescue() {
     if let Some(Active { options, park }) = taken {
         let mut output = io::stdout();
         let _ = output.write_all(&park);
-        let _ = options.leave(&mut output);
+        if let Some(options) = options {
+            let _ = options.leave(&mut output);
+        }
         let _ = terminal::disable_raw_mode();
     }
 }
@@ -193,14 +196,16 @@ impl Terminal {
     pub fn suspend(&mut self) -> io::Result<()> {
         let mut result = Ok(());
         // Whoever holds the modes undoes them; a panic hook may have already.
-        let taken = active().take();
-        if self.entered && taken.is_some() {
-            if self.options.screen == ScreenMode::Inline {
+        // Keep rescue from observing a half-restored session.
+        let mut active = active();
+        let taken = active.take();
+        if let Some(options) = taken.and_then(|state| state.options) {
+            if options.screen == ScreenMode::Inline {
                 if let Some(inline) = &mut self.inline {
                     result = inline.finish(&mut self.output);
                 }
             }
-            result = result.and(self.options.leave(&mut self.output));
+            result = result.and(options.leave(&mut self.output));
         }
         self.entered = false;
         if self.raw {
@@ -208,6 +213,7 @@ impl Terminal {
             self.raw = raw.is_err();
             result = result.and(raw);
         }
+        drop(active);
         self.invalidate();
         result
     }
@@ -218,8 +224,15 @@ impl Terminal {
             return Ok(());
         }
         if !self.raw {
+            // Publish raw-mode ownership before the probe can block. Holding
+            // the lock closes the gap between acquiring it and registering it.
+            let mut active = active();
             terminal::enable_raw_mode()?;
             self.raw = true;
+            *active = Some(Active {
+                options: None,
+                park: Vec::new(),
+            });
         }
         // Raw escape sequences need virtual terminal processing on Windows.
         #[cfg(windows)]
@@ -244,22 +257,29 @@ impl Terminal {
             }
             None => {}
         }
+        let state = self.restoration();
+        let mut active = active();
+        *active = Some(state);
         self.options.enter(&mut self.output)?;
-        self.record();
         Ok(())
     }
 
     /// Keep what a crash would need to restore the terminal up to date.
     fn record(&self) {
+        *active() = Some(self.restoration());
+    }
+
+    /// Cleanup for the entered screen and input modes, including cursor parking.
+    fn restoration(&self) -> Active {
         let park = match (&self.inline, self.options.screen) {
             (Some(inline), ScreenMode::Inline) => inline.park(),
             (_, ScreenMode::Alternate) => Vec::new(),
             _ => b"\r\n".to_vec(),
         };
-        *active() = Some(Active {
-            options: self.options,
+        Active {
+            options: Some(self.options),
             park,
-        });
+        }
     }
 
     /// Map an event from the screen onto the frame. An inline frame starts
@@ -498,15 +518,21 @@ pub fn poll(timeout: std::time::Duration) -> io::Result<bool> {
 /// Run a tree on the alternate screen, calling `update` after each dispatched
 /// event. The loop ends when `update` returns false; which keys quit is the
 /// application's decision, so handle one or the terminal stays captured.
+/// Input received during the startup probe is dispatched before new input.
 pub fn run(
     tree: &mut crate::Tree,
     mut update: impl FnMut(&mut crate::Tree, &crate::Event, &crate::Dispatch) -> bool,
 ) -> io::Result<()> {
     let mut terminal = Terminal::new()?;
+    let mut typed = terminal.typed_ahead().into_iter();
     loop {
         let (w, h) = terminal.size()?;
         terminal.draw(tree.frame(w, h).map_err(io::Error::other)?)?;
-        let Some(event) = read()? else {
+        let event = match typed.next() {
+            Some(event) => Some(event),
+            None => read()?,
+        };
+        let Some(event) = event else {
             continue;
         };
         let result = tree.dispatch(event.clone()).map_err(io::Error::other)?;
