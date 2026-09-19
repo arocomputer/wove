@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       run: ${{ steps.affected.outputs.run }}
+      code: ${{ steps.affected.outputs.code }}
+      ui: ${{ steps.affected.outputs.ui }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,8 +48,9 @@ jobs:
         with:
           persist-credentials: false
       - run: ./x dioxus
+        if: needs.changes.outputs.code == 'true'
       - name: Terminal integration
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && needs.changes.outputs.ui == 'true'
         run: ./x ui counter
   complete:
     name: Dioxus - Build and Test

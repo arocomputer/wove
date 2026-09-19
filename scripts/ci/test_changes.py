@@ -1,5 +1,6 @@
 """Pin dependency propagation and fail-closed Git diff handling for selective CI."""
 from pathlib import Path
+import copy
 import os
 import subprocess
 import tempfile
@@ -7,7 +8,7 @@ import tomllib
 import unittest
 from unittest.mock import patch
 
-from changes import AREAS, ROOT, RUST, affected, changed_paths
+from changes import AREAS, ROOT, RUST, affected, changed_paths, lockfile_owners, main, selection
 
 
 class ChangeTests(unittest.TestCase):
@@ -17,7 +18,10 @@ class ChangeTests(unittest.TestCase):
     def test_adapter_changes_do_not_retest_siblings(self):
         for package in ("dioxus", "keymap", "ssh"):
             with self.subTest(package=package):
-                self.assertEqual(affected([f"crates/{package}/src/lib.rs"]), {package, "quality"})
+                expected = {package, "quality", "quality-rust"}
+                if package == "dioxus":
+                    expected.add("dioxus-ui")
+                self.assertEqual(affected([f"crates/{package}/src/lib.rs"]), expected)
 
     def test_local_dependency_edges_are_covered(self):
         for manifest in (ROOT / "crates").glob("*/Cargo.toml"):
@@ -35,16 +39,17 @@ class ChangeTests(unittest.TestCase):
         self.assertIn("website", affected(["README.md"]))
 
     def test_manifests_and_lockfile_retest_rust_and_audit(self):
-        for path in ("Cargo.lock", "Cargo.toml", "crates/ssh/Cargo.toml", "rust-toolchain.toml"):
+        for path in ("Cargo.lock", "Cargo.toml", "rust-toolchain.toml"):
             with self.subTest(path=path):
                 self.assertEqual(affected([path]), RUST | {"audit"})
+        self.assertEqual(affected(["crates/ssh/Cargo.toml"]), {"ssh", "quality", "quality-rust", "audit"})
 
     def test_terminal_harness_covers_core_and_dioxus_examples(self):
-        self.assertEqual(affected(["scripts/ui.py"]), {"core", "dioxus", "quality"})
-        self.assertEqual(affected(["crates/examples/src/editor.rs"]), {"core", "quality"})
+        self.assertEqual(affected(["scripts/ui.py"]), {"core-ui", "dioxus-ui", "quality"})
+        self.assertEqual(affected(["crates/examples/src/editor.rs"]), {"core-ui", "quality", "quality-rust"})
 
     def test_workflows_and_shared_ci_do_not_skip_their_checks(self):
-        self.assertEqual(affected([".github/workflows/ssh.yml"]), {"ssh", "quality"})
+        self.assertEqual(affected([".github/workflows/ssh.yml"]), {"ssh", "quality", "quality-rust"})
         self.assertEqual(affected(["scripts/ci/changes.py"]), AREAS)
         self.assertEqual(affected(["x"]), AREAS)
         self.assertEqual(affected(["new-build-input"]), AREAS)
@@ -81,7 +86,7 @@ class ChangeTests(unittest.TestCase):
                 "base": {"sha": base}, "head": {"sha": head},
             }}, root)
             self.assertEqual(set(paths), {"crates/ssh/example.txt", "crates/dioxus/example.txt"})
-            self.assertEqual(affected(paths), {"ssh", "dioxus", "quality"})
+            self.assertEqual(affected(paths), {"ssh", "dioxus", "dioxus-ui", "quality", "quality-rust"})
 
     def test_manual_and_scheduled_runs_do_not_filter(self):
         for event in ("workflow_dispatch", "schedule"):
@@ -94,3 +99,70 @@ class ChangeTests(unittest.TestCase):
                 changed_paths("push", event)
         with self.assertRaises(ValueError):
             changed_paths("push", {"before": "--bad-revision", "after": "b" * 40})
+
+    def test_readme_changes_do_not_run_rust_or_terminal_tests(self):
+        work = affected(["crates/core/README.md"])
+        self.assertEqual(selection("core", work), {"run": False, "code": False, "ui": False})
+        self.assertEqual(selection("quality", work), {"run": True, "code": False, "ui": False})
+
+    def test_ui_only_changes_emit_terminal_selection_without_unit_tests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "event.json").write_text("{}")
+            env = {"GITHUB_EVENT_PATH": str(root / "event.json"),
+                   "GITHUB_EVENT_NAME": "pull_request", "GITHUB_OUTPUT": str(root / "output")}
+            with patch.dict(os.environ, env, clear=True), patch("sys.argv", ["changes.py", "core"]), \
+                    patch("changes.changed_paths", return_value=["scripts/ui/requirements.txt"]):
+                main()
+            self.assertEqual(dict(line.split("=", 1) for line in (root / "output").read_text().splitlines()),
+                             {"run": "true", "code": "false", "ui": "true"})
+
+
+class LockfileTests(unittest.TestCase):
+    def setUp(self):
+        """Model Core consumers plus independent SSH and example-only registry dependencies."""
+        self.before = {"version": 4, "package": [
+            {"name": "wove", "version": "0.0.1", "dependencies": ["render"]},
+            {"name": "wove-dioxus", "version": "0.0.1", "dependencies": ["wove"]},
+            {"name": "wove-keymap", "version": "0.0.1", "dependencies": ["wove"]},
+            {"name": "wove-ssh", "version": "0.0.1", "dependencies": ["wove", "tokio"]},
+            {"name": "wove-examples", "version": "0.0.1", "dependencies": ["wove", "demo"]},
+            {"name": "tokio", "version": "1.0.0", "source": "registry", "dependencies": ["bytes"]},
+            {"name": "bytes", "version": "1.0.0", "source": "registry"},
+            {"name": "render", "version": "1.0.0", "source": "registry"},
+            {"name": "demo", "version": "1.0.0", "source": "registry"},
+        ]}
+        self.after = copy.deepcopy(self.before)
+
+    def bump(self, name):
+        """Update one registry dependency while leaving workspace source unchanged."""
+        next(row for row in self.after["package"] if row["name"] == name)["version"] = "2.0.0"
+
+    def test_ssh_transitive_dependency_does_not_select_core(self):
+        self.bump("bytes")
+        owners = lockfile_owners(self.before, self.after)
+        self.assertEqual(owners, {"ssh"})
+        self.assertEqual(affected(["Cargo.lock"], owners), {"ssh", "quality", "quality-rust", "audit"})
+
+    def test_core_dependency_selects_all_consumers(self):
+        self.bump("render")
+        self.assertEqual(affected(["Cargo.lock"], lockfile_owners(self.before, self.after)), RUST | {"audit"})
+
+    def test_example_dependency_selects_terminal_without_core_unit_tests(self):
+        self.bump("demo")
+        work = affected(["Cargo.lock"], lockfile_owners(self.before, self.after))
+        self.assertEqual(selection("core", work), {"run": True, "code": False, "ui": True})
+
+    def test_removed_dependency_still_checks_its_former_consumer(self):
+        self.after["package"] = [row for row in self.after["package"] if row["name"] != "demo"]
+        next(row for row in self.after["package"] if row["name"] == "wove-examples")["dependencies"] = ["wove"]
+        self.assertEqual(lockfile_owners(self.before, self.after), {"examples"})
+
+    def test_unknown_lockfile_relationships_fall_back_to_all_rust_checks(self):
+        self.after["package"][0]["dependencies"] = ["missing-package"]
+        self.assertIsNone(lockfile_owners(self.before, self.after))
+        self.assertEqual(affected(["Cargo.lock"], None), RUST | {"audit"})
+
+    def test_ambiguous_dependency_versions_do_not_allow_a_skip(self):
+        self.after["package"].append({"name": "bytes", "version": "2.0.0", "source": "registry"})
+        self.assertIsNone(lockfile_owners(self.before, self.after))
