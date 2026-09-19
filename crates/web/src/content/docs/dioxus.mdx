@@ -50,6 +50,11 @@ The data is the portable core event. Listeners can call `prevent_default` or
 user choose an element with the mouse. Event handlers on unfocused descendants do
 not receive keyboard events.
 
+Mouse listeners follow the native element's pointer capture. A drag or release
+goes to the element that handled the press even when the pointer moves over a
+different element. `prevent_default` can cancel a captured drag's native editing;
+a prevented release still ends capture.
+
 A `value` update replaces input text only when it differs. The native element owns cursor and undo state; binding the edited value back
 without changing it preserves that state.
 `oninput` receives `Event<String>` after a native edit, paste, undo, or redo changes

@@ -142,12 +142,12 @@ fn sequence(bytes: &[u8]) -> Option<Event> {
     if let Some(body) = body.strip_prefix('<') {
         return mouse(body, end);
     }
-    // Each `;` field may carry `:` sub-parameters; an omitted value reads as 1.
-    let fields: Vec<Vec<u32>> = body
+    // Empty sub-parameters stay absent; only modifier fields default to 1.
+    let fields: Vec<Vec<Option<u32>>> = body
         .split(';')
-        .map(|field| field.split(':').map(|n| n.parse().unwrap_or(1)).collect())
+        .map(|field| field.split(':').map(|n| n.parse().ok()).collect())
         .collect();
-    let value = |field: usize, part: usize| fields.get(field)?.get(part).copied();
+    let value = |field: usize, part: usize| fields.get(field)?.get(part).copied().flatten();
     if value(1, 1) == Some(3) {
         return None; // A key release.
     }
@@ -193,7 +193,18 @@ fn sequence(bytes: &[u8]) -> Option<Event> {
             57425 => Key::Insert,
             57426 => Key::Delete,
             0xe000..=0xf8ff => return None,
-            code => Key::Char(char::from_u32(code).filter(|c| !c.is_control())?),
+            code => {
+                // The terminal knows the active keyboard layout; its shifted
+                // codepoint is more accurate than uppercasing the base key.
+                let code = if modifiers.shift {
+                    value(0, 1).unwrap_or(code)
+                } else {
+                    code
+                };
+                let c = char::from_u32(code)
+                    .filter(|c| !c.is_control() && !(0xe000..=0xf8ff).contains(&code))?;
+                Key::Char(c)
+            }
         },
         b'~' => match value(0, 0)? {
             1 | 7 => Key::Home,
@@ -379,6 +390,32 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn kitty_uses_the_shifted_codepoint_without_mistaking_an_omitted_one_for_text() {
+        let shift = Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        };
+        for (bytes, expected) in [
+            (
+                b"\x1b[49:33;2u".as_slice(),
+                Event::key(Key::Char('!'), shift),
+            ),
+            (b"\x1b[97:65;2u", Key::Char('A').into()),
+            (b"\x1b[49::49;2u", Event::key(Key::Char('1'), shift)),
+            (b"\x1b[49:33u", Key::Char('1').into()),
+        ] {
+            assert_eq!(Decoder::default().push(bytes), [expected]);
+        }
+        for bytes in [
+            b"\x1b[49:27;2u".as_slice(),
+            b"\x1b[49:57430;2u",
+            b"\x1b[49:1114112;2u",
+        ] {
+            assert!(Decoder::default().push(bytes).is_empty());
+        }
     }
 
     #[test]

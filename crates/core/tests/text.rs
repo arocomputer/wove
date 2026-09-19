@@ -337,3 +337,154 @@ fn a_word_wider_than_the_row_breaks_inside_itself_without_overflowing() {
         .collect();
     assert_eq!(rows, ["ab ", "cdef", "ghij ", "k"]);
 }
+
+#[test]
+fn an_atom_includes_graphemes_joined_at_either_end_and_undo_restores_them() {
+    for (original, at, inserted, start) in [
+        ("💻", 0, "界界a👩\u{200d}", 0),
+        ("xe", 2, "\u{301}token", 1),
+    ] {
+        let mut editor = Editor::new(original);
+        editor.seek(at, false);
+        editor.insert_atom(inserted, 7);
+        let joined = editor.text().to_owned();
+        assert_eq!(editor.atoms()[0].range, start..joined.len());
+        editor.left(false);
+        assert_eq!(editor.cursor(), start);
+        editor.right(false);
+        editor.backspace();
+        assert_eq!(editor.text(), &original[..start]);
+        editor.undo();
+        assert_eq!(editor.text(), joined);
+        assert_eq!(editor.atoms()[0].range, start..joined.len());
+        editor.undo();
+        assert_eq!(editor.text(), original);
+        assert!(editor.atoms().is_empty());
+        editor.redo();
+        assert_eq!(editor.atoms()[0].range, start..joined.len());
+    }
+}
+
+#[test]
+fn edits_joining_atoms_keep_one_grapheme_aligned_token() {
+    let mut editor = Editor::new("");
+    editor.insert_atom("👩\u{200d}", 1);
+    editor.insert(" ");
+    editor.insert_atom("💻", 2);
+    editor.left(false);
+    editor.backspace();
+    assert_eq!(editor.text(), "👩‍💻");
+    assert_eq!(editor.atoms().len(), 1);
+    assert_eq!(editor.atoms()[0].id, 1);
+    assert_eq!(editor.atoms()[0].range, 0..editor.text().len());
+    assert_eq!(editor.cursor(), editor.text().len());
+    editor.undo();
+    assert_eq!(editor.atoms().len(), 2);
+    assert_eq!(editor.text(), "👩\u{200d} 💻");
+    editor.redo();
+    editor.left(false);
+    assert_eq!(editor.cursor(), 0);
+}
+
+#[test]
+fn a_new_atom_joining_an_existing_atom_takes_its_whole_range() {
+    let mut editor = Editor::new("");
+    editor.insert_atom("e", 1);
+    editor.insert_atom("\u{301}token", 2);
+    assert_eq!(editor.atoms().len(), 1);
+    assert_eq!(editor.atoms()[0].id, 2);
+    assert_eq!(editor.atoms()[0].range, 0..editor.text().len());
+    editor.undo();
+    assert_eq!(editor.text(), "e");
+    assert_eq!(editor.atoms()[0].id, 1);
+    assert_eq!(editor.atoms()[0].range, 0..1);
+}
+
+#[test]
+fn rich_text_restyles_when_only_span_boundaries_change() {
+    use wove::{
+        elements::RichText,
+        testing::Screen,
+        text::{Span, Wrap},
+    };
+    let bold = Style {
+        bold: true,
+        ..Style::default()
+    };
+    let mut screen = Screen::new(10, 1);
+    let id = screen
+        .tree
+        .add(
+            screen.tree.root(),
+            RichText::new(
+                vec![
+                    Span::link("a", bold, "https://example.com/a"),
+                    Span::new("bc", Style::default()),
+                ],
+                Wrap::None,
+            ),
+        )
+        .unwrap();
+    let mut layout = screen.tree.layout(id).unwrap().clone();
+    layout.size.width = wove::layout::length(10.0);
+    screen.tree.set_layout(id, layout).unwrap();
+    assert!(!screen.frame().unwrap().cell(1, 0).unwrap().style().bold);
+    screen
+        .tree
+        .update::<RichText>(id, |text| {
+            text.spans[0].text = "ab".into();
+            text.spans[1].text = "c".into();
+        })
+        .unwrap();
+    let cell = screen.frame().unwrap().cell(1, 0).unwrap();
+    assert!(cell.style().bold);
+    assert_eq!(cell.link(), Some("https://example.com/a"));
+}
+
+#[test]
+fn normalized_ctrl_shift_z_redoes_an_undone_edit() {
+    use wove::{elements::Input, testing::Screen, Event, Key, Modifiers};
+    let mut screen = Screen::new(10, 1);
+    let id = screen
+        .tree
+        .add(screen.tree.root(), Input::default())
+        .unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    screen.send(Event::Paste("word".into())).unwrap();
+    let ctrl = Modifiers {
+        ctrl: true,
+        ..Modifiers::default()
+    };
+    let shifted = Modifiers {
+        shift: true,
+        ..ctrl
+    };
+    for redo in [
+        Event::key(Key::Char('z'), shifted),
+        Event::Key(Key::Char('z'), shifted),
+    ] {
+        screen.send(Event::key(Key::Char('z'), ctrl)).unwrap();
+        assert_eq!(screen.tree.get::<Input>(id).unwrap().editor.text(), "");
+        screen.send(redo).unwrap();
+        assert_eq!(screen.tree.get::<Input>(id).unwrap().editor.text(), "word");
+    }
+}
+
+#[test]
+fn shifted_alt_word_bindings_extend_the_selection() {
+    use wove::{
+        text::{command, Command, Motion},
+        Event, Key, Modifiers,
+    };
+    let modifiers = Modifiers {
+        alt: true,
+        shift: true,
+        ..Modifiers::default()
+    };
+    for (key, motion) in [('b', Motion::WordLeft), ('f', Motion::WordRight)] {
+        assert_eq!(
+            command(&Event::key(Key::Char(key), modifiers), true),
+            Some(Command::Move(motion, true))
+        );
+    }
+}

@@ -18,6 +18,7 @@ pub fn command(event: &Event, multiline: bool) -> Option<Command> {
             let word = m.ctrl || m.alt;
             match key {
                 Key::Char('a') if m.ctrl => Command::SelectAll,
+                Key::Char('Z') if m.ctrl => Command::Redo,
                 Key::Char('z') if m.ctrl && m.shift => Command::Redo,
                 Key::Char('z') if m.ctrl => Command::Undo,
                 Key::Char('y') if m.ctrl => Command::Redo,
@@ -25,6 +26,8 @@ pub fn command(event: &Event, multiline: bool) -> Option<Command> {
                 Key::Char('w') if m.ctrl => Command::Delete(Motion::WordLeft),
                 Key::Char('k') if m.ctrl => Command::Delete(end),
                 Key::Char('u') if m.ctrl => Command::Delete(home),
+                Key::Char('B') if m.alt => Command::Move(Motion::WordLeft, true),
+                Key::Char('F') if m.alt => Command::Move(Motion::WordRight, true),
                 Key::Char('b') if m.alt => Command::Move(Motion::WordLeft, m.shift),
                 Key::Char('f') if m.alt => Command::Move(Motion::WordRight, m.shift),
                 Key::Char('d') if m.alt => Command::Delete(Motion::WordRight),

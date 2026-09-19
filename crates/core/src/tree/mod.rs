@@ -523,9 +523,16 @@ impl Tree {
         };
         found.or(Some(id))
     }
-    /// Hit testing uses the last painted frame. Keyboard events target the focus.
+    /// Resolve the same target used by dispatch: captured drags and releases go
+    /// to the press owner, other mouse events hit the last painted frame, and
+    /// keyboard events target the focus. Adapters can route listeners first.
     pub fn target(&self, event: &Event) -> Option<Id> {
         if let Event::Mouse(mouse) = event {
+            if matches!(mouse.kind, MouseKind::Drag(_) | MouseKind::Up(_)) {
+                if let Some(id) = self.capture.filter(|id| self.contains(*id)) {
+                    return Some(id);
+                }
+            }
             self.hit(self.root, mouse.x, mouse.y)
         } else {
             self.focus
@@ -533,14 +540,22 @@ impl Tree {
                 .or(Some(self.root))
         }
     }
+
+    /// End pointer capture and any pending screen-selection drag. An adapter
+    /// that prevents a press or release must still end the previous gesture.
+    /// The visible selection is kept until cleared or replaced by a new press.
+    pub fn release_pointer(&mut self) {
+        self.capture = None;
+        self.anchor = None;
+    }
+
     /// What becomes of a mouse event before any node sees it: selection and
     /// capture are the tree's business, not an element's.
-    fn pointer(&mut self, mouse: &crate::Mouse, hit: Option<Id>) -> Result<Pointer, Error> {
+    fn pointer(&mut self, mouse: &crate::Mouse, target: Option<Id>) -> Result<Pointer, Error> {
         let mut changed = false;
-        let mut target = hit;
         match (mouse.kind, self.anchor) {
             (MouseKind::Down(_), _) => {
-                self.capture = None;
+                self.release_pointer();
                 changed = self.selection.is_some();
                 self.clear_selection();
             }
@@ -551,15 +566,12 @@ impl Tree {
                 return Ok(Pointer::Selecting { changed: true });
             }
             (MouseKind::Up(_), Some(_)) => {
-                self.anchor = None;
+                self.release_pointer();
                 return Ok(Pointer::Selecting { changed: false });
             }
-            // The node that took the press keeps the pointer until release.
-            (MouseKind::Drag(_), None) => {
-                target = self.capture.filter(|id| self.contains(*id)).or(hit);
-            }
+            // The target was resolved while the press still owned the pointer.
             (MouseKind::Up(_), None) => {
-                target = self.capture.take().filter(|id| self.contains(*id)).or(hit);
+                self.release_pointer();
             }
             _ => {}
         }

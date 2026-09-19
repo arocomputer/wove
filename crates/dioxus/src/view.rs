@@ -45,6 +45,8 @@ impl View {
     }
     /// Dispatch to Dioxus before native element behavior. `prevent_default` cancels
     /// editing or focus traversal; `stop_propagation` stops Dioxus parent listeners.
+    /// Mouse listeners follow native pointer capture. A prevented release still
+    /// ends the gesture, so later events cannot remain captured by that node.
     pub fn send(&mut self, event: Event) -> Result<Dispatch, Error> {
         self.render()?;
         let target = self.host.tree.target(&event);
@@ -60,6 +62,10 @@ impl View {
             Event::Resize(..) => "resize",
         };
         if !self.emit(target, name, Rc::new(event.clone())) {
+            if matches!(&event, Event::Mouse(mouse) if matches!(mouse.kind, wove::MouseKind::Down(_) | wove::MouseKind::Up(_)))
+            {
+                self.host.tree.release_pointer();
+            }
             self.render()?;
             return Ok(Dispatch {
                 target,

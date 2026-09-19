@@ -110,10 +110,12 @@ A session asks the terminal once, as it starts, what it supports and where its
 cursor is. `Terminal::capabilities` holds the answers: whether kitty key reports
 work, in which case `Options::keyboard` takes effect, and the background color,
 for choosing a light or dark palette. Keys typed during the probe come back from
-`Terminal::typed_ahead`; handle them before reading input.
+`Terminal::typed_ahead`; handle them before reading input in a custom loop.
+`terminal::run` and `wove_dioxus::run` process these events automatically.
 
 A panic restores the terminal before its message prints, so the message is
-readable. So does a fatal signal such as hangup or terminate, and an inline session
+readable. So does a fatal signal such as hangup or terminate, including while the
+startup probe is waiting for replies. An inline session
 parks the cursor beneath its frame first, so what prints next lands under it.
 Set `Options::signals` to false when the application handles signals itself.
 `Terminal::stop` suspends the process as Ctrl-Z does in a shell, which raw mode
@@ -144,7 +146,9 @@ the terminal's own selection and scrollback gestures.
 `Terminal::commit(rows)` releases finished rows at the top of the last frame.
 They stay where they are, and the next frame starts beneath them, so remove
 their elements from the tree. This keeps frames small however long a session
-runs. After a resize the visible screen is cleared and the current frame is
+runs. Exiting parks the cursor below the output even when every row has been
+committed, scrolling a fresh line into view if needed. After a resize the visible
+screen is cleared and the current frame is
 repainted; committed rows that were still visible are gone unless the
 application draws and commits them again. `Terminal::switch` moves between an
 inline session and a full-screen view while running. The `inline` example shows

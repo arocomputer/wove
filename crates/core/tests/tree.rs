@@ -338,7 +338,12 @@ fn a_press_captures_the_pointer_and_an_unclaimed_drag_selects_the_screen() {
         screen.send(press).unwrap().changed,
         "clearing a selection repaints"
     );
+    let drag = Event::Mouse(Mouse::new(4, 0, MouseKind::Drag(Button::Left)));
+    let release = Event::Mouse(Mouse::new(4, 0, MouseKind::Up(Button::Left)));
+    assert_eq!(screen.tree.target(&drag), Some(input));
+    assert_eq!(screen.tree.target(&release), Some(input));
     screen.drag((1, 2), (4, 0)).unwrap();
+    assert_ne!(screen.tree.target(&drag), Some(input));
     assert_eq!(
         screen.tree.selected_text(),
         None,

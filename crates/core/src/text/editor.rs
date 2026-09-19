@@ -19,7 +19,9 @@ struct State {
 /// A run of text that behaves as one unit: the cursor steps over it, and an
 /// edit that touches it removes all of it. Applications use atoms for tokens
 /// that stand for something else, such as a collapsed paste or an attachment,
-/// and recognize them by `id`.
+/// and recognize them by `id`. Ranges include whole graphemes. An edit that
+/// joins neighboring atoms merges them under the leftmost atom's id; inserting
+/// a new atom over a joined grapheme gives the merged token the new id.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Atom {
     pub id: u64,
@@ -166,19 +168,15 @@ impl Editor {
                 atom.range.end = atom.range.end - range.len() + text.len();
             }
         }
+        self.normalize_atoms();
         self.rows.borrow_mut().clear();
         let end = range.start + text.len();
-        // Insertion can join adjacent graphemes; advance to the next valid boundary.
-        // The check looks only at the text around `end`, whatever the length.
-        let mut at = GraphemeCursor::new(end, self.state.text.len(), true);
-        self.state.cursor = match at.is_boundary(&self.state.text, 0) {
-            Ok(true) => end,
-            _ => at
-                .next_boundary(&self.state.text, 0)
-                .ok()
-                .flatten()
-                .unwrap_or(self.state.text.len()),
-        };
+        let end = boundary(self.text(), end, true);
+        self.state.cursor = self
+            .atoms
+            .iter()
+            .find(|atom| atom.range.start < end && end < atom.range.end)
+            .map_or(end, |atom| atom.range.end);
         self.state.anchor = None;
         self.column = None;
         self.redo.clear();
@@ -213,7 +211,8 @@ impl Editor {
         self.typing = typed;
     }
 
-    /// Insert text that stays one unit until an edit removes it.
+    /// Insert text that stays one unit until an edit removes it. Graphemes and
+    /// existing atoms joined at either edge become part of the new atom.
     pub fn insert_atom(&mut self, text: &str, id: u64) {
         if text.is_empty() {
             return;
@@ -221,15 +220,51 @@ impl Editor {
         self.typing = false;
         self.insert(text);
         self.typing = false;
-        let end = self.state.cursor;
-        let at = self.atoms.partition_point(|atom| atom.range.start < end);
-        self.atoms.insert(
-            at,
-            Atom {
-                id,
-                range: end - text.len()..end,
-            },
-        );
+        // This insertion has its own edit, even if it was one typed grapheme.
+        let start = self
+            .undo
+            .back()
+            .expect("atom insertion recorded an edit")
+            .start;
+        let mut range = boundary(self.text(), start, false)..self.state.cursor;
+        self.atoms.retain(|atom| {
+            if atom.range.start < range.end && range.start < atom.range.end {
+                range.start = range.start.min(atom.range.start);
+                range.end = range.end.max(atom.range.end);
+                false
+            } else {
+                true
+            }
+        });
+        self.state.cursor = range.end;
+        self.undo
+            .back_mut()
+            .expect("atom insertion recorded an edit")
+            .after = (range.end, None);
+        let at = self
+            .atoms
+            .partition_point(|atom| atom.range.start < range.start);
+        self.atoms.insert(at, Atom { id, range });
+    }
+
+    /// Expand atom edges changed by grapheme joining, merging overlaps so the
+    /// cursor can never stop inside a grapheme or an adjacent token.
+    fn normalize_atoms(&mut self) {
+        let mut index = 0;
+        while index < self.atoms.len() {
+            let atom = &mut self.atoms[index];
+            atom.range.start = boundary(&self.state.text, atom.range.start, false);
+            atom.range.end = boundary(&self.state.text, atom.range.end, true);
+            if index > 0 && self.atoms[index - 1].range.end > self.atoms[index].range.start {
+                self.atoms[index - 1].range.end = self.atoms[index - 1]
+                    .range
+                    .end
+                    .max(self.atoms[index].range.end);
+                self.atoms.remove(index);
+            } else {
+                index += 1;
+            }
+        }
     }
 
     /// Where a motion from the cursor ends, before atoms are stepped over.
@@ -364,25 +399,8 @@ impl Editor {
         offset
     }
 
-    /// The nearest grapheme boundary at or before an offset.
-    fn boundary(&self, offset: usize) -> usize {
-        let text = self.text();
-        if offset >= text.len() {
-            return text.len();
-        }
-        let mut offset = offset;
-        while !text.is_char_boundary(offset) {
-            offset -= 1;
-        }
-        let mut at = GraphemeCursor::new(offset, text.len(), true);
-        match at.is_boundary(text, 0) {
-            Ok(true) => offset,
-            _ => at.prev_boundary(text, 0).ok().flatten().unwrap_or(0),
-        }
-    }
-
     fn move_to(&mut self, target: usize, extend: bool) {
-        let target = self.boundary(target);
+        let target = boundary(self.text(), target, false);
         // Step over an atom in the direction of travel.
         let target = self
             .atoms
@@ -506,5 +524,30 @@ impl Editor {
             self.typing = false;
             self.undo.push_back(edit);
         }
+    }
+}
+
+/// Snap a byte offset outward to a grapheme boundary without scanning the
+/// whole document. Forward snapping is used for insertion and atom ends.
+fn boundary(text: &str, offset: usize, forward: bool) -> usize {
+    let mut offset = offset.min(text.len());
+    while !text.is_char_boundary(offset) {
+        if forward {
+            offset += 1;
+        } else {
+            offset -= 1;
+        }
+    }
+    let mut at = GraphemeCursor::new(offset, text.len(), true);
+    if at.is_boundary(text, 0) == Ok(true) {
+        return offset;
+    }
+    if forward {
+        at.next_boundary(text, 0)
+            .ok()
+            .flatten()
+            .unwrap_or(text.len())
+    } else {
+        at.prev_boundary(text, 0).ok().flatten().unwrap_or(0)
     }
 }

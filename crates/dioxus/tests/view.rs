@@ -193,3 +193,79 @@ fn textarea_notifications_preserve_multiline_value_and_undo() {
         ""
     );
 }
+
+#[test]
+fn mouse_listeners_follow_capture_and_a_prevented_release_ends_it() {
+    use std::cell::RefCell;
+    use wove::{Button, Modifiers, Mouse, MouseKind};
+    thread_local! {
+        static SEEN: RefCell<Vec<(&'static str, MouseKind)>> = const { RefCell::new(Vec::new()) };
+    }
+    fn app() -> Element {
+        rsx! { view { direction: "column",
+            input { value: "first", onmouse: move |event| {
+                if let InputEvent::Mouse(mouse) = *event.data {
+                    SEEN.with(|seen| seen.borrow_mut().push(("first", mouse.kind)));
+                    if mouse.modifiers.shift || matches!(mouse.kind, MouseKind::Up(_)) {
+                        event.prevent_default();
+                    }
+                }
+            } }
+            input { value: "second", onmouse: move |event| {
+                if let InputEvent::Mouse(mouse) = *event.data {
+                    SEEN.with(|seen| seen.borrow_mut().push(("second", mouse.kind)));
+                }
+            } }
+        } }
+    }
+    let mut view = View::new(VirtualDom::new(app)).unwrap();
+    view.frame(20, 4).unwrap();
+    let down = MouseKind::Down(Button::Left);
+    let drag = MouseKind::Drag(Button::Left);
+    let up = MouseKind::Up(Button::Left);
+    view.send(InputEvent::Mouse(Mouse::new(1, 0, down)))
+        .unwrap();
+    let first = view.tree().focused().unwrap();
+    let result = view
+        .send(InputEvent::Mouse(Mouse::new(3, 1, drag)))
+        .unwrap();
+    assert_eq!(result.target, Some(first));
+    SEEN.with(|seen| assert_eq!(*seen.borrow(), [("first", down), ("first", drag)]));
+    assert_eq!(
+        view.tree().get::<Input>(first).unwrap().editor.selection(),
+        1..3
+    );
+    let cancelled = Mouse {
+        modifiers: Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        },
+        ..Mouse::new(4, 1, drag)
+    };
+    view.send(InputEvent::Mouse(cancelled)).unwrap();
+    assert_eq!(
+        view.tree().get::<Input>(first).unwrap().editor.selection(),
+        1..3
+    );
+    view.send(InputEvent::Mouse(Mouse::new(3, 1, up))).unwrap();
+    let second = view
+        .tree()
+        .target(&InputEvent::Mouse(Mouse::new(3, 1, drag)))
+        .unwrap();
+    assert_ne!(second, first, "even a prevented release must end capture");
+    view.send(InputEvent::Mouse(Mouse::new(1, 1, down)))
+        .unwrap();
+    assert_eq!(view.tree().focused(), Some(second));
+    SEEN.with(|seen| {
+        assert_eq!(
+            *seen.borrow(),
+            [
+                ("first", down),
+                ("first", drag),
+                ("first", drag),
+                ("first", up),
+                ("second", down),
+            ]
+        )
+    });
+}

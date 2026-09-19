@@ -237,9 +237,15 @@ impl Inline {
     /// A session keeps them current so that even a crash leaves the frame
     /// intact above whatever is printed next.
     pub fn park(&self) -> Vec<u8> {
-        let rows = i64::from(self.screen.map_or(1, |(_, rows)| rows.max(1)));
+        let Some((_, rows)) = self.screen else {
+            // No frame has moved the launch cursor.
+            return Vec::new();
+        };
+        let rows = i64::from(rows.max(1));
         match self.len() {
-            0 => format!("\r\x1b[{};1H", (self.top + 1).clamp(1, rows)),
+            0 if self.top < rows => format!("\r\x1b[{};1H", (self.top + 1).clamp(1, rows)),
+            // Committing the bottom row leaves the next row just off screen.
+            0 => format!("\r\x1b[{rows};1H\r\n"),
             len => format!("\r\x1b[{};1H\r\n", (self.top + len).clamp(1, rows)),
         }
         .into_bytes()

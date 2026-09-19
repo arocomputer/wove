@@ -45,7 +45,7 @@ content is elements rather than text.
 Both editable elements use `wove::text::Editor`. Cursor positions are byte offsets
 on grapheme boundaries.
 
-- Shift extends a selection; Ctrl+Z undoes an edit.
+- Shift extends a selection; Ctrl+Z undoes an edit; Ctrl+Shift+Z or Ctrl+Y redoes it.
 - The multiline editor accepts pasted newlines.
 - Moving vertically through short lines preserves the display column.
 - With `Textarea::wrap`, Up and Down move through the wrapped rows.
@@ -54,7 +54,14 @@ on grapheme boundaries.
 
 Edits are data. A `Command` inserts text, moves by a `Motion`, deletes up to a `Motion`, selects all, undoes, or redoes; `Editor::apply` runs one. `text::command` maps an event to a command under the default bindings: arrows, Home and End, Ctrl or Alt with arrows for words, Ctrl+W and Alt+Backspace to delete a word, Ctrl+K and Ctrl+U to delete to the end or start of the line. Applications with their own bindings handle the key first, in their loop or a node handler, and apply the commands they choose.
 
-An atom is a run of text that acts as one unit, for tokens that stand for something else, such as a collapsed paste. `Editor::insert_atom` adds one with an application-chosen id. The cursor steps over it, an edit that touches it removes it whole, and undo brings it back. `Textarea::atom` styles atoms.
+An atom is a run of text that acts as one unit, for tokens that stand for something
+else, such as a collapsed paste. `Editor::insert_atom` adds one with an
+application-chosen id. The cursor steps over it, an edit that touches it removes
+it whole, and undo brings it back. Atom boundaries always include whole graphemes.
+If an edit joins neighboring atoms into one grapheme, they merge under the
+leftmost atom's id. A new atom that joins existing text or atoms includes them
+under its own id. Undo restores the previous text and atom identities.
+`Textarea::atom` styles atoms.
 
 Undo keeps at most 100 edits and stores changed text rather than a copy of the entire document. A typed word and the whitespace after it are one edit. Text storage is currently a `String`; large-document editing still needs profiling.
 
