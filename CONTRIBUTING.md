@@ -84,10 +84,12 @@ Selection follows the dependencies, not just the directory being edited:
 
 - Core changes test Core, Dioxus, Keymap, and SSH, plus Quality.
 - Dioxus, Keymap, or SSH changes test that package and Quality.
-- Website-only changes run Website; root README changes also run Website because
-  the homepage reads its feature list from that file.
-- Crate README changes run lightweight metadata checks, without Rust compilation
-  or package tests. Root README changes also build the website.
+- Published website/docs changes run Website. Root README changes also run only
+  Website because the homepage reads its feature list from that file.
+- Non-published documentation such as AGENTS.md, CONTRIBUTING.md, SECURITY.md,
+  crate READMEs, and GitHub templates skips builds and test suites entirely.
+  The change-detection step still checks whitespace and conflict markers using
+  `git diff --check`. Required summaries report the intentional skips.
 - Terminal-harness changes run the Core and Dioxus PTY scenarios without their
   unrelated Rust unit suites. Example-only changes select their terminal scenarios.
 - Crate manifests select that crate and its consumers, plus Quality and Audit.
@@ -106,8 +108,9 @@ change-detection job gates each package matrix; the summaries retain the same
 required names. Website and Audit perform detection in their existing jobs.
 
 Selection distinguishes Rust code from terminal-harness work. For metadata and
-tooling-only changes, Quality runs formatting and guards instead of Clippy,
-rustdoc, and packaged-consumer builds. These refinements reuse the existing jobs.
+tooling-code changes, Quality runs formatting and guards instead of Clippy,
+rustdoc, and packaged-consumer builds. Documentation alone does not run Quality.
+These refinements reuse the existing jobs.
 
 GitHub displays workflow and job names together. Shared results appear as
 `Quality / Validate`, `Website / Build`, and `Dependencies / Audit`; package

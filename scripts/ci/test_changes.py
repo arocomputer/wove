@@ -36,7 +36,10 @@ class ChangeTests(unittest.TestCase):
 
     def test_website_and_homepage_source_select_website(self):
         self.assertEqual(affected(["crates/web/src/pages/index.astro"]), {"website"})
-        self.assertIn("website", affected(["README.md"]))
+        self.assertEqual(affected(["README.md"]), {"website"})
+        self.assertEqual(affected(["crates/web/src/content/docs/start.mdx"]), {"website"})
+        self.assertEqual(affected(["crates/web/src/content/docs/README.md"]), {"website"})
+        self.assertEqual(affected(["crates/web/src/content/docs/AGENTS.md"]), {"website"})
 
     def test_manifests_and_lockfile_retest_rust_and_audit(self):
         for path in ("Cargo.lock", "Cargo.toml", "rust-toolchain.toml"):
@@ -68,11 +71,11 @@ class ChangeTests(unittest.TestCase):
 
             git("init", "-b", "main")
             (root / "crates/ssh").mkdir(parents=True)
-            (root / "crates/ssh/example.txt").write_text("example\n")
+            (root / "crates/ssh/example.txt").write_bytes(b"example\n")
             git("add", ".")
             git("commit", "-m", "base")
             git("branch", "topic")
-            (root / "unrelated-base-file").write_text("base change\n")
+            (root / "unrelated-base-file").write_bytes(b"base change\n")
             git("add", ".")
             git("commit", "-m", "main advanced")
             base = git("rev-parse", "HEAD")
@@ -94,7 +97,8 @@ class ChangeTests(unittest.TestCase):
 
     def test_failed_diff_does_not_turn_into_a_skip(self):
         event = {"before": "a" * 40, "after": "b" * 40}
-        with patch("changes.subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "git")):
+        with patch("changes.subprocess.run"), \
+                patch("changes.subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "git")):
             with self.assertRaises(subprocess.CalledProcessError):
                 changed_paths("push", event)
         with self.assertRaises(ValueError):
@@ -103,7 +107,25 @@ class ChangeTests(unittest.TestCase):
     def test_readme_changes_do_not_run_rust_or_terminal_tests(self):
         work = affected(["crates/core/README.md"])
         self.assertEqual(selection("core", work), {"run": False, "code": False, "ui": False})
-        self.assertEqual(selection("quality", work), {"run": True, "code": False, "ui": False})
+        self.assertEqual(selection("quality", work), {"run": False, "code": False, "ui": False})
+
+    def test_non_published_docs_do_not_select_builds_or_tests(self):
+        for path in ("AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "LICENSE",
+                     "docs/design.md", "contributing/releases.md",
+                     "crates/core/AGENTS.md", "crates/core/README.md", "crates/web/README.md",
+                     ".github/pull_request_template.md", ".github/ISSUE_TEMPLATE/bug.yml",
+                     ".github/CODEOWNERS", ".github/dependabot.yml", ".github/workflows/README.md"):
+            with self.subTest(path=path):
+                self.assertEqual(affected([path]), set())
+
+    def test_documentation_does_not_hide_an_accompanying_code_change(self):
+        self.assertEqual(affected(["AGENTS.md", "crates/core/src/lib.rs"]), RUST)
+        self.assertEqual(affected([".github/actions/build/action.yml"]), AREAS)
+
+    def test_invalid_diff_cannot_skip_all_jobs(self):
+        with patch("changes.subprocess.run", side_effect=subprocess.CalledProcessError(2, "git")):
+            with self.assertRaises(subprocess.CalledProcessError):
+                changed_paths("push", {"before": "a" * 40, "after": "b" * 40})
 
     def test_ui_only_changes_emit_terminal_selection_without_unit_tests(self):
         with tempfile.TemporaryDirectory() as directory:
