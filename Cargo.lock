@@ -2762,6 +2762,7 @@ version = "0.0.1"
 dependencies = [
  "crossterm",
  "pulldown-cmark",
+ "rustix",
  "similar",
  "syntect",
  "taffy",

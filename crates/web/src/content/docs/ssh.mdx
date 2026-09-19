@@ -39,15 +39,18 @@ disconnects active clients. An unwinding application panic restores remote termi
 modes and closes its channel with a failure status. Process aborts cannot run
 cleanup. App callbacks must return promptly.
 
-The decoder preserves UTF-8 and escape sequences across packet boundaries and
-supports common xterm keys, modifiers, SGR mouse reports, and bracketed paste.
+The decoder is core's `wove::input::Decoder`. It preserves UTF-8 and escape
+sequences across packet boundaries and supports xterm and kitty key reports,
+modifiers, SGR mouse reports with buttons, focus changes, and bracketed paste.
+The session enables the same modes as a local terminal, through `wove::Options`.
 A lone Escape waits 40 milliseconds for a following sequence. Unsupported
 terminal reports are ignored. Paste is delivered as text, so a control character
 inside a paste does not become a command.
 
 Frames update after input or resize. This initial transport does not yet provide
 an asynchronous application wakeup mechanism for background tasks or animation.
-Extended keyboard protocols and terminal capability negotiation are not implemented.
+Terminal capability negotiation is not implemented: the session does not ask
+for kitty key reports and does not know the peer's color depth.
 
 ## Limits
 

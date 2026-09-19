@@ -1,12 +1,14 @@
 //! A clipped vertical viewport with explicit scrolling and optional tail following.
 use crate::{Element, Event, Key, Layout, MouseKind, Response};
 
+/// Children scrolled out of view are not painted, so content may be far taller
+/// than the viewport.
 #[derive(Default)]
 pub struct Scroll {
-    pub offset: u16,
+    pub offset: u32,
     pub follow: bool,
-    limit: u16,
-    page: u16,
+    limit: u32,
+    page: u32,
 }
 
 impl Element for Scroll {
@@ -23,9 +25,9 @@ impl Element for Scroll {
             ..Layout::default()
         }
     }
-    fn viewport(&mut self, size: (u16, u16), content: (u16, u16)) -> (u16, u16) {
-        self.page = size.1;
-        self.limit = content.1.saturating_sub(size.1);
+    fn viewport(&mut self, size: (u16, u16), content: (u32, u32)) -> (u32, u32) {
+        self.page = u32::from(size.1);
+        self.limit = content.1.saturating_sub(self.page);
         self.offset = if self.follow {
             self.limit
         } else {

@@ -1,5 +1,5 @@
 //! A table with explicit column widths and a fixed header.
-use crate::{Canvas, Element, Event, Key, Response, Style};
+use crate::{Button, Canvas, Element, Event, Key, MouseKind, Response, Style};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -76,7 +76,7 @@ impl Element for Table {
             self.rows.len().saturating_add(1).min(u16::MAX as usize) as u16,
         )
     }
-    fn viewport(&mut self, size: (u16, u16), _: (u16, u16)) -> (u16, u16) {
+    fn viewport(&mut self, size: (u16, u16), _: (u32, u32)) -> (u32, u32) {
         self.page = usize::from(size.1.saturating_sub(1)).max(1);
         (0, 0)
     }
@@ -112,7 +112,19 @@ impl Element for Table {
     }
     fn event(&mut self, event: &Event) -> Response {
         let old = self.selected;
+        let first = old
+            .min(self.rows.len().saturating_sub(1))
+            .saturating_sub(self.page.saturating_sub(1));
         match event {
+            Event::Mouse(mouse) => match mouse.kind {
+                // Row zero is the header.
+                MouseKind::Down(Button::Left) if mouse.y > 0 => {
+                    self.selected = first + usize::from(mouse.y) - 1
+                }
+                MouseKind::ScrollUp => self.selected = self.selected.saturating_sub(1),
+                MouseKind::ScrollDown => self.selected = self.selected.saturating_add(1),
+                _ => return Response::IGNORE,
+            },
             Event::Key(Key::Up, _) => self.selected = self.selected.saturating_sub(1),
             Event::Key(Key::Down, _) => self.selected = self.selected.saturating_add(1),
             Event::Key(Key::PageUp, _) => self.selected = self.selected.saturating_sub(self.page),

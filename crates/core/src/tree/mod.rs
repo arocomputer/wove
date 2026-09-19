@@ -4,6 +4,7 @@ mod paint;
 use std::any::Any;
 use std::{
     collections::HashMap,
+    hash::{BuildHasherDefault, Hasher},
     ops::{Index, IndexMut},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -13,8 +14,26 @@ use taffy::{Display, TaffyTree};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Id(u64);
 
+/// Ids are sequential integers, so one multiplication spreads them well and
+/// costs far less than the default hasher on every node lookup.
 #[derive(Default)]
-struct Nodes(HashMap<Id, Node>);
+struct IdHasher(u64);
+impl Hasher for IdHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.write_u64(u64::from(*byte) ^ self.0);
+        }
+    }
+    fn write_u64(&mut self, id: u64) {
+        self.0 = id.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Default)]
+struct Nodes(HashMap<Id, Node, BuildHasherDefault<IdHasher>>);
 impl Nodes {
     fn insert(&mut self, node: Node) -> Id {
         static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -222,6 +241,7 @@ impl Tree {
         let index = index.min(self.nodes[parent].children.len());
         self.nodes[parent].children.insert(index, child);
         self.nodes[child].parent = Some(parent);
+        self.hide(child);
         self.layout.insert_child_at_index(
             self.nodes[parent].layout,
             index,
@@ -280,6 +300,7 @@ impl Tree {
     }
     /// A node handler runs before its element's default behavior. Returning handled
     /// stops the default and parent handlers. Replacing it drops the old callback.
+    /// Mouse positions are relative to the node's top-left cell.
     pub fn on(
         &mut self,
         id: Id,
@@ -308,17 +329,30 @@ impl Tree {
         self.dirty = true;
         Ok(())
     }
+    /// Forget where a subtree was painted, so hit testing cannot reach it. An
+    /// empty clip implies empty clips below it, which lets this stop early.
+    fn hide(&mut self, id: Id) {
+        let node = &mut self.nodes[id];
+        let painted = node.clip.width > 0 && node.clip.height > 0;
+        node.clip = Rect::default();
+        if painted {
+            for child in node.children.clone() {
+                self.hide(child);
+            }
+        }
+    }
+    fn displayed(&self, id: Id) -> bool {
+        self.layout
+            .style(self.nodes[id].layout)
+            .is_ok_and(|s| s.display != Display::None)
+    }
     fn visible(&self, id: Id) -> bool {
         let mut next = Some(id);
         while let Some(id) = next {
             let Some(node) = self.nodes.get(id) else {
                 return false;
             };
-            if self
-                .layout
-                .style(node.layout)
-                .is_ok_and(|s| s.display == Display::None)
-            {
+            if !self.displayed(id) {
                 return false;
             }
             if id == self.root {
@@ -328,8 +362,9 @@ impl Tree {
         }
         false
     }
+    /// Displayed nodes beneath a displayed, attached node, in paint order.
     fn ordered(&self, id: Id, list: &mut Vec<Id>) {
-        if !self.visible(id) {
+        if !self.displayed(id) {
             return;
         }
         list.push(id);
@@ -354,6 +389,23 @@ impl Tree {
     }
     fn deliver(&mut self, id: Id, event: &Event) -> Result<Response, Error> {
         let node = self.nodes.get_mut(id).ok_or(Error::MissingNode)?;
+        // A node sees the pointer relative to its own top-left cell, so it can
+        // act on a click without knowing where it was laid out or scrolled to.
+        let local;
+        let event = match event {
+            Event::Mouse(mouse) => {
+                let offset = |at: u16, origin: i32| {
+                    (i32::from(at) - origin).clamp(0, i32::from(u16::MAX)) as u16
+                };
+                local = Event::Mouse(crate::Mouse {
+                    x: offset(mouse.x, node.origin.0),
+                    y: offset(mouse.y, node.origin.1),
+                    ..*mouse
+                });
+                &local
+            }
+            event => event,
+        };
         let mut response = node.handler.as_mut().map_or(Response::IGNORE, |h| h(event));
         if !response.handled {
             let default = node.element.event(event);
@@ -366,14 +418,23 @@ impl Tree {
         }
         Ok(response)
     }
+    /// The topmost node painted at a cell. Children are clipped to their
+    /// parent, so a subtree that misses the cell is skipped whole.
+    fn hit(&self, id: Id, x: u16, y: u16) -> Option<Id> {
+        let node = &self.nodes[id];
+        if !node.clip.contains(x, y) {
+            return None;
+        }
+        node.children
+            .iter()
+            .rev()
+            .find_map(|child| self.hit(*child, x, y))
+            .or(Some(id))
+    }
     /// Hit testing uses the last painted frame. Keyboard events target the focus.
     pub fn target(&self, event: &Event) -> Option<Id> {
         if let Event::Mouse(mouse) = event {
-            let mut ids = Vec::new();
-            self.ordered(self.root, &mut ids);
-            ids.into_iter()
-                .rev()
-                .find(|id| self.nodes[*id].clip.contains(mouse.x, mouse.y))
+            self.hit(self.root, mouse.x, mouse.y)
         } else {
             self.focus
                 .filter(|id| self.visible(*id))
@@ -389,7 +450,7 @@ impl Tree {
             self.focus(None)?;
         }
         let target = self.target(&event);
-        if matches!(event, Event::Mouse(mouse) if mouse.kind == MouseKind::Down) {
+        if matches!(event, Event::Mouse(mouse) if matches!(mouse.kind, MouseKind::Down(_))) {
             let mut ancestor = target;
             while let Some(id) = ancestor {
                 if self.nodes[id].element.focusable() {

@@ -52,7 +52,7 @@ Lockfile changes follow dependency ownership instead of selecting every crate.
 Crate READMEs use metadata checks; terminal-harness changes select PTYs without
 unrelated unit tests. Quality skips compilation for metadata-only changes.
 
-Core runs `./x ui gallery editor` on Unix; Dioxus runs `./x ui counter`. An
+Core runs `./x ui gallery editor inline` on Unix; Dioxus runs `./x ui counter`. An
 unfiltered `./x ui` runs all scenarios. Keep selection and its tests current when
 adding dependencies, packages, or shared build inputs.
 
@@ -69,12 +69,18 @@ frame timings. It is not a benchmark gate; do not add budgets or a benchmarks fo
 ```text
 crates/core/       wove: elements, layout, events, text, and terminal rendering
   src/element.rs  the contract for built-in and custom elements
-  src/input.rs    portable events, keys, modifiers, and event responses
+  src/input/      portable events, keys, modifiers, responses; decoder.rs turns
+                  terminal input bytes into events for any byte transport
   src/tree/       node ownership, focus, input routing; paint.rs measures and paints
-  src/elements/   text, inputs, lists, tables, scrolling, panels, and containers
+  src/elements/   text, inputs, lists, tables, scrolling, panels, containers, and
+                  feed.rs, the virtualized column for long text documents
   src/text/       grapheme editing, undo, shared input behavior, text layout
-  src/render/     cell buffers, styles, geometry, and clipped drawing
-  src/terminal/   optional crossterm ownership and differential output
+  src/render/     flat cell buffers, styles, geometry, clipped drawing, and output
+                  as plain bytes with no backend: renderer.rs (full screen),
+                  inline.rs (main screen with native scrollback), session.rs
+                  (the modes a session enables), pen.rs (cells to escapes)
+  src/terminal/   optional crossterm ownership of the local terminal; query.rs
+                  asks it for the cursor position and background color
   src/{markdown,syntax,diff}.rs  independent optional formatting features
   src/testing.rs headless screens, clocks, and frame recording
 crates/dioxus/    component adapter; core does not depend on it
@@ -84,7 +90,6 @@ crates/dioxus/    component adapter; core does not depend on it
 crates/keymap/   scoped command bindings, sequences, and timeouts
 crates/ssh/      authenticated remote applications
   src/server.rs  listener, authentication, PTY requests, connection lifecycle
-  src/input.rs   bounded decoding across SSH packet boundaries
   src/runtime.rs application thread, frame output, and remote cleanup
 crates/examples/ unpublished application examples
 crates/web/      Bun/Astro website; excluded from the Cargo workspace
@@ -97,7 +102,8 @@ scripts/         checks, hooks, package verification, release preparation, PTY t
 ```sh
 cargo test -p wove --test text
 cargo test -p wove --test tree
-cargo test -p wove --test terminal
+cargo test -p wove --test render
+cargo test -p wove --test inline
 cargo test -p wove --no-default-features --features markdown --test markdown
 cargo test -p wove-dioxus --test view
 cargo test -p wove-keymap

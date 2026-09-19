@@ -65,6 +65,7 @@ impl Element for Input {
             start_col += g.width();
             start = i + g.len();
         }
+        self.editor.set_view(0, start_col);
         let selection = self.editor.selection();
         let mut x = 0;
         for (i, g) in value[start..].grapheme_indices(true) {

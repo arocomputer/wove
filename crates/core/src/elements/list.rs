@@ -1,24 +1,24 @@
 //! A fixed-height list that asks its row provider only for visible rows.
-use crate::{Canvas, Element, Event, Key, Response, Style};
+use crate::{text::Span, Button, Canvas, Element, Event, Key, MouseKind, Response, Style};
+use unicode_width::UnicodeWidthStr;
 
-/// Rows have one terminal line each. The application owns the underlying data;
-/// `count` and `row` allow lists larger than terminal coordinate limits.
+/// Rows have one terminal line each and carry their own styles. The application
+/// owns the underlying data; `count` and `row` allow lists larger than terminal
+/// coordinate limits. The selected row is drawn entirely in `highlight`.
 pub struct List {
     pub count: usize,
     pub selected: usize,
     pub width: u16,
-    pub style: Style,
     pub highlight: Style,
-    row: Box<dyn Fn(usize) -> String>,
+    row: Box<dyn Fn(usize) -> Vec<Span>>,
     page: usize,
 }
 impl List {
-    pub fn new(count: usize, width: u16, row: impl Fn(usize) -> String + 'static) -> Self {
+    pub fn new(count: usize, width: u16, row: impl Fn(usize) -> Vec<Span> + 'static) -> Self {
         Self {
             count,
             selected: 0,
             width,
-            style: Style::default(),
             highlight: Style {
                 reverse: true,
                 ..Default::default()
@@ -45,7 +45,7 @@ impl Element for List {
     fn measure(&self, _: Option<u16>) -> (u16, u16) {
         (self.width, self.count.min(u16::MAX as usize) as u16)
     }
-    fn viewport(&mut self, size: (u16, u16), _: (u16, u16)) -> (u16, u16) {
+    fn viewport(&mut self, size: (u16, u16), _: (u32, u32)) -> (u32, u32) {
         self.page = usize::from(size.1).max(1);
         (0, 0)
     }
@@ -54,17 +54,33 @@ impl Element for List {
         let selected = self.selected.min(self.count.saturating_sub(1));
         let offset = selected.saturating_sub(height.saturating_sub(1));
         for (y, index) in (offset..self.count).take(height).enumerate() {
-            let style = if index == selected {
-                self.highlight
-            } else {
-                self.style
-            };
-            canvas.text(0, y as i32, &(self.row)(index), style);
+            let mut x = 0;
+            for span in (self.row)(index) {
+                let style = if index == selected {
+                    self.highlight
+                } else {
+                    span.style
+                };
+                match &span.link {
+                    Some(url) => canvas.link(x, y as i32, &span.text, style, url),
+                    None => canvas.text(x, y as i32, &span.text, style),
+                }
+                x += span.text.width() as i32;
+            }
         }
     }
     fn event(&mut self, event: &Event) -> Response {
         let old = self.selected;
+        let first = old
+            .min(self.count.saturating_sub(1))
+            .saturating_sub(self.page.saturating_sub(1));
         match event {
+            Event::Mouse(mouse) => match mouse.kind {
+                MouseKind::Down(Button::Left) => self.selected = first + usize::from(mouse.y),
+                MouseKind::ScrollUp => self.selected = self.selected.saturating_sub(1),
+                MouseKind::ScrollDown => self.selected = self.selected.saturating_add(1),
+                _ => return Response::IGNORE,
+            },
             Event::Key(Key::Up, _) => self.selected = self.selected.saturating_sub(1),
             Event::Key(Key::Down, _) => self.selected = self.selected.saturating_add(1),
             Event::Key(Key::PageUp, _) => self.selected = self.selected.saturating_sub(self.page),

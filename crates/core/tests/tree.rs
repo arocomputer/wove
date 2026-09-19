@@ -99,6 +99,9 @@ fn hidden_and_removed_elements_leave_the_focus_order() {
 fn idle_frames_do_not_measure_or_paint() {
     struct Count(Rc<Cell<usize>>);
     impl Element for Count {
+        fn measure(&self, _: Option<u16>) -> (u16, u16) {
+            (1, 1)
+        }
         fn paint(&self, _: &mut Canvas<'_>) {
             self.0.set(self.0.get() + 1);
         }
@@ -172,13 +175,132 @@ fn mouse_focus_matches_clipped_frame() {
     let b = t.add(t.root(), Input::default()).unwrap();
     t.set_layout(b, fixed(4.0, 1.0)).unwrap();
     t.frame(8, 2).unwrap();
-    t.dispatch(Event::Mouse(Mouse {
-        x: 5,
-        y: 0,
-        kind: MouseKind::Down,
-    }))
+    t.dispatch(Event::Mouse(Mouse::new(
+        5,
+        0,
+        MouseKind::Down(Button::Left),
+    )))
     .unwrap();
     assert_eq!(t.focused(), Some(b));
     t.dispatch(Key::Char('界').into()).unwrap();
     assert_eq!(t.frame(8, 2).unwrap().cursor(), Some((6, 0)));
+}
+
+#[test]
+fn content_scrolled_out_of_view_is_neither_painted_nor_clickable() {
+    struct Row(Rc<Cell<usize>>);
+    impl Element for Row {
+        fn layout(&self) -> Layout {
+            Layout {
+                flex_shrink: 0.0,
+                ..Layout::default()
+            }
+        }
+        fn measure(&self, _: Option<u16>) -> (u16, u16) {
+            (4, 1)
+        }
+        fn paint(&self, _: &mut Canvas<'_>) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let painted = Rc::new(Cell::new(0));
+    let mut t = Tree::new();
+    let scroll = t.add(t.root(), Scroll::default()).unwrap();
+    // Taller than a cell coordinate can express, to pin 32-bit scroll extents.
+    let rows: Vec<_> = (0..70_000)
+        .map(|_| t.add(scroll, Row(painted.clone())).unwrap())
+        .collect();
+    t.frame(4, 3).unwrap();
+    assert_eq!(painted.get(), 3);
+    let at = |t: &Tree, y| t.target(&Event::Mouse(Mouse::new(0, y, MouseKind::Move)));
+    assert_eq!(at(&t, 1), Some(rows[1]));
+    t.update::<Scroll>(scroll, |s| s.follow = true).unwrap();
+    t.frame(4, 3).unwrap();
+    assert_eq!(painted.get(), 6);
+    assert_eq!(t.get::<Scroll>(scroll).unwrap().offset, 69_997);
+    assert_eq!(at(&t, 2), Some(rows[69_999]));
+    assert_eq!(t.bounds(rows[1]).unwrap(), Rect::default());
+}
+
+#[test]
+fn natural_height_follows_wrapped_content() {
+    let mut t = Tree::new();
+    let text = Text {
+        wrap: true,
+        ..Text::new("abcdefgh")
+    };
+    t.add(t.root(), text).unwrap();
+    t.add(t.root(), Text::new("dock")).unwrap();
+    assert_eq!(t.height(8).unwrap(), 2);
+    let height = t.height(4).unwrap();
+    assert_eq!(height, 3);
+    assert_eq!(
+        t.frame(4, height).unwrap().lines(),
+        ["abcd", "efgh", "dock"]
+    );
+}
+
+#[test]
+fn a_click_places_the_cursor_and_a_drag_selects_wherever_the_input_sits() {
+    let mut t = Tree::new();
+    let panel = t.add(t.root(), Panel::default()).unwrap();
+    let input = t.add(panel, Input::new("a界cdef")).unwrap();
+    t.update::<Input>(input, |input| input.editor.home(false))
+        .unwrap();
+    t.frame(12, 3).unwrap();
+    // The input starts at column one, inside the border; 界 covers two cells.
+    let at = |x, kind| Event::Mouse(Mouse::new(x, 1, kind));
+    t.dispatch(at(4, MouseKind::Down(Button::Left))).unwrap();
+    assert_eq!(t.focused(), Some(input));
+    assert_eq!(t.get::<Input>(input).unwrap().editor.cursor(), "a界".len());
+    t.dispatch(at(3, MouseKind::Down(Button::Left))).unwrap();
+    let editor = &t.get::<Input>(input).unwrap().editor;
+    assert_eq!(
+        editor.cursor(),
+        1,
+        "a click inside a wide cell lands before it"
+    );
+    t.dispatch(at(6, MouseKind::Drag(Button::Left))).unwrap();
+    let editor = &t.get::<Input>(input).unwrap().editor;
+    assert_eq!(&editor.text()[editor.selection()], "界cd");
+}
+
+#[test]
+fn a_click_selects_the_list_row_under_it_after_scrolling() {
+    let mut t = Tree::new();
+    t.add(t.root(), Text::new("header")).unwrap();
+    let row = |i| vec![text::Span::new(format!("row {i}"), Style::default())];
+    let list = t.add(t.root(), List::new(100, 8, row)).unwrap();
+    t.focus(Some(list)).unwrap();
+    t.frame(8, 4).unwrap();
+    t.dispatch(Key::End.into()).unwrap();
+    t.frame(8, 4).unwrap();
+    // Rows 97 to 99 are showing beneath the header; click the middle one.
+    t.dispatch(Event::Mouse(Mouse::new(
+        2,
+        2,
+        MouseKind::Down(Button::Left),
+    )))
+    .unwrap();
+    assert_eq!(t.get::<List>(list).unwrap().selected, 98);
+}
+
+#[test]
+fn a_panel_draws_its_border_style_title_and_fill() {
+    let mut t = Tree::new();
+    let panel = Panel {
+        border: Border::Rounded,
+        title: "A long title".into(),
+        style: Style {
+            bg: Color::Indexed(4),
+            ..Style::default()
+        },
+    };
+    let id = t.add(t.root(), panel).unwrap();
+    let mut style = fixed(10.0, 3.0);
+    style.border = layout::Rect::length(1.0);
+    t.set_layout(id, style).unwrap();
+    let frame = t.frame(10, 3).unwrap();
+    assert_eq!(lines(frame), ["╭─ A lo ─╮", "│        │", "╰────────╯"]);
+    assert_eq!(frame.cell(4, 1).unwrap().style().bg, Color::Indexed(4));
 }
