@@ -13,5 +13,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: affected
+        run: ./x affected audit
+      - name: Validate change selection
+        run: test '${{ steps.affected.outputs.run }}' = true || test '${{ steps.affected.outputs.run }}' = false
       - run: cargo install cargo-audit --locked
+        if: steps.affected.outputs.run == 'true'
       - run: cargo audit
+        if: steps.affected.outputs.run == 'true'

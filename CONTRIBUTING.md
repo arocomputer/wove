@@ -59,30 +59,50 @@ Never paste host keys, tokens, private application data, or unreviewed logs.
 Run `./x check` for every submission, `./x ui` for rendering or terminal/input
 changes, and `./x web` for documentation or website changes.
 
-CI is organized by library package. Every PR runs the following checks; workflows
-do not filter by changed paths, so required results are always reported.
+CI is organized by library package. Every PR reports the following required
+results, but unaffected platform jobs and expensive build steps are skipped.
+Workflows themselves always start so a required result cannot remain missing.
 
 | Required check | Local command | Coverage |
 | --- | --- | --- |
-| Core - Build and Test | `./x core`, `./x ui` | All features, headless use, individual formatting features, and real terminal interaction |
-| Dioxus - Build and Test | `./x dioxus` | Component adapter with and without its default features |
+| Core - Build and Test | `./x core`, `./x ui gallery editor` | All features, headless use, individual formatting features, and real terminal interaction |
+| Dioxus - Build and Test | `./x dioxus`, `./x ui counter` | Component adapter with and without its default features, plus its terminal example |
 | Keymap - Build and Test | `./x keymap` | Command bindings and key sequences |
 | SSH - Build and Test | `./x ssh` | Authentication, remote input, connection lifecycle, and cleanup |
 | Validate | `./x quality` | Formatting, Clippy, rustdoc, examples, packaged consumers, and repository guards |
 | Build | `./x web` | Astro checks and the static site build |
 | Audit | `cargo audit` | Dependency advisories |
 
-Package and Quality workflows run on Linux, macOS, and Windows. Core runs the
-PTY suite on Linux and macOS. Each matrix has one required summary check that
-passes only when every platform succeeds, including terminal checks where
-applicable. Failed, cancelled, and skipped platform results cannot pass the
+Affected package and Quality workflows run on Linux, macOS, and Windows. Core
+and Dioxus run their PTY scenarios on Linux and macOS. Each matrix has one required
+summary check. It passes only when change detection succeeds and either every
+selected platform passes or the package was explicitly unaffected and its matrix
+was skipped. Detection failures, cancellations, and unexpected skips fail the
 summary. Audit also runs weekly to catch new advisories without a source change.
+
+Selection follows the dependencies, not just the directory being edited:
+
+- Core changes test Core, Dioxus, Keymap, and SSH, plus Quality.
+- Dioxus, Keymap, or SSH changes test that package and Quality.
+- Website-only changes run Website; root README changes also run Website because
+  the homepage reads its feature list from that file.
+- Cargo manifests, Cargo.lock, and the Rust toolchain select every Rust package,
+  Quality, and Audit. Manifest edits can introduce new dependencies.
+- Shared CI logic, the `./x` entry point, and unclassified paths run everything.
+- Manual and scheduled workflow runs do not filter their work.
+
+`scripts/ci/changes.py` owns selection. It compares a PR against its merge base,
+includes both paths of renamed files, and checks the whole pushed range on main.
+Its tests also verify that local crate dependency edges are covered. A small
+change-detection job gates each package matrix; the summaries retain the same
+required names. Website and Audit perform detection in their existing jobs.
 
 GitHub displays workflow and job names together. Shared results appear as
 `Quality / Validate`, `Website / Build`, and `Dependencies / Audit`; package
 results keep unique summary names such as `Core / Core - Build and Test`.
 
-`./x check` combines Quality with workspace-wide tests. The package commands run
+`./x check` combines Quality with workspace-wide tests. `./x ui` without scenario
+names still runs the full PTY suite. The package commands run
 their own tests and doctests independently, avoiding features enabled only by
 sibling crates in a workspace test run.
 

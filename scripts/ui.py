@@ -8,6 +8,7 @@ import select
 import signal
 import struct
 import subprocess
+import sys
 import termios
 import time
 import pyte
@@ -91,7 +92,14 @@ def scenario(name, steps):
         os.close(slave)
 
 
-scenario("counter", [(b"++", "Count: 2")])
-scenario("gallery", [(b"\x1b[200~scroll\x1b[201~", "A clipped viewport.")])
-
-scenario("editor", [(b"\x1b[200~\nNew line\x1b[201~", "New line")])
+scenarios = {
+    "counter": [(b"++", "Count: 2")],
+    "gallery": [(b"\x1b[200~scroll\x1b[201~", "A clipped viewport.")],
+    "editor": [(b"\x1b[200~\nNew line\x1b[201~", "New line")],
+}
+# Package CI selects its own examples; a local invocation without names runs all.
+selected = sys.argv[1:] or list(scenarios)
+if unknown := set(selected) - scenarios.keys():
+    raise SystemExit(f"Unknown scenarios: {', '.join(sorted(unknown))}")
+for name in selected:
+    scenario(name, scenarios[name])

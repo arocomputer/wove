@@ -41,9 +41,16 @@ Required package checks are `Core - Build and Test`, `Dioxus - Build and Test`,
 from Quality, `Build` from Website, and `Audit` from Dependencies.
 Use `./x core`, `./x dioxus`, `./x keymap`, or `./x ssh` for a package's CI test
 sequence. `./x quality` runs shared formatting, lint, documentation, packaging,
-and guard checks. Platform jobs feed a required summary for each package;
-Core also includes Unix PTY checks. Keep required names aligned with repository
-rules, and never report success for a failed, cancelled, or skipped dependency.
+and guard checks. Platform jobs feed a required summary for each package.
+`scripts/ci/changes.py` selects affected packages and consumers. Core changes
+must test all adapters; an adapter-only change can skip its siblings. Unknown
+paths and shared CI changes run everything. Selection failures must fail CI.
+Only an explicitly unaffected package may pass with a skipped platform matrix.
+Keep required names aligned with repository rules.
+
+Core runs `./x ui gallery editor` on Unix; Dioxus runs `./x ui counter`. An
+unfiltered `./x ui` runs all scenarios. Keep selection and its tests current when
+adding dependencies, packages, or shared build inputs.
 
 Run `./x check` before submitting changes. Rendering, input, or terminal changes
 also need `./x ui`; documentation or website changes need `./x web`. The PTY suite
@@ -92,6 +99,7 @@ cargo test -p wove-dioxus --test view
 cargo test -p wove-keymap
 cargo test -p wove-ssh --test connection
 python3 -m unittest discover -s scripts/hooks -p 'test_*.py'
+python3 -m unittest discover -s scripts/ci -p 'test_*.py'
 ```
 
 Tests should pin observable behavior. A regression test must fail against the

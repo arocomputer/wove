@@ -17,8 +17,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - id: affected
+        run: ./x affected website
+      - name: Validate change selection
+        run: test '${{ steps.affected.outputs.run }}' = true || test '${{ steps.affected.outputs.run }}' = false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        if: steps.affected.outputs.run == 'true'
         with:
           bun-version: '1.4.2'
       - run: ./x web
+        if: steps.affected.outputs.run == 'true'
