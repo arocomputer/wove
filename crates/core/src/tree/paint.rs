@@ -20,7 +20,13 @@ impl Tree {
         {
             self.focus(None)?;
         }
-        self.compute(width, Some(height))?;
+        // An inline frame at its natural height was laid out by `height`, and a
+        // repaint alone, after a focus change for example, moved nothing.
+        let natural = self.fresh == Some((width, None)) && self.natural == Some((width, height));
+        if !natural && self.fresh != Some((width, Some(height))) {
+            self.compute(width, Some(height))?;
+            self.fresh = Some((width, Some(height)));
+        }
         let mut frame = std::mem::replace(&mut self.frame, Buffer::new(0, 0));
         if frame.area().width != width || frame.area().height != height {
             frame = Buffer::new(width, height);
@@ -28,6 +34,9 @@ impl Tree {
             frame.clear();
         }
         self.paint(self.root, (0, 0), frame.area(), &mut frame)?;
+        if let Some((from, to)) = self.selection() {
+            frame.invert(from, to);
+        }
         // A number no other frame has, so renderers can tell a frame they
         // already drew without comparing its cells.
         static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -40,15 +49,22 @@ impl Tree {
     /// The height the content wants at a width, for frames that grow with
     /// their content, such as inline sessions. Pass the result to `frame`.
     pub fn height(&mut self, width: u16) -> Result<u16, Error> {
+        // An idle tree answers from the last pass, so asking every loop
+        // iteration neither lays out nor repaints.
+        if let Some((_, height)) = self.natural.filter(|(w, _)| *w == width) {
+            return Ok(height);
+        }
         self.compute(width, None)?;
         let height = self
             .layout
             .layout(self.nodes[self.root].layout)?
             .size
             .height;
-        // The next frame lays out again with a definite height.
+        let height = height.clamp(0.0, f32::from(u16::MAX)) as u16;
+        self.fresh = Some((width, None));
+        self.natural = Some((width, height));
         self.dirty = true;
-        Ok(height.clamp(0.0, f32::from(u16::MAX)) as u16)
+        Ok(height)
     }
 
     /// Lay out the root at a width, and at a height or else its natural one.
@@ -166,8 +182,12 @@ impl Tree {
             i32::try_from(offset.0).unwrap_or(i32::MAX),
             i32::try_from(offset.1).unwrap_or(i32::MAX),
         );
-        for index in 0..node.children.len() {
-            let child = self.nodes[id].children[index];
+        let layers = self.nodes[id].layered.then(|| self.layers(id));
+        for index in 0..self.nodes[id].children.len() {
+            let child = match &layers {
+                Some(layers) => layers[index],
+                None => self.nodes[id].children[index],
+            };
             self.paint(
                 child,
                 (
@@ -178,6 +198,13 @@ impl Tree {
                 buffer,
             )?;
         }
+        self.nodes[id].element.overlay(&mut Canvas {
+            buffer,
+            origin,
+            size,
+            clip: bounds,
+            focused: self.focus == Some(id),
+        });
         Ok(())
     }
 }

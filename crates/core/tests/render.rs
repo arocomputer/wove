@@ -87,8 +87,17 @@ fn colors_map_to_the_nearest_one_the_terminal_accepts() {
     assert!(at(Depth::Indexed).contains("\x1b[0;1;38;5;196mx"));
     assert!(at(Depth::Basic).contains("\x1b[0;1;91mx"));
     assert!(at(Depth::Mono).contains("\x1b[0;1mx"));
-    assert_eq!(Depth::from_hints("1", "truecolor", "xterm"), Depth::Mono);
-    assert_eq!(Depth::from_hints("", "", "xterm-256color"), Depth::Indexed);
+    assert_eq!(
+        Depth::from_hints("1", "truecolor", "xterm", ""),
+        Depth::Mono
+    );
+    assert_eq!(
+        Depth::from_hints("", "", "xterm-256color", ""),
+        Depth::Indexed
+    );
+    // A terminal known for 24-bit color keeps it when COLORTERM was stripped.
+    assert_eq!(Depth::from_hints("", "", "xterm-ghostty", ""), Depth::Rgb);
+    assert_eq!(Depth::from_hints("", "", "linux", ""), Depth::Basic);
 }
 
 #[test]
@@ -124,6 +133,16 @@ fn text_keeps_the_background_beneath_it_until_a_style_resets_it() {
     assert_eq!(frame.cell(0, 0).unwrap().style().bg, Color::Indexed(4));
     assert_eq!(frame.cell(0, 1).unwrap().style().bg, Color::Default);
     assert_eq!(frame.cell(3, 1).unwrap().style().bg, Color::Indexed(4));
+}
+
+#[test]
+fn the_cursor_is_placed_again_after_a_cluster_terminals_measure_differently() {
+    let mut frame = Buffer::new(8, 1);
+    frame.write(frame.area(), "ab👍cd", Style::default());
+    let output = drawn(&mut Renderer::default(), &frame);
+    // ASCII runs on; after the emoji the next cell's column is stated outright,
+    // so a terminal that thinks the emoji is one cell wide cannot drift.
+    assert!(output.contains("ab👍\x1b[1;5Hc"), "{output:?}");
 }
 
 #[test]

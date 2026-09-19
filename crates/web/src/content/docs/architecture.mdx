@@ -51,7 +51,19 @@ nothing changes. A repaint that did not change layout, a focus change for
 example, reuses the computed layout.
 
 Mouse events are delivered with positions relative to the receiving node's
-top-left cell as last painted, translated again for each node they bubble to. `Editor` stores grapheme-aligned byte
+top-left cell as last painted, translated again for each node they bubble to.
+The node that handles a press captures the pointer until release. A press that
+no node handles anchors a selection of the painted frame: it is kept as two
+cells, shown by inverting them after the paint pass, and read back from the
+frame's own cells, so it works across every element, custom ones included, and
+covers exactly what is on screen. Siblings paint in ascending `z` and are hit in
+reverse; a parent sorts its children only once one of them has a `z`.
+
+Layout and paint are invalidated separately. A change that can move a node
+clears the record of the last layout pass; focus, selection, and `z` only
+repaint. `Tree::height` answers from that record, so an idle inline loop that
+asks every iteration neither lays out nor repaints, and the frame that follows a
+change reuses the pass `height` ran. `Editor` stores grapheme-aligned byte
 positions and up to 100 edit records. Each record stores inserted and removed text plus cursor
 and selection endpoints. Text storage remains a String.
 
@@ -64,7 +76,12 @@ frame and output storage. This is not incremental subtree painting.
 no terminal and no backend dependency: `Renderer` for full-screen output, `Inline`
 for output that grows down the main screen, `Options` for the modes a session
 enables and disables, and `Depth` for mapping colors to what a terminal accepts.
-`input::Decoder` turns input bytes into events. Transports such as SSH are built
+`input::Decoder` turns input bytes into events and never fails: a peer can send
+anything, so malformed input is dropped and an oversized paste is delivered in
+pieces. Every source builds keys through `Event::key`, which is what makes a
+binding match the same way locally and over SSH. After a cluster whose width
+terminals disagree on, anything but ASCII, both renderers state the next cell's
+column outright, so a disagreement costs one cell instead of the rest of the row. Transports such as SSH are built
 from these.
 
 `Inline` maps a frame of any height onto the screen from the launch row. Rows
@@ -77,11 +94,18 @@ frames small. A resize clears the visible screen, never the scrollback.
 
 The optional crossterm backend owns raw mode and reads local input; the modes
 themselves are written through `Options`. `Terminal` draws full-screen or inline,
-can switch between them while running, and asks the terminal for its cursor
-position and background color with safe polling from rustix on Unix. The
+and can switch between them while running.
+
+A session probes the terminal once, before the application reads input: the
+kitty keyboard query, the background color, the cursor position, and last a
+device-attributes request, which every terminal answers and which therefore ends
+the wait without a timeout. Replies are picked out of what arrives, read with
+safe polling from rustix on Unix, and the rest is decoded as typed-ahead keys.
+The modes to undo live in one place that the session, the panic hook, and the
+signal thread each try to take, so the terminal is restored exactly once however
+the process ends; only an abort or an uncatchable signal leaves them behind. The
 library binds no keys of its own: `terminal::run` ends when its callback says
-so. Portable events keep backend types out of element contracts. Terminal restoration runs on ordinary return and panic
-unwinding, not on process abort or uncatchable signals.
+so. Portable events keep backend types out of element contracts.
 
 ## Dioxus
 

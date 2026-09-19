@@ -17,6 +17,7 @@ pub struct Textarea {
     pub atom: Style,
     pub placeholder: String,
     pub wrap: bool,
+    pub cursor: crate::CursorShape,
 }
 impl Textarea {
     pub fn new(value: &str) -> Self {
@@ -34,15 +35,10 @@ impl Element for Textarea {
         true
     }
     fn measure(&self, width: Option<u16>) -> (u16, u16) {
-        let text = self.editor.text();
-        let rows = self.editor.rows_at(width.and_then(|w| self.width(w)));
+        let (widest, rows) = self.editor.extent_at(width.and_then(|w| self.width(w)));
         (
-            rows.iter()
-                .map(|row| text[row.clone()].width())
-                .max()
-                .unwrap_or(0)
-                .clamp(1, usize::from(width.unwrap_or(u16::MAX)).max(1)) as u16,
-            rows.len().min(u16::MAX as usize) as u16,
+            widest.clamp(1, usize::from(width.unwrap_or(u16::MAX)).max(1)) as u16,
+            rows.min(u16::MAX as usize) as u16,
         )
     }
     fn viewport(&mut self, size: (u16, u16), _: (u32, u32)) -> (u32, u32) {
@@ -99,6 +95,7 @@ impl Element for Textarea {
             // Whitespace hung past a wrap seam leaves the cursor on the last cell.
             let x = (col - left).min(usize::from(width) - 1);
             canvas.cursor(x as i32, (row - top) as i32);
+            canvas.cursor_shape(self.cursor);
         }
     }
     fn event(&mut self, event: &Event) -> Response {

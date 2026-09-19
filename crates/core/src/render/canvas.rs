@@ -1,6 +1,6 @@
 //! Element drawing in local coordinates, clipped by the tree's viewport.
 use super::buffer::{graphemes, TAB};
-use crate::{Buffer, Rect, Style};
+use crate::{Buffer, CursorShape, Rect, Style};
 use std::{ops::Range, sync::Arc};
 
 /// The line style of a border.
@@ -106,6 +106,11 @@ impl Canvas<'_> {
         {
             self.buffer.cursor = Some((x as u16, y as u16));
         }
+    }
+
+    /// The shape of the cursor this element shows.
+    pub fn cursor_shape(&mut self, shape: CursorShape) {
+        self.buffer.shape = shape;
     }
 
     /// Blank the visible part of the element in `style`. A `Default` background

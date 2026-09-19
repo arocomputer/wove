@@ -1,7 +1,12 @@
 //! An owned text editor shared by input elements and custom elements.
 use super::{wrap, Wrap};
-use std::{cell::Cell, collections::VecDeque, ops::Range};
-use unicode_segmentation::UnicodeSegmentation;
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    ops::Range,
+    rc::Rc,
+};
+use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -80,6 +85,10 @@ pub struct Editor {
     /// The display row and column at the top-left of the element showing this
     /// editor, recorded while painting so a click can be mapped to a position.
     view: Cell<(usize, usize)>,
+    /// The display rows at a width with their greatest width, until the text
+    /// changes. Layout asks at a few widths per pass, so a few are kept.
+    #[allow(clippy::type_complexity)]
+    rows: RefCell<Vec<(Option<u16>, Rc<Vec<Range<usize>>>, usize)>>,
 }
 
 impl Editor {
@@ -149,15 +158,19 @@ impl Editor {
                 atom.range.end = atom.range.end - range.len() + text.len();
             }
         }
+        self.rows.borrow_mut().clear();
         let end = range.start + text.len();
         // Insertion can join adjacent graphemes; advance to the next valid boundary.
-        self.state.cursor = self
-            .state
-            .text
-            .grapheme_indices(true)
-            .map(|(i, _)| i)
-            .find(|i| *i >= end)
-            .unwrap_or(self.state.text.len());
+        // The check looks only at the text around `end`, whatever the length.
+        let mut at = GraphemeCursor::new(end, self.state.text.len(), true);
+        self.state.cursor = match at.is_boundary(&self.state.text, 0) {
+            Ok(true) => end,
+            _ => at
+                .next_boundary(&self.state.text, 0)
+                .ok()
+                .flatten()
+                .unwrap_or(self.state.text.len()),
+        };
         self.state.anchor = None;
         self.column = None;
         self.redo.clear();
@@ -239,12 +252,25 @@ impl Editor {
 
     /// Display rows as byte ranges: logical lines, soft-wrapped at `width`.
     /// A row's range excludes the newline that ends its line.
-    pub fn rows(&self) -> Vec<Range<usize>> {
+    pub fn rows(&self) -> Rc<Vec<Range<usize>>> {
         self.rows_at(self.width)
     }
 
+    /// The widest row and the number of rows at a width.
+    pub fn extent_at(&self, width: Option<u16>) -> (usize, usize) {
+        let rows = self.rows_at(width);
+        let cached = self.rows.borrow();
+        let widest = cached.iter().find(|(w, ..)| *w == width);
+        (widest.map_or(0, |(_, _, widest)| *widest), rows.len())
+    }
+
     /// `rows` at an explicit width, for measuring before a width is assigned.
-    pub fn rows_at(&self, width: Option<u16>) -> Vec<Range<usize>> {
+    /// Rows are wrapped once per edit and width, not once per paint or cursor
+    /// move, which is what keeps a large document responsive.
+    pub fn rows_at(&self, width: Option<u16>) -> Rc<Vec<Range<usize>>> {
+        if let Some((_, rows, _)) = self.rows.borrow().iter().find(|(w, ..)| *w == width) {
+            return rows.clone();
+        }
         let mut rows = Vec::new();
         let mut base = 0;
         for line in self.state.text.split('\n') {
@@ -258,6 +284,17 @@ impl Editor {
             }
             base += line.len() + 1;
         }
+        let widest = rows
+            .iter()
+            .map(|row: &Range<usize>| self.state.text[row.clone()].width())
+            .max()
+            .unwrap_or(0);
+        let rows = Rc::new(rows);
+        let mut cached = self.rows.borrow_mut();
+        if cached.len() == 3 {
+            cached.remove(0);
+        }
+        cached.push((width, rows.clone(), widest));
         rows
     }
 
@@ -286,9 +323,8 @@ impl Editor {
     /// The display row holding a position. A position on a wrap seam belongs
     /// to the row it starts.
     pub fn row_of(rows: &[Range<usize>], position: usize) -> usize {
-        rows.iter()
-            .rposition(|row| row.start <= position)
-            .unwrap_or(0)
+        rows.partition_point(|row| row.start <= position)
+            .saturating_sub(1)
     }
 
     fn row_target(&mut self, delta: isize) -> usize {
@@ -323,15 +359,19 @@ impl Editor {
 
     /// The nearest grapheme boundary at or before an offset.
     fn boundary(&self, offset: usize) -> usize {
-        if offset >= self.text().len() {
-            return self.text().len();
+        let text = self.text();
+        if offset >= text.len() {
+            return text.len();
         }
-        self.text()
-            .grapheme_indices(true)
-            .map(|(i, _)| i)
-            .take_while(|i| *i <= offset)
-            .last()
-            .unwrap_or(0)
+        let mut offset = offset;
+        while !text.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        let mut at = GraphemeCursor::new(offset, text.len(), true);
+        match at.is_boundary(text, 0) {
+            Ok(true) => offset,
+            _ => at.prev_boundary(text, 0).ok().flatten().unwrap_or(0),
+        }
     }
 
     fn move_to(&mut self, target: usize, extend: bool) {
@@ -440,6 +480,7 @@ impl Editor {
                 .text
                 .replace_range(edit.start..edit.start + edit.inserted.len(), &edit.removed);
             (self.state.cursor, self.state.anchor) = edit.before;
+            self.rows.borrow_mut().clear();
             std::mem::swap(&mut self.atoms, &mut edit.atoms);
             self.column = None;
             self.typing = false;
@@ -452,6 +493,7 @@ impl Editor {
                 .text
                 .replace_range(edit.start..edit.start + edit.removed.len(), &edit.inserted);
             (self.state.cursor, self.state.anchor) = edit.after;
+            self.rows.borrow_mut().clear();
             std::mem::swap(&mut self.atoms, &mut edit.atoms);
             self.column = None;
             self.typing = false;

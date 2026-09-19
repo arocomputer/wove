@@ -30,6 +30,7 @@ pub struct Inline {
     screen: Option<(u16, u16)>,
     /// The version of the last frame drawn; zero when unknown.
     seen: u64,
+    shape: crate::CursorShape,
     /// Positions are unknown; the next draw clears the visible screen first.
     redraw: bool,
     output: Vec<u8>,
@@ -44,6 +45,7 @@ impl Inline {
             previous: None,
             screen: None,
             seen: 0,
+            shape: crate::CursorShape::Default,
             redraw: false,
             output: Vec::new(),
             depth,
@@ -99,9 +101,10 @@ impl Inline {
         let reachable = (-self.top).max(0);
         let mut first_changed =
             (reachable..len.max(old_len)).find(|&index| !same(&previous, index));
-        let cursor_moved = previous
-            .as_ref()
-            .is_none_or(|old| old.cursor() != frame.cursor());
+        let cursor_moved = frame.cursor_shape() != self.shape
+            || previous
+                .as_ref()
+                .is_none_or(|old| old.cursor() != frame.cursor());
         if first_changed.is_none() && !cursor_moved && !redraw {
             self.previous = previous;
             self.seen = frame.version;
@@ -117,8 +120,12 @@ impl Inline {
         // end of the line would eat that cell. Full rows need no erase.
         let mut put = |output: &mut Vec<u8>, cells: &[Slot]| {
             let used = trimmed(cells);
-            for cell in used.iter().filter(|cell| cell.width > 0) {
+            for (x, cell) in used.iter().enumerate().filter(|(_, cell)| cell.width > 0) {
                 pen.cell(output, frame, cell);
+                if !cell.is_ascii() {
+                    // Terminals disagree on cluster widths; say where the next cell is.
+                    let _ = write!(output, "\x1b[{}G", x + usize::from(cell.width) + 1);
+                }
             }
             pen.reset(output);
             if used.len() < cells.len() || cells.is_empty() {
@@ -186,6 +193,10 @@ impl Inline {
             }
         }
 
+        if frame.cursor_shape() != self.shape {
+            self.shape = frame.cursor_shape();
+            write!(output, "\x1b[{} q", self.shape.code())?;
+        }
         match frame.cursor().map(|(x, y)| (x, self.top + i64::from(y))) {
             Some((x, y)) if (0..rows).contains(&y) => {
                 write!(output, "\r\x1b[{};{}H\x1b[?25h", y + 1, x + 1)?

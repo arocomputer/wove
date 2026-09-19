@@ -61,7 +61,31 @@ itself accepts arbitrary text; it is also available to custom elements.
 
 Mouse events carry their button and modifiers, and distinguish a drag from
 plain motion. Handlers and elements see positions relative to their own
-top-left cell. Modifiers include `meta` for Super or Command, which terminals
+top-left cell. The node that handles a press keeps the pointer: it receives the
+drag and the release wherever the pointer goes. `Event::Enter` and
+`Event::Leave` report the pointer crossing a node, once `Options::motion` is on.
+
+Key events have one form whatever produced them. A character already reflects
+Shift, so `Key::Char` never carries it: Shift+g is `Char('G')` on a local
+terminal, over SSH, and with kitty key reports alike. Build events with
+`Event::key` to get that form. `Event::WindowFocus` reports the terminal window,
+and is separate from a node's `Focus` and `Blur`.
+
+## Selection and the clipboard
+
+Capturing the mouse takes the terminal's own text selection away, so the tree
+gives one back. A press that no node handles, dragged, selects the painted screen
+in reading order, across any elements. `Tree::selected_text` returns it with one
+line per row, and `Terminal::copy` puts text on the system clipboard through the
+terminal, which works over SSH and inside tmux. When to copy, on release or on a
+key, is the application's choice. `Tree::set_selectable(false)` turns selection
+off.
+
+## Overlays
+
+Give a node `position: absolute` in its layout and raise it with `Tree::set_z`.
+Children paint in ascending `z` and the pointer hits them in reverse. A `Panel`
+with a background color is opaque, which is what a menu or a dialog wants. Modifiers include `meta` for Super or Command, which terminals
 report only when `Options::keyboard` is on.
 
 `Scroll` clips children and handles arrows, paging, Home, End, and mouse wheels.
@@ -78,9 +102,24 @@ binds no quit key. Applications with timers or background work can use
 session without invalidating its renderer.
 
 `Terminal::with_options` chooses the screen and which input modes to enable:
-mouse reporting, bracketed paste, focus reports, and unambiguous key reports.
-Turn `mouse` off to leave text selection to the terminal. `Terminal::background`
-asks the terminal for its background color, for choosing a light or dark palette.
+mouse reporting, pointer motion, bracketed paste, focus reports, and unambiguous
+key reports. Motion is off by default, because a moving pointer sends hundreds of
+reports a second. Turn `mouse` off to leave text selection to the terminal.
+
+A session asks the terminal once, as it starts, what it supports and where its
+cursor is. `Terminal::capabilities` holds the answers: whether kitty key reports
+work, in which case `Options::keyboard` takes effect, and the background color,
+for choosing a light or dark palette. Keys typed during the probe come back from
+`Terminal::typed_ahead`; handle them before reading input.
+
+A panic restores the terminal before its message prints, so the message is
+readable. So does a fatal signal such as hangup or terminate; set
+`Options::signals` to false when the application handles signals itself.
+`Terminal::stop` suspends the process as Ctrl-Z does in a shell, which raw mode
+otherwise turns into an ordinary key. On Windows, call `Terminal::reassert` when
+`Event::WindowFocus(true)` arrives: the console drops input modes while
+unfocused. A `Terminal` is `Send`, so an application can draw from its own
+thread and keep a slow terminal from stalling input.
 
 ## Inline sessions
 

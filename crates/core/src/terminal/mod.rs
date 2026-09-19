@@ -5,20 +5,84 @@ pub use crossterm::event::EventStream;
 use crossterm::{event, terminal};
 use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, Once};
 
 mod query;
+pub use query::Capabilities;
 
 static OWNED: AtomicBool = AtomicBool::new(false);
+/// The modes to undo if the process ends without dropping the session.
+/// Whoever takes them, the session, the panic hook, or the signal thread,
+/// restores the terminal, so it happens exactly once.
+static ACTIVE: Mutex<Option<Options>> = Mutex::new(None);
 
-/// Owns the terminal session. Drop restores modes on normal return and panic
-/// unwinding. Process aborts and uncatchable signals cannot run Drop.
-/// Only one session may exist; callers must not change terminal modes behind it.
+/// Restore the terminal from wherever the process is ending.
+fn rescue() {
+    let active = ACTIVE.lock().ok().and_then(|mut active| active.take());
+    if let Some(options) = active {
+        let mut output = io::stdout();
+        if options.screen != ScreenMode::Alternate {
+            let _ = output.write_all(b"\r\n");
+        }
+        let _ = options.leave(&mut output);
+        let _ = terminal::disable_raw_mode();
+    }
+}
+
+/// A panic message printed onto the alternate screen vanishes with it, and one
+/// printed in raw mode staircases. Restore first, then let the message print.
+fn install_panic_hook() {
+    static HOOK: Once = Once::new();
+    HOOK.call_once(|| {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            rescue();
+            previous(info);
+        }));
+    });
+}
+
+/// A killed process runs no destructors, which would leave the user's shell
+/// in raw mode with mouse reports pouring in. Restore, then let the signal
+/// have its usual effect.
+#[cfg(unix)]
+fn watch_signals() {
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
+    static WATCH: Once = Once::new();
+    WATCH.call_once(|| {
+        let Ok(mut signals) =
+            signal_hook::iterator::Signals::new([SIGHUP, SIGINT, SIGQUIT, SIGTERM])
+        else {
+            return;
+        };
+        std::thread::spawn(move || {
+            for signal in signals.forever() {
+                rescue();
+                let _ = signal_hook::low_level::emulate_default_handler(signal);
+            }
+        });
+    });
+}
+#[cfg(not(unix))]
+fn watch_signals() {}
+
+/// Owns the terminal session. Drop restores modes on normal return; a panic
+/// and, unless `Options::signals` is off, a fatal signal restore them too.
+/// Only an abort or an uncatchable signal leaves them behind. Only one session
+/// may exist; callers must not change terminal modes behind it.
+///
+/// A session is `Send`. An application whose terminal can be slow, over SSH
+/// or inside a multiplexer, can draw from a thread of its own and hand it
+/// cloned frames, so a blocked write never stalls input handling.
 pub struct Terminal {
     output: io::Stdout,
     options: Options,
     depth: Depth,
     renderer: Renderer,
     inline: Option<Inline>,
+    capabilities: Capabilities,
+    typed: Vec<crate::Event>,
+    probed: bool,
     raw: bool,
     entered: bool,
 }
@@ -38,6 +102,8 @@ impl Terminal {
     }
 
     /// Colors are mapped to what the environment says the terminal can show.
+    /// The terminal is asked once, here, what it supports and where its cursor
+    /// is; see `capabilities`.
     pub fn with_options(options: Options) -> io::Result<Self> {
         if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
             return Err(io::Error::other(
@@ -57,14 +123,38 @@ impl Terminal {
             depth,
             renderer: Renderer::with_depth(depth),
             inline: None,
+            capabilities: Capabilities::default(),
+            typed: Vec::new(),
+            probed: false,
             raw: false,
             entered: false,
         };
         if terminal::is_raw_mode_enabled()? {
             return Err(io::Error::other("terminal is already in raw mode"));
         }
+        install_panic_hook();
+        if options.signals {
+            watch_signals();
+        }
         session.resume()?;
         Ok(session)
+    }
+
+    /// What the terminal reported at startup.
+    pub fn capabilities(&self) -> &Capabilities {
+        &self.capabilities
+    }
+
+    /// The background color the terminal reported at startup, to choose
+    /// between light and dark palettes. `None` means it did not say.
+    pub fn background(&self) -> Option<(u8, u8, u8)> {
+        self.capabilities.background
+    }
+
+    /// Keys typed while the terminal was being probed. Handle them before
+    /// reading input, so typing ahead of a slow start is not lost.
+    pub fn typed_ahead(&mut self) -> Vec<crate::Event> {
+        std::mem::take(&mut self.typed)
     }
 
     /// Restore terminal modes temporarily while retaining exclusive ownership.
@@ -72,15 +162,17 @@ impl Terminal {
     /// UI. An inline session first parks the cursor beneath its last frame.
     pub fn suspend(&mut self) -> io::Result<()> {
         let mut result = Ok(());
-        if self.entered {
+        // Whoever holds the modes undoes them; a panic hook may have already.
+        let active = ACTIVE.lock().ok().and_then(|mut active| active.take());
+        if self.entered && active.is_some() {
             if self.options.screen == ScreenMode::Inline {
                 if let Some(inline) = &mut self.inline {
                     result = inline.finish(&mut self.output);
                 }
             }
             result = result.and(self.options.leave(&mut self.output));
-            self.entered = result.is_err();
         }
+        self.entered = false;
         if self.raw {
             let raw = terminal::disable_raw_mode();
             self.raw = raw.is_err();
@@ -102,21 +194,63 @@ impl Terminal {
         // Raw escape sequences need virtual terminal processing on Windows.
         #[cfg(windows)]
         let _ = crossterm::ansi_support::supports_ansi();
+        if !self.probed {
+            self.probed = true;
+            let (capabilities, typed) = query::probe(&mut self.output)?;
+            self.capabilities = capabilities;
+            self.typed = typed;
+            // A request for key reports the terminal never answered is dropped.
+            self.options.keyboard &= self.capabilities.keyboard;
+        }
         self.entered = true;
         self.renderer.invalidate();
         match &mut self.inline {
             // Whatever ran during the suspension may have written anywhere.
             Some(inline) => inline.invalidate(),
-            None if self.options.screen == ScreenMode::Inline => self.anchor()?,
+            None if self.options.screen == ScreenMode::Inline => {
+                let cursor = self.capabilities.cursor.take();
+                self.anchor(cursor)?;
+            }
             None => {}
         }
-        self.options.enter(&mut self.output)
+        self.options.enter(&mut self.output)?;
+        if let Ok(mut active) = ACTIVE.lock() {
+            *active = Some(self.options);
+        }
+        Ok(())
+    }
+
+    /// Stop the process as Ctrl-Z does in a shell, and come back when it is
+    /// continued. Raw mode turns the key into an ordinary event, so an
+    /// application that wants job control calls this when it sees one.
+    #[cfg(unix)]
+    pub fn stop(&mut self) -> io::Result<()> {
+        self.suspend()?;
+        signal_hook::low_level::raise(signal_hook::consts::SIGTSTP)?;
+        self.resume()
+    }
+
+    /// Turn the input modes on again. Windows consoles drop them while the
+    /// window is unfocused, so call this on `Event::WindowFocus(true)` there.
+    pub fn reassert(&mut self) -> io::Result<()> {
+        if self.entered {
+            self.options.reassert(&mut self.output)?;
+        }
+        Ok(())
+    }
+
+    /// Ask the terminal to put text on the system clipboard. It works over
+    /// SSH and through tmux, and does nothing where the terminal declines.
+    pub fn copy(&mut self, text: &str) -> io::Result<()> {
+        let tmux = std::env::var_os("TMUX").is_some();
+        self.output
+            .write_all(&crate::render::clipboard(text, tmux))?;
+        self.output.flush()
     }
 
     /// Start the inline region on a fresh line at the cursor. A terminal that
     /// does not report its cursor gets a cleared screen instead.
-    fn anchor(&mut self) -> io::Result<()> {
-        let cursor = query::cursor(&mut self.output)?;
+    fn anchor(&mut self, cursor: Option<(u16, u16)>) -> io::Result<()> {
         let row = match cursor {
             Some((column, row)) if column > 0 => {
                 self.output.write_all(b"\r\n")?;
@@ -135,7 +269,9 @@ impl Terminal {
 
     /// Move between screens while running, for example from an inline session
     /// to a full-screen view and back. The main screen keeps what the inline
-    /// session drew while the alternate screen is up.
+    /// session drew while the alternate screen is up. Start inline when the
+    /// session will be inline at all: anchoring later has to ask the terminal
+    /// for its cursor, and input that arrives during the wait is lost.
     pub fn switch(&mut self, screen: ScreenMode) -> io::Result<()> {
         let old = self.options.screen;
         if old == screen {
@@ -146,6 +282,9 @@ impl Terminal {
         if !self.entered {
             return Ok(());
         }
+        if let Ok(mut active) = ACTIVE.lock() {
+            *active = Some(self.options);
+        }
         if old == ScreenMode::Alternate {
             self.output.write_all(b"\x1b[?1049l")?;
         }
@@ -154,7 +293,10 @@ impl Terminal {
         }
         self.output.flush()?;
         match (&mut self.inline, screen, old) {
-            (None, ScreenMode::Inline, _) => self.anchor()?,
+            (None, ScreenMode::Inline, _) => {
+                let cursor = query::cursor(&mut self.output)?;
+                self.anchor(cursor)?;
+            }
             (Some(inline), ScreenMode::Inline, ScreenMode::Main) => inline.invalidate(),
             _ => {}
         }
@@ -194,14 +336,6 @@ impl Terminal {
         if let Some(inline) = &mut self.inline {
             inline.invalidate();
         }
-    }
-
-    /// Ask the terminal for its background color, to choose between light and
-    /// dark palettes. Call this before reading events: the reply arrives on
-    /// stdin, and keys typed during the short wait are lost. `None` means the
-    /// terminal did not answer.
-    pub fn background(&mut self) -> io::Result<Option<(u8, u8, u8)>> {
-        query::background(&mut self.output)
     }
 }
 
@@ -254,7 +388,7 @@ pub fn convert(input: event::Event) -> Option<crate::Event> {
                 event::KeyCode::F(number) => Key::Function(number),
                 _ => return None,
             };
-            Some(Event::Key(key, mods))
+            Some(Event::key(key, mods))
         }
         event::Event::Paste(s) => Some(Event::Paste(s)),
         event::Event::Mouse(m) => {
@@ -281,8 +415,8 @@ pub fn convert(input: event::Event) -> Option<crate::Event> {
             }))
         }
         event::Event::Resize(width, height) => Some(Event::Resize(width, height)),
-        event::Event::FocusGained => Some(Event::Focus),
-        event::Event::FocusLost => Some(Event::Blur),
+        event::Event::FocusGained => Some(Event::WindowFocus(true)),
+        event::Event::FocusLost => Some(Event::WindowFocus(false)),
         _ => None,
     }
 }

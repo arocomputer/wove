@@ -49,8 +49,13 @@ def scenario(name, steps, fullscreen=True):
                 raw.extend(chunk)
                 stream.feed(chunk)
                 if b"\x1b[6n" in chunk:
-                    # pyte does not answer cursor position requests itself.
-                    os.write(master, f"\x1b[{screen.cursor.y + 1};{screen.cursor.x + 1}R".encode())
+                    # pyte answers no requests itself. A session asks for the
+                    # cursor position and then for device attributes, whose
+                    # reply ends its startup probe.
+                    reply = f"\x1b[{screen.cursor.y + 1};{screen.cursor.x + 1}R"
+                    if b"\x1b[c" in chunk:
+                        reply += "\x1b[?62c"
+                    os.write(master, reply.encode())
             if len(raw) > after and expected in "\n".join(screen.display):
                 return
             if process.poll() is not None:

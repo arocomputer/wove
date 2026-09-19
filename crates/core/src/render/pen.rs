@@ -18,22 +18,44 @@ pub enum Depth {
 }
 
 impl Depth {
-    /// Read the conventional environment hints: `NO_COLOR`, `COLORTERM`, `TERM`.
+    /// Read the conventional environment hints: `NO_COLOR`, `COLORTERM`,
+    /// `TERM`, and `TERM_PROGRAM`.
     pub fn detect() -> Self {
         let var = |name| std::env::var(name).unwrap_or_default();
-        Self::from_hints(&var("NO_COLOR"), &var("COLORTERM"), &var("TERM"))
+        let program = var("TERM_PROGRAM");
+        Self::from_hints(&var("NO_COLOR"), &var("COLORTERM"), &var("TERM"), &program)
     }
 
     /// `detect` with the environment supplied, for remote peers and tests.
-    pub fn from_hints(no_color: &str, colorterm: &str, term: &str) -> Self {
+    /// `COLORTERM` is often lost, under sudo or over SSH, so terminals known
+    /// for 24-bit color are recognized by name, and anything that is not
+    /// plainly limited gets the 256-color palette rather than sixteen.
+    pub fn from_hints(no_color: &str, colorterm: &str, term: &str, program: &str) -> Self {
+        const RGB: [&str; 8] = [
+            "direct",
+            "kitty",
+            "ghostty",
+            "alacritty",
+            "foot",
+            "wezterm",
+            "contour",
+            "iterm",
+        ];
+        let named = |names: &[&str], value: &str| {
+            let value = value.to_ascii_lowercase();
+            names.iter().any(|name| value.contains(name))
+        };
         if !no_color.is_empty() || term == "dumb" {
             Self::Mono
-        } else if matches!(colorterm, "truecolor" | "24bit") {
+        } else if matches!(colorterm, "truecolor" | "24bit")
+            || named(&RGB, term)
+            || named(&["iterm", "wezterm", "ghostty", "vscode"], program)
+        {
             Self::Rgb
-        } else if term.contains("256color") {
-            Self::Indexed
-        } else {
+        } else if matches!(term, "linux" | "vt100" | "vt220" | "ansi" | "") {
             Self::Basic
+        } else {
+            Self::Indexed
         }
     }
 

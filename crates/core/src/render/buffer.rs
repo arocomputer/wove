@@ -37,6 +37,28 @@ pub struct Style {
     pub reverse: bool,
 }
 
+/// How the terminal draws its cursor while an element shows one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CursorShape {
+    /// Whatever the user configured.
+    #[default]
+    Default,
+    Block,
+    Underline,
+    Bar,
+}
+impl CursorShape {
+    /// The DECSCUSR parameter for the steady form of the shape.
+    pub(crate) fn code(self) -> u8 {
+        match self {
+            Self::Default => 0,
+            Self::Block => 2,
+            Self::Underline => 4,
+            Self::Bar => 6,
+        }
+    }
+}
+
 /// Bytes of a grapheme a slot holds inline. Longer clusters, such as emoji
 /// families, go to the buffer's table.
 const INLINE: usize = 15;
@@ -82,6 +104,10 @@ impl Slot {
     /// A blank cell in the default style with no link.
     pub(crate) fn is_blank(&self) -> bool {
         *self == Self::BLANK
+    }
+    /// One ASCII byte, whose width every terminal agrees on.
+    pub(crate) fn is_ascii(&self) -> bool {
+        self.len() == 1 && self.glyph[0] < 0x80
     }
     /// Whether comparing this slot with one from another buffer needs the tables.
     fn indirect(&self) -> bool {
@@ -169,6 +195,7 @@ pub struct Buffer {
     long: Vec<Box<str>>,
     links: Vec<Arc<str>>,
     pub(crate) cursor: Option<(u16, u16)>,
+    pub(crate) shape: CursorShape,
     /// Set by a tree to a number unique to each frame it paints, and zeroed
     /// by any write. A renderer that sees a number it already drew skips the
     /// frame without comparing a cell.
@@ -184,6 +211,7 @@ impl Clone for Buffer {
             long: self.long.clone(),
             links: self.links.clone(),
             cursor: self.cursor,
+            shape: self.shape,
             version: self.version,
         }
     }
@@ -195,6 +223,7 @@ impl Clone for Buffer {
         self.long.clone_from(&source.long);
         self.links.clone_from(&source.links);
         self.cursor = source.cursor;
+        self.shape = source.shape;
         self.version = source.version;
     }
 }
@@ -204,6 +233,7 @@ impl PartialEq for Buffer {
     fn eq(&self, other: &Self) -> bool {
         self.area() == other.area()
             && self.cursor == other.cursor
+            && self.shape == other.shape
             && (0..self.height).all(|y| self.same_row(other, y))
     }
 }
@@ -219,11 +249,15 @@ impl Buffer {
             cells: vec![Slot::BLANK; usize::from(width) * usize::from(height)],
             long: Vec::new(),
             links: Vec::new(),
+            shape: CursorShape::Default,
             version: 0,
         }
     }
     pub fn cursor(&self) -> Option<(u16, u16)> {
         self.cursor
+    }
+    pub fn cursor_shape(&self) -> CursorShape {
+        self.shape
     }
 
     /// The full drawable area.
@@ -281,6 +315,7 @@ impl Buffer {
         self.long.clear();
         self.links.clear();
         self.cursor = None;
+        self.shape = CursorShape::Default;
         self.version = 0;
     }
     /// The rows from `first` on as a frame of their own.
@@ -295,6 +330,7 @@ impl Buffer {
             cursor: self
                 .cursor
                 .and_then(|(x, y)| Some((x, y.checked_sub(first)?))),
+            shape: self.shape,
             version: 0,
         }
     }
@@ -436,6 +472,44 @@ impl Buffer {
             }
         }
         used as u16
+    }
+
+    /// The cells from `from` to `to` inclusive, in reading order.
+    fn span(&self, from: (u16, u16), to: (u16, u16)) -> impl Iterator<Item = (u16, u16, u16)> {
+        let last = self.width.saturating_sub(1);
+        (from.1..=to.1.min(self.height.saturating_sub(1))).map(move |y| {
+            let start = if y == from.1 { from.0 } else { 0 };
+            let end = if y == to.1 { to.0.min(last) } else { last };
+            (y, start, end)
+        })
+    }
+
+    /// Swap foreground and background over a run of cells in reading order,
+    /// the way a selection is shown.
+    pub(crate) fn invert(&mut self, from: (u16, u16), to: (u16, u16)) {
+        let width = usize::from(self.width);
+        let rows: Vec<_> = self.span(from, to).collect();
+        for (y, start, end) in rows {
+            let row = usize::from(y) * width;
+            for slot in &mut self.cells[row + usize::from(start)..=row + usize::from(end)] {
+                slot.flags ^= 32;
+            }
+        }
+        self.version = 0;
+    }
+
+    /// The text of a run of cells in reading order, one line per row with
+    /// trailing blanks removed, as a user would expect to copy it.
+    pub fn text(&self, from: (u16, u16), to: (u16, u16)) -> String {
+        let lines: Vec<String> = self
+            .span(from, to)
+            .map(|(y, start, end)| {
+                let row = &self.row(y)[usize::from(start)..=usize::from(end)];
+                let line: String = row.iter().map(|slot| self.symbol(slot)).collect();
+                line.trim_end().to_owned()
+            })
+            .collect();
+        lines.join("\n")
     }
 
     /// Get visible rows as plain text, useful for snapshots and diagnostics.

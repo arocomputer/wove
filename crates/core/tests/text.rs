@@ -201,6 +201,25 @@ fn clicking_an_input_reports_a_focus_repaint() {
 }
 
 #[test]
+fn every_input_source_reports_a_shifted_letter_the_same_way() {
+    use wove::{input::Decoder, Event, Key, Modifiers};
+    let shift = Modifiers {
+        shift: true,
+        ..Modifiers::default()
+    };
+    // A local terminal marks `G` with Shift; bytes over SSH do not. A kitty
+    // report sends the unshifted key with Shift. All three are one event.
+    let local = Event::key(Key::Char('G'), shift);
+    let remote = Decoder::default().push(b"G").remove(0);
+    let kitty = Decoder::default().push(b"\x1b[103;2u").remove(0);
+    assert_eq!(local, Event::Key(Key::Char('G'), Modifiers::default()));
+    assert_eq!(remote, local);
+    assert_eq!(kitty, local);
+    // Keys that are not characters keep Shift: it is all that tells them apart.
+    assert_eq!(Event::key(Key::Enter, shift), Event::Key(Key::Enter, shift));
+}
+
+#[test]
 fn a_typed_word_undoes_as_one_edit_and_the_next_word_as_another() {
     let mut editor = Editor::new("");
     for c in "hello wide".chars() {

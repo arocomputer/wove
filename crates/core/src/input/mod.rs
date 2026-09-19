@@ -1,6 +1,6 @@
 //! Backend-independent input and event consumption.
 mod decoder;
-pub use decoder::{DecodeError, Decoder};
+pub use decoder::Decoder;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Modifiers {
@@ -74,9 +74,38 @@ pub enum Event {
     Key(Key, Modifiers),
     Paste(String),
     Mouse(Mouse),
+    /// The node gained or lost the tree's focus.
     Focus,
     Blur,
+    /// The pointer entered or left the node. Needs `Options::motion`.
+    Enter,
+    Leave,
+    /// The terminal window gained or lost focus. Nodes stay focused.
+    WindowFocus(bool),
     Resize(u16, u16),
+}
+
+impl Event {
+    /// A key event in the one form every input source produces. A character
+    /// already reflects Shift, so `Char` keys never carry it: Shift+a is
+    /// `Char('A')`, and Ctrl+Shift+a is `Char('A')` with `ctrl`. Bindings then
+    /// match the same way on a local terminal, over SSH, and with or without
+    /// kitty key reports.
+    pub fn key(key: Key, mut modifiers: Modifiers) -> Self {
+        let key = match key {
+            Key::Char(c) => {
+                let mut upper = c.to_uppercase();
+                let shifted = match (modifiers.shift, upper.next(), upper.next()) {
+                    (true, Some(upper), None) => upper,
+                    _ => c,
+                };
+                modifiers.shift = false;
+                Key::Char(shifted)
+            }
+            key => key,
+        };
+        Self::Key(key, modifiers)
+    }
 }
 
 impl From<Key> for Event {

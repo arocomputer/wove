@@ -57,7 +57,7 @@ pub(crate) fn run(
                 }
             });
             let events = match message {
-                Ok(Some(Message::Data(bytes))) => decoder.push(&bytes)?,
+                Ok(Some(Message::Data(bytes))) => decoder.push(&bytes),
                 Ok(Some(Message::Resize(w, h))) => {
                     width = w;
                     height = h;

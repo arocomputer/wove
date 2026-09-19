@@ -104,6 +104,10 @@ struct Node {
     origin: (i32, i32),
     size: (u16, u16),
     clip: Rect,
+    /// Paint order among siblings; higher paints later and is hit first.
+    z: i16,
+    /// Some child has a nonzero `z`, so children need sorting to paint.
+    layered: bool,
 }
 
 /// The original target and the nodes visited before an event was consumed.
@@ -122,6 +126,21 @@ pub struct Tree {
     root: Id,
     focus: Option<Id>,
     dirty: bool,
+    /// The arguments of the layout pass whose results are still valid. Any
+    /// change that can move a node clears it; repaints alone keep it.
+    fresh: Option<(u16, Option<u16>)>,
+    /// The content's natural height at a width, while `fresh`.
+    natural: Option<(u16, u16)>,
+    /// The node that took the last mouse press. It receives the drag and the
+    /// release wherever the pointer goes.
+    capture: Option<Id>,
+    /// The node under the pointer, for enter and leave events.
+    hover: Option<Id>,
+    selectable: bool,
+    /// Where a press that no node wanted began, until the button is released.
+    anchor: Option<(u16, u16)>,
+    /// A selection of the painted screen, as two cells in frame coordinates.
+    selection: Option<((u16, u16), (u16, u16))>,
     frame: Buffer,
 }
 
@@ -148,6 +167,8 @@ impl Tree {
             origin: (0, 0),
             size: (0, 0),
             clip: Rect::default(),
+            z: 0,
+            layered: false,
         });
         layout
             .set_node_context(lid, Some(root))
@@ -158,6 +179,13 @@ impl Tree {
             root,
             focus: None,
             dirty: true,
+            fresh: None,
+            natural: None,
+            capture: None,
+            hover: None,
+            selectable: true,
+            anchor: None,
+            selection: None,
             frame: Buffer::new(0, 0),
         }
     }
@@ -169,6 +197,59 @@ impl Tree {
     }
     pub fn is_dirty(&self) -> bool {
         self.dirty
+    }
+    /// Invalidate layout as well as paint.
+    fn touch(&mut self) {
+        self.dirty = true;
+        self.fresh = None;
+        self.natural = None;
+    }
+
+    /// Order a node among its siblings. Children paint in ascending `z`, then
+    /// in child order, and the pointer hits them in reverse. Use it with
+    /// absolute positioning for menus, dialogs, and other overlays.
+    pub fn set_z(&mut self, id: Id, z: i16) -> Result<(), Error> {
+        self.nodes.get_mut(id).ok_or(Error::MissingNode)?.z = z;
+        if let Some(parent) = self.nodes[id].parent {
+            self.nodes[parent].layered = true;
+        }
+        self.dirty = true;
+        Ok(())
+    }
+    /// A node's children in paint order.
+    pub(crate) fn layers(&self, id: Id) -> Vec<Id> {
+        let mut children = self.nodes[id].children.clone();
+        children.sort_by_key(|child| self.nodes[*child].z);
+        children
+    }
+
+    /// Whether a drag that no node handles selects text on the screen.
+    /// On by default, because capturing the mouse takes the terminal's own
+    /// selection away from the user.
+    pub fn set_selectable(&mut self, selectable: bool) {
+        self.selectable = selectable;
+        self.clear_selection();
+    }
+    /// The selected cells, first and last in reading order.
+    pub fn selection(&self) -> Option<((u16, u16), (u16, u16))> {
+        self.selection.map(|(a, b)| {
+            if (a.1, a.0) <= (b.1, b.0) {
+                (a, b)
+            } else {
+                (b, a)
+            }
+        })
+    }
+    pub fn clear_selection(&mut self) {
+        self.anchor = None;
+        if self.selection.take().is_some() {
+            self.dirty = true;
+        }
+    }
+    /// The selected text as last painted, one line per row, for the clipboard.
+    pub fn selected_text(&self) -> Option<String> {
+        let (from, to) = self.selection()?;
+        Some(self.frame.text(from, to))
     }
     pub fn contains(&self, id: Id) -> bool {
         self.nodes.contains_key(id)
@@ -203,6 +284,8 @@ impl Tree {
             origin: (0, 0),
             size: (0, 0),
             clip: Rect::default(),
+            z: 0,
+            layered: false,
         });
         self.layout.set_node_context(lid, Some(id))?;
         Ok(id)
@@ -241,13 +324,16 @@ impl Tree {
         let index = index.min(self.nodes[parent].children.len());
         self.nodes[parent].children.insert(index, child);
         self.nodes[child].parent = Some(parent);
+        if self.nodes[child].z != 0 {
+            self.nodes[parent].layered = true;
+        }
         self.hide(child);
         self.layout.insert_child_at_index(
             self.nodes[parent].layout,
             index,
             self.nodes[child].layout,
         )?;
-        self.dirty = true;
+        self.touch();
         Ok(())
     }
 
@@ -261,7 +347,7 @@ impl Tree {
             self.nodes[parent].children.retain(|n| *n != id);
         }
         self.remove_subtree(id)?;
-        self.dirty = true;
+        self.touch();
         Ok(())
     }
     fn remove_subtree(&mut self, id: Id) -> Result<(), Error> {
@@ -279,7 +365,7 @@ impl Tree {
 
     pub fn set_layout(&mut self, id: Id, style: Layout) -> Result<(), Error> {
         self.layout.set_style(self.node(id)?.layout, style)?;
-        self.dirty = true;
+        self.touch();
         Ok(())
     }
     pub fn get<E: Element>(&self, id: Id) -> Result<&E, Error> {
@@ -295,7 +381,7 @@ impl Tree {
             .ok_or(Error::WrongType)?;
         update(element);
         self.layout.mark_dirty(node.layout)?;
-        self.dirty = true;
+        self.touch();
         Ok(())
     }
     /// A node handler runs before its element's default behavior. Returning handled
@@ -326,6 +412,7 @@ impl Tree {
         if let Some(id) = id {
             self.deliver(id, &Event::Focus)?;
         }
+        // Focus changes how nodes paint, not where they are.
         self.dirty = true;
         Ok(())
     }
@@ -414,7 +501,7 @@ impl Tree {
         }
         if response.changed {
             self.layout.mark_dirty(node.layout)?;
-            self.dirty = true;
+            self.touch();
         }
         Ok(response)
     }
@@ -425,11 +512,16 @@ impl Tree {
         if !node.clip.contains(x, y) {
             return None;
         }
-        node.children
-            .iter()
-            .rev()
-            .find_map(|child| self.hit(*child, x, y))
-            .or(Some(id))
+        let found = if node.layered {
+            let layers = self.layers(id);
+            layers.iter().rev().find_map(|child| self.hit(*child, x, y))
+        } else {
+            let children = node.children.iter().rev();
+            children
+                .into_iter()
+                .find_map(|child| self.hit(*child, x, y))
+        };
+        found.or(Some(id))
     }
     /// Hit testing uses the last painted frame. Keyboard events target the focus.
     pub fn target(&self, event: &Event) -> Option<Id> {
@@ -449,7 +541,46 @@ impl Tree {
         {
             self.focus(None)?;
         }
-        let target = self.target(&event);
+        let mut target = self.target(&event);
+        let mut hover_changed = false;
+        if let Event::Mouse(mouse) = &event {
+            let at = (mouse.x, mouse.y);
+            match mouse.kind {
+                MouseKind::Down(_) => {
+                    self.capture = None;
+                    self.clear_selection();
+                }
+                // A press that no node wanted is dragged into a selection.
+                MouseKind::Drag(_) | MouseKind::Up(_) if self.anchor.is_some() => {
+                    let anchor = self
+                        .anchor
+                        .filter(|_| matches!(mouse.kind, MouseKind::Drag(_)));
+                    if let Some(anchor) = anchor {
+                        self.selection = Some((anchor, at));
+                        self.dirty = true;
+                    }
+                    self.anchor = anchor;
+                    return Ok(Dispatch {
+                        handled: true,
+                        changed: anchor.is_some(),
+                        ..Dispatch::default()
+                    });
+                }
+                // The node that took the press keeps the pointer until release.
+                MouseKind::Drag(_) | MouseKind::Up(_) => {
+                    target = self.capture.filter(|id| self.contains(*id)).or(target);
+                }
+                _ => {}
+            }
+            if target != self.hover {
+                for (id, event) in [(self.hover, Event::Leave), (target, Event::Enter)] {
+                    if let Some(id) = id.filter(|id| self.contains(*id)) {
+                        hover_changed |= self.deliver(id, &event)?.changed;
+                    }
+                }
+                self.hover = target;
+            }
+        }
         if matches!(event, Event::Mouse(mouse) if matches!(mouse.kind, MouseKind::Down(_))) {
             let mut ancestor = target;
             while let Some(id) = ancestor {
@@ -462,7 +593,7 @@ impl Tree {
         }
         let mut result = Dispatch {
             target,
-            changed: self.focus != previous_focus,
+            changed: self.focus != previous_focus || hover_changed,
             ..Dispatch::default()
         };
         let mut next = target;
@@ -472,9 +603,19 @@ impl Tree {
             result.changed |= response.changed;
             if response.handled {
                 result.handled = true;
+                if matches!(event, Event::Mouse(mouse) if matches!(mouse.kind, MouseKind::Down(_)))
+                {
+                    self.capture = Some(id);
+                }
                 break;
             }
             next = self.nodes[id].parent;
+        }
+        if let Event::Mouse(mouse) = &event {
+            let pressed = mouse.kind == MouseKind::Down(crate::Button::Left);
+            if pressed && !result.handled && self.selectable {
+                self.anchor = Some((mouse.x, mouse.y));
+            }
         }
         if !result.handled {
             if let Event::Key(Key::Tab, mods) = event {

@@ -105,7 +105,12 @@ impl Feed {
     /// The first visible position: the anchor, unless the tail already fits below it.
     fn start(&self, view: (u16, u16)) -> (usize, usize) {
         let tail = self.tail(view);
-        self.top.map_or(tail, |top| top.min(tail))
+        self.top.map_or(tail, |(block, row)| {
+            // A block laid out again at a new width may have fewer rows than
+            // the anchor remembers; hold its last row rather than point past it.
+            let last = self.extent(block, view.0).saturating_sub(1);
+            (block, row.min(last)).min(tail)
+        })
     }
 
     fn scroll(&mut self, rows: isize) {
@@ -170,6 +175,10 @@ impl Element for Feed {
         }
     }
     fn event(&mut self, event: &Event) -> Response {
+        // Scrolling is measured against a painted viewport.
+        if self.view.1 == 0 {
+            return Response::IGNORE;
+        }
         let page = isize::try_from(self.view.1.max(1)).unwrap_or(1);
         let before = self.start(self.view);
         match event {

@@ -18,9 +18,13 @@ pub enum ScreenMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Options {
     pub screen: ScreenMode,
-    /// Report clicks, drags, motion, and the wheel. Turn this off to leave text
+    /// Report clicks, drags, and the wheel. Turn this off to leave text
     /// selection to the terminal.
     pub mouse: bool,
+    /// Also report motion with no button held, which hover needs. It is off by
+    /// default: a moving pointer sends hundreds of reports a second, and over
+    /// a network every one of them is a packet.
+    pub motion: bool,
     /// Deliver pasted text as one event instead of as typed keys.
     pub paste: bool,
     /// Report when the terminal window gains or loses focus.
@@ -28,6 +32,10 @@ pub struct Options {
     /// Ask for unambiguous key reports (the kitty keyboard protocol), which
     /// distinguish keys such as Shift+Enter. Terminals without it ignore the request.
     pub keyboard: bool,
+    /// Restore the terminal before a fatal signal (hangup, terminate,
+    /// interrupt, quit) ends the process. Turn it off when the application
+    /// handles those signals itself.
+    pub signals: bool,
 }
 
 impl Default for Options {
@@ -35,9 +43,11 @@ impl Default for Options {
         Self {
             screen: ScreenMode::default(),
             mouse: true,
+            motion: false,
             paste: true,
             focus: true,
             keyboard: false,
+            signals: true,
         }
     }
 }
@@ -49,8 +59,23 @@ impl Options {
             out.write_all(b"\x1b[?1049h")?;
         }
         out.write_all(b"\x1b[?25l\x1b[?7l")?;
+        self.modes(out, false)
+    }
+
+    /// Turn the input modes on again without touching the screen. Windows
+    /// consoles drop them while the window is unfocused, so send this when
+    /// `Event::WindowFocus(true)` arrives there.
+    pub fn reassert(&self, out: &mut impl Write) -> io::Result<()> {
+        self.modes(out, true)
+    }
+
+    fn modes(&self, out: &mut impl Write, again: bool) -> io::Result<()> {
         if self.mouse {
-            out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h")?;
+            // Some terminals let the last of these win, so motion comes last.
+            out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1006h")?;
+            if self.motion {
+                out.write_all(b"\x1b[?1003h")?;
+            }
         }
         if self.paste {
             out.write_all(b"\x1b[?2004h")?;
@@ -59,6 +84,11 @@ impl Options {
             out.write_all(b"\x1b[?1004h")?;
         }
         if self.keyboard {
+            if again {
+                // Pop our entry first, so repeats do not grow the terminal's
+                // stack. The first push never pops: that entry is not ours.
+                out.write_all(b"\x1b[<1u")?;
+            }
             out.write_all(b"\x1b[>1u")?;
         }
         out.flush()
@@ -66,7 +96,8 @@ impl Options {
 
     /// Undo only the modes `enter` enabled.
     pub fn leave(&self, out: &mut impl Write) -> io::Result<()> {
-        out.write_all(b"\x1b[0m")?;
+        // Attributes and the cursor shape go back to the user's defaults.
+        out.write_all(b"\x1b[0m\x1b[0 q")?;
         if self.keyboard {
             out.write_all(b"\x1b[<1u")?;
         }

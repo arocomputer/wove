@@ -2763,6 +2763,7 @@ dependencies = [
  "crossterm",
  "pulldown-cmark",
  "rustix",
+ "signal-hook",
  "similar",
  "syntect",
  "taffy",

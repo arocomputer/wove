@@ -77,6 +77,29 @@ fn a_feed_scrolls_by_rows_through_wrapped_blocks_and_their_gaps() {
 }
 
 #[test]
+fn a_feed_anchored_in_a_tall_block_keeps_showing_text_when_it_gets_wider() {
+    let mut screen = Screen::new(4, 2);
+    let mut feed = Feed::new(0);
+    feed.push(block("aaaa bbbb cccc dddd eeee"), Wrap::Word);
+    feed.push(block("tail"), Wrap::Word);
+    feed.push(block("end"), Wrap::Word);
+    let id = screen.tree.add(screen.tree.root(), feed).unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    screen.frame().unwrap();
+    screen.send(Key::Up).unwrap();
+    screen.send(Key::Up).unwrap();
+    assert_eq!(screen.frame().unwrap().lines(), ["dddd", "eeee"]);
+    // At this width the first block is one row; the anchor must not point past it.
+    screen.resize(30, 2);
+    let lines = screen.frame().unwrap().lines();
+    assert!(
+        lines[0].starts_with("aaaa bbbb cccc dddd eeee"),
+        "{lines:?}"
+    );
+    assert!(lines[1].starts_with("tail"), "{lines:?}");
+}
+
+#[test]
 fn million_row_list_materializes_only_the_visible_viewport() {
     let calls = Rc::new(Cell::new(0));
     let count = calls.clone();

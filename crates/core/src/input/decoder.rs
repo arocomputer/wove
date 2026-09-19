@@ -2,30 +2,16 @@
 //! carry raw bytes instead of a local terminal.
 use super::{Button, Event, Key, Modifiers, Mouse, MouseKind};
 
-/// Input the decoder refuses to keep or cannot represent.
-#[derive(Debug, PartialEq, Eq)]
-pub enum DecodeError {
-    /// A paste or escape sequence grew past its limit without ending.
-    Overflow,
-    /// The bytes are not UTF-8.
-    Encoding,
-}
-impl std::fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Overflow => "terminal input exceeds limit",
-            Self::Encoding => "terminal input is not UTF-8",
-        })
-    }
-}
-impl std::error::Error for DecodeError {}
-
+/// The most paste text delivered as one event. A longer paste arrives as
+/// several `Paste` events in order, so memory stays bounded whatever is pasted.
 const PASTE_LIMIT: usize = 65536;
+/// No report a terminal sends is longer; anything that is gets dropped.
 const SEQUENCE_LIMIT: usize = 64;
 
 /// Decode xterm and kitty key reports, SGR mouse reports, focus changes, and
 /// bracketed paste. Input may arrive split anywhere; only an incomplete
-/// sequence is retained between calls.
+/// sequence is retained between calls. Malformed input is dropped rather than
+/// reported: a peer can send anything, and none of it should end a session.
 #[derive(Default)]
 pub struct Decoder {
     pending: Vec<u8>,
@@ -33,36 +19,51 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    /// A lone escape byte is waiting: it is either the Escape key or the start
-    /// of a sequence. Callers wait briefly, then call `flush_escape`.
+    /// The input so far is a whole key on its own and also the start of a
+    /// longer report: Escape, or Alt with `[` or `O`. Callers wait briefly for
+    /// more bytes, then call `flush_escape`.
     pub fn escape_pending(&self) -> bool {
-        !self.paste && self.pending == b"\x1b"
+        !self.paste && matches!(self.pending.as_slice(), b"\x1b" | b"\x1b[" | b"\x1bO")
     }
 
-    /// Resolve a waiting escape byte as the Escape key.
+    /// Resolve the waiting bytes as the key they are on their own.
     pub fn flush_escape(&mut self) -> Vec<Event> {
-        if self.escape_pending() {
-            self.pending.clear();
-            vec![Key::Escape.into()]
-        } else {
-            Vec::new()
+        if !self.escape_pending() {
+            return Vec::new();
         }
+        let event = match self.pending.get(1) {
+            Some(byte) => {
+                let alt = Modifiers {
+                    alt: true,
+                    ..Modifiers::default()
+                };
+                Event::key(Key::Char(char::from(*byte)), alt)
+            }
+            None => Key::Escape.into(),
+        };
+        self.pending.clear();
+        vec![event]
     }
 
-    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Event>, DecodeError> {
+    pub fn push(&mut self, bytes: &[u8]) -> Vec<Event> {
         let mut events = Vec::new();
         for &byte in bytes {
             self.pending.push(byte);
-            if self.pending.len() > PASTE_LIMIT + 6 {
-                return Err(DecodeError::Overflow);
-            }
             if self.paste {
                 if self.pending.ends_with(b"\x1b[201~") {
-                    let text = std::str::from_utf8(&self.pending[..self.pending.len() - 6])
-                        .map_err(|_| DecodeError::Encoding)?;
-                    events.push(Event::Paste(text.into()));
+                    let text = &self.pending[..self.pending.len() - 6];
+                    events.push(Event::Paste(String::from_utf8_lossy(text).into()));
                     self.pending.clear();
                     self.paste = false;
+                } else if self.pending.len() > PASTE_LIMIT {
+                    // Deliver what has arrived, keeping enough to recognize a
+                    // terminator split across the cut, and cut between characters.
+                    let mut cut = self.pending.len() - 5;
+                    while self.pending[cut] & 0xc0 == 0x80 {
+                        cut -= 1;
+                    }
+                    let text: Vec<u8> = self.pending.drain(..cut).collect();
+                    events.push(Event::Paste(String::from_utf8_lossy(&text).into()));
                 }
                 continue;
             }
@@ -73,22 +74,24 @@ impl Decoder {
             }
             if self.pending.starts_with(b"\x1b[") || self.pending.starts_with(b"\x1bO") {
                 if self.pending.len() > SEQUENCE_LIMIT {
-                    return Err(DecodeError::Overflow);
-                }
-                if self.pending.len() > 2 && (0x40..=0x7e).contains(&byte) {
+                    self.pending.clear();
+                } else if self.pending.len() > 2 && (0x40..=0x7e).contains(&byte) {
                     events.extend(sequence(&self.pending));
                     self.pending.clear();
                 }
                 continue;
             }
-            if self.escape_pending() {
+            if self.pending == b"\x1b" {
                 continue;
             }
             let alt = self.pending[0] == 0x1b;
             let text = match std::str::from_utf8(&self.pending[usize::from(alt)..]) {
                 Ok(text) => text,
                 Err(error) if error.error_len().is_none() => continue,
-                Err(_) => return Err(DecodeError::Encoding),
+                Err(_) => {
+                    self.pending.clear();
+                    continue;
+                }
             };
             let mut modifiers = Modifiers {
                 alt,
@@ -110,10 +113,10 @@ impl Decoder {
                 Some(c) => Key::Char(c),
                 None => continue,
             };
-            events.push(Event::Key(key, modifiers));
+            events.push(Event::key(key, modifiers));
             self.pending.clear();
         }
-        Ok(events)
+        events
     }
 }
 
@@ -158,8 +161,8 @@ fn sequence(bytes: &[u8]) -> Option<Event> {
             modifiers.shift = true;
             Key::Tab
         }
-        b'I' => return Some(Event::Focus),
-        b'O' => return Some(Event::Blur),
+        b'I' => return Some(Event::WindowFocus(true)),
+        b'O' => return Some(Event::WindowFocus(false)),
         b'u' => match value(0, 0)? {
             9 => Key::Tab,
             13 => Key::Enter,
@@ -183,7 +186,7 @@ fn sequence(bytes: &[u8]) -> Option<Event> {
         },
         _ => return None,
     };
-    Some(Event::Key(key, modifiers))
+    Some(Event::key(key, modifiers))
 }
 
 /// An SGR mouse report: `button;column;row` ending in `M` (press or motion)
@@ -237,7 +240,7 @@ mod tests {
         let mut decoder = Decoder::default();
         let mut events = Vec::new();
         for byte in "é\x1b[1;5D\x1b[200~a\n\x03\x1b[A\x1b[201~".bytes() {
-            events.extend(decoder.push(&[byte]).unwrap());
+            events.extend(decoder.push(&[byte]));
         }
         assert_eq!(
             events,
@@ -258,10 +261,10 @@ mod tests {
     #[test]
     fn escape_waits_for_alt_or_timeout() {
         let mut decoder = Decoder::default();
-        assert!(decoder.push(b"\x1b").unwrap().is_empty());
+        assert!(decoder.push(b"\x1b").is_empty());
         assert_eq!(decoder.flush_escape(), vec![Key::Escape.into()]);
         assert_eq!(
-            decoder.push(b"\x1bx").unwrap(),
+            decoder.push(b"\x1bx"),
             vec![Event::Key(
                 Key::Char('x'),
                 Modifiers {
@@ -273,25 +276,53 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_input_is_bounded() {
+    fn a_huge_paste_arrives_in_order_and_malformed_input_is_dropped() {
         let mut decoder = Decoder::default();
-        decoder.push(b"\x1b[200~").unwrap();
-        assert_eq!(
-            decoder.push(&vec![b'a'; PASTE_LIMIT + 7]),
-            Err(DecodeError::Overflow)
-        );
+        let body = "é".repeat(PASTE_LIMIT);
+        let mut events = decoder.push(b"\x1b[200~");
+        events.extend(decoder.push(body.as_bytes()));
+        events.extend(decoder.push(b"\x1b[201~x"));
+        let pasted: String = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Paste(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pasted, body, "chunks never split a character");
+        assert!(events.len() > 3);
+        assert_eq!(events.last(), Some(&Key::Char('x').into()));
+        // An endless report and invalid UTF-8 are dropped; typing continues.
         let mut decoder = Decoder::default();
+        let mut events = decoder.push(format!("\x1b[{}", "1".repeat(80)).as_bytes());
+        events.extend(decoder.push(b"\xff"));
+        events.extend(decoder.push(b"ok"));
         assert_eq!(
-            decoder.push(format!("\x1b[{}", "1".repeat(64)).as_bytes()),
-            Err(DecodeError::Overflow)
+            events[events.len() - 2..],
+            [Key::Char('o').into(), Key::Char('k').into()]
         );
+    }
+
+    #[test]
+    fn alt_with_a_bracket_is_a_key_once_nothing_follows() {
+        let mut decoder = Decoder::default();
+        assert!(decoder.push(b"\x1b[").is_empty());
+        assert!(decoder.escape_pending());
+        let alt = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+        assert_eq!(decoder.flush_escape(), [Event::Key(Key::Char('['), alt)]);
+        assert_eq!(decoder.push(b"a"), [Key::Char('a').into()]);
+        // Bytes that do follow in time still make the report they belong to.
+        assert_eq!(decoder.push(b"\x1b[A"), [Key::Up.into()]);
     }
 
     #[test]
     fn kitty_reports_carry_modifiers_a_legacy_terminal_cannot_send() {
         let mut decoder = Decoder::default();
         // Shift+Enter, Super+v, then a release that must not repeat the key.
-        let events = decoder.push(b"\x1b[13;2u\x1b[118;9u\x1b[118;9:3u").unwrap();
+        let events = decoder.push(b"\x1b[13;2u\x1b[118;9u\x1b[118;9:3u");
         assert_eq!(
             events,
             vec![
@@ -316,9 +347,8 @@ mod tests {
     #[test]
     fn mouse_reports_keep_button_drag_and_modifiers() {
         let mut decoder = Decoder::default();
-        let events = decoder
-            .push(b"\x1b[<2;5;3M\x1b[<34;6;3M\x1b[<2;6;3m\x1b[<35;7;3M\x1b[<80;1;1M")
-            .unwrap();
+        let events =
+            decoder.push(b"\x1b[<2;5;3M\x1b[<34;6;3M\x1b[<2;6;3m\x1b[<35;7;3M\x1b[<80;1;1M");
         let kinds: Vec<_> = events
             .iter()
             .map(|event| match event {

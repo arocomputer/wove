@@ -21,6 +21,8 @@ pub trait Element: Any {
     fn focusable(&self) -> bool {
         false
     }
+    /// Draw over the element's children, for chrome such as a scrollbar.
+    fn overlay(&self, _canvas: &mut Canvas<'_>) {}
     /// Called while painting a visible element, with its inner size and the
     /// extent of its children's content. Returns how far the children are
     /// scrolled. Content may be far taller than a frame, so extents and

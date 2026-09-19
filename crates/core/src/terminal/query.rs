@@ -1,30 +1,68 @@
-//! Questions the terminal answers on stdin: where the cursor is, and what
-//! color its background has.
+//! Questions the terminal answers on stdin. They are asked once, in one
+//! batch, before the application reads input, so replies never race with it.
+use crate::{input::Decoder, Event};
 use std::io::{self, Write};
 
-/// Zero-based `(column, row)` of the cursor, in raw mode.
+/// What the terminal said about itself when the session started.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Capabilities {
+    /// The terminal answers the kitty keyboard query, so `Options::keyboard`
+    /// takes effect.
+    pub keyboard: bool,
+    /// The background color, for choosing between light and dark palettes.
+    pub background: Option<(u8, u8, u8)>,
+    /// Zero-based `(column, row)` of the cursor at startup.
+    pub(crate) cursor: Option<(u16, u16)>,
+}
+
+/// Ask everything at once. Every terminal answers the device-attributes
+/// request sent last, which ends the wait without a timeout even when the
+/// other questions go unanswered. Keys typed meanwhile are returned, not lost.
+#[cfg(unix)]
+pub fn probe(output: &mut impl Write) -> io::Result<(Capabilities, Vec<Event>)> {
+    let reply = ask(
+        output,
+        b"\x1b[?u\x1b]11;?\x1b\\\x1b[6n\x1b[c",
+        attributes_end,
+    )?;
+    Ok(parse(&reply))
+}
+#[cfg(not(unix))]
+pub fn probe(_: &mut impl Write) -> io::Result<(Capabilities, Vec<Event>)> {
+    let capabilities = Capabilities {
+        // Without a probe the request is sent on trust; terminals ignore it.
+        keyboard: true,
+        cursor: crossterm::cursor::position().ok(),
+        ..Capabilities::default()
+    };
+    Ok((capabilities, Vec::new()))
+}
+
+/// Zero-based `(column, row)` of the cursor, for anchoring an inline session
+/// after startup. Input that arrives during the wait is lost, so prefer
+/// starting inline.
 #[cfg(unix)]
 pub fn cursor(output: &mut impl Write) -> io::Result<Option<(u16, u16)>> {
     let reply = ask(output, b"\x1b[6n", |reply| reply.ends_with(b"R"))?;
-    Ok(parse_cursor(&reply))
+    Ok(parse(&reply).0.cursor)
 }
 #[cfg(not(unix))]
 pub fn cursor(_: &mut impl Write) -> io::Result<Option<(u16, u16)>> {
     Ok(crossterm::cursor::position().ok())
 }
 
-/// The background color. Terminals that do not know the question still answer
-/// the device-attributes request sent after it, which ends the wait early.
-#[cfg(unix)]
-pub fn background(output: &mut impl Write) -> io::Result<Option<(u8, u8, u8)>> {
-    let reply = ask(output, b"\x1b]11;?\x1b\\\x1b[c", |reply| {
-        reply.ends_with(b"c") && reply.windows(3).any(|w| w == b"\x1b[?")
-    })?;
-    Ok(parse_background(&reply))
-}
-#[cfg(not(unix))]
-pub fn background(_: &mut impl Write) -> io::Result<Option<(u8, u8, u8)>> {
-    Ok(None)
+/// Whether the reply ends with a device-attributes report, `ESC [ ? … c`.
+/// A kitty keyboard reply also starts `ESC [ ?`, and a color reply can end in
+/// the hex digit `c`, so both ends are checked.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn attributes_end(reply: &[u8]) -> bool {
+    let Some(start) = reply.windows(3).rposition(|w| w == b"\x1b[?") else {
+        return false;
+    };
+    match &reply[start + 3..] {
+        [body @ .., b'c'] => body.iter().all(|b| b.is_ascii_digit() || *b == b';'),
+        _ => false,
+    }
 }
 
 /// Write a request and collect stdin until `done` or a short deadline.
@@ -41,7 +79,7 @@ fn ask(
     let stdin = rustix::stdio::stdin();
     let deadline = Instant::now() + Duration::from_millis(300);
     let mut reply = Vec::new();
-    while !done(&reply) && reply.len() < 256 {
+    while !done(&reply) && reply.len() < 4096 {
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
             break;
@@ -57,7 +95,7 @@ fn ask(
             Err(rustix::io::Errno::INTR) => continue,
             Err(error) => return Err(error.into()),
         }
-        let mut chunk = [0; 64];
+        let mut chunk = [0; 256];
         match rustix::io::read(stdin, &mut chunk) {
             Ok(0) => break,
             Ok(n) => reply.extend_from_slice(&chunk[..n]),
@@ -68,24 +106,63 @@ fn ask(
     Ok(reply)
 }
 
-/// `ESC [ row ; column R`, one-based.
+/// Pick the replies out of what arrived; whatever is left was typed.
 #[cfg_attr(not(unix), allow(dead_code))]
-fn parse_cursor(reply: &[u8]) -> Option<(u16, u16)> {
-    let reply = std::str::from_utf8(reply).ok()?;
-    let body = reply.get(reply.rfind("\x1b[")? + 2..reply.rfind('R')?)?;
-    let (row, column) = body.split_once(';')?;
-    Some((
-        column.parse::<u16>().ok()?.checked_sub(1)?,
-        row.parse::<u16>().ok()?.checked_sub(1)?,
-    ))
+fn parse(reply: &[u8]) -> (Capabilities, Vec<Event>) {
+    let mut capabilities = Capabilities::default();
+    let mut typed = Vec::new();
+    let mut rest = reply;
+    while let Some(start) = rest.iter().position(|b| *b == 0x1b) {
+        typed.extend_from_slice(&rest[..start]);
+        let sequence = &rest[start..];
+        // A color reply ends with BEL or ST; every other reply is a CSI.
+        let end = if sequence.starts_with(b"\x1b]") {
+            let bel = sequence.iter().position(|b| *b == 0x07).map(|i| i + 1);
+            let st = sequence.windows(2).skip(1).position(|w| w == b"\x1b\\");
+            bel.or(st.map(|i| i + 3))
+        } else if sequence.starts_with(b"\x1b[") {
+            let last = sequence[2..].iter().position(|b| (0x40..=0x7e).contains(b));
+            last.map(|i| i + 3)
+        } else {
+            None
+        };
+        let Some(end) = end else {
+            typed.extend_from_slice(sequence);
+            rest = &[];
+            break;
+        };
+        let body = String::from_utf8_lossy(&sequence[2..end]);
+        let is_reply = if let Some(color) = body.strip_prefix("11;rgb:") {
+            capabilities.background = channels(color);
+            true
+        } else if body.starts_with('?') && body.ends_with('u') {
+            capabilities.keyboard = true;
+            true
+        } else if let Some(position) = body.strip_suffix('R') {
+            let cell = position.split_once(';').and_then(|(row, column)| {
+                let column = column.parse::<u16>().ok()?.checked_sub(1)?;
+                Some((column, row.parse::<u16>().ok()?.checked_sub(1)?))
+            });
+            capabilities.cursor = cell.or(capabilities.cursor);
+            cell.is_some()
+        } else {
+            body.starts_with('?') && body.ends_with('c')
+        };
+        if !is_reply {
+            typed.extend_from_slice(&sequence[..end]);
+        }
+        rest = &sequence[end..];
+    }
+    typed.extend_from_slice(rest);
+    let mut decoder = Decoder::default();
+    let mut events = decoder.push(&typed);
+    events.extend(decoder.flush_escape());
+    (capabilities, events)
 }
 
-/// `ESC ] 11 ; rgb:RRRR/GGGG/BBBB`, with one to four hex digits per channel.
-#[cfg_attr(not(unix), allow(dead_code))]
-fn parse_background(reply: &[u8]) -> Option<(u8, u8, u8)> {
-    let reply = String::from_utf8_lossy(reply);
-    let body = &reply[reply.find("]11;rgb:")? + 8..];
-    let mut channels = body.split('/').take(3).map(|channel| {
+/// `RRRR/GGGG/BBBB`, with one to four hex digits per channel.
+fn channels(color: &str) -> Option<(u8, u8, u8)> {
+    let mut channels = color.split('/').take(3).map(|channel| {
         let digits: String = channel
             .chars()
             .take_while(char::is_ascii_hexdigit)
@@ -101,19 +178,27 @@ fn parse_background(reply: &[u8]) -> Option<(u8, u8, u8)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Key;
 
     #[test]
-    fn replies_parse_with_surrounding_noise() {
-        assert_eq!(parse_cursor(b"x\x1b[12;40R"), Some((39, 11)));
-        assert_eq!(parse_cursor(b"\x1b[?62c"), None);
-        assert_eq!(
-            parse_background(b"\x1b]11;rgb:ffff/8080/0000\x1b\\\x1b[?62c"),
-            Some((255, 128, 0))
-        );
-        assert_eq!(
-            parse_background(b"\x1b]11;rgb:ff/00/7f\x07"),
-            Some((255, 0, 127))
-        );
-        assert_eq!(parse_background(b"\x1b[?62c"), None);
+    fn replies_are_recognized_and_typed_ahead_keys_survive() {
+        let reply = b"l\x1b[?1u\x1b]11;rgb:ffff/8080/1c1c\x1b\\s\x1b[12;40R\x1b[A\x1b[?62;4c";
+        assert!(attributes_end(reply));
+        let (capabilities, typed) = parse(reply);
+        assert!(capabilities.keyboard);
+        assert_eq!(capabilities.background, Some((255, 128, 28)));
+        assert_eq!(capabilities.cursor, Some((39, 11)));
+        let keys = [Key::Char('l').into(), Key::Char('s').into(), Key::Up.into()];
+        assert_eq!(typed, keys);
+    }
+
+    #[test]
+    fn a_terminal_that_answers_only_attributes_has_no_capabilities() {
+        let (capabilities, typed) = parse(b"\x1b[?62c");
+        assert_eq!(capabilities, Capabilities::default());
+        assert!(typed.is_empty());
+        // A color reply cut short ends in a hex digit, not in attributes.
+        assert!(!attributes_end(b"\x1b[?1u\x1b]11;rgb:1c1c/1c1c/1c1c"));
+        assert_eq!(channels("ff/00/7f"), Some((255, 0, 127)));
     }
 }

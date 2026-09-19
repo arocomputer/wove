@@ -286,6 +286,172 @@ fn a_click_selects_the_list_row_under_it_after_scrolling() {
 }
 
 #[test]
+fn an_idle_tree_answers_its_natural_height_without_repainting() {
+    let mut t = Tree::new();
+    let text = t.add(t.root(), Text::new("idle")).unwrap();
+    let height = t.height(10).unwrap();
+    t.frame(10, height).unwrap();
+    assert_eq!(t.height(10).unwrap(), 1);
+    assert!(!t.is_dirty(), "asking again neither lays out nor repaints");
+    t.update::<Text>(text, |text| text.content = "two\nrows".into())
+        .unwrap();
+    assert_eq!(t.height(10).unwrap(), 2);
+    assert_eq!(
+        t.frame(10, 2).unwrap().lines(),
+        ["two       ", "rows      "]
+    );
+}
+
+#[test]
+fn a_press_captures_the_pointer_and_an_unclaimed_drag_selects_the_screen() {
+    let mut screen = testing::Screen::new(12, 3);
+    screen
+        .tree
+        .add(screen.tree.root(), Text::new("hello world"))
+        .unwrap();
+    screen
+        .tree
+        .add(screen.tree.root(), Text::new("second line"))
+        .unwrap();
+    let input = screen
+        .tree
+        .add(screen.tree.root(), Input::new("abcdef"))
+        .unwrap();
+    // No node wants a press on plain text, so dragging selects what is painted.
+    screen.drag((6, 0), (5, 1)).unwrap();
+    assert_eq!(
+        screen.tree.selected_text().as_deref(),
+        Some("world\nsecond")
+    );
+    let frame = screen.frame().unwrap();
+    assert!(frame.cell(6, 0).unwrap().style().reverse);
+    assert!(!frame.cell(5, 0).unwrap().style().reverse);
+    // A press inside the input belongs to it, even once the pointer leaves.
+    screen.drag((1, 2), (4, 0)).unwrap();
+    assert_eq!(
+        screen.tree.selected_text(),
+        None,
+        "a new press clears the selection"
+    );
+    let editor = &screen.tree.get::<Input>(input).unwrap().editor;
+    assert_eq!(&editor.text()[editor.selection()], "bcd");
+}
+
+#[test]
+fn a_higher_z_paints_later_and_takes_the_pointer_first() {
+    let mut t = Tree::new();
+    let overlay = |t: &mut Tree, text: &str| {
+        let id = t.add(t.root(), Text::new(text)).unwrap();
+        let mut style = fixed(4.0, 1.0);
+        style.position = layout::Position::Absolute;
+        t.set_layout(id, style).unwrap();
+        id
+    };
+    let first = overlay(&mut t, "back");
+    let second = overlay(&mut t, "top!");
+    assert_eq!(lines(t.frame(4, 1).unwrap()), ["top!"]);
+    t.set_z(first, 1).unwrap();
+    assert_eq!(lines(t.frame(4, 1).unwrap()), ["back"]);
+    let at = Event::Mouse(Mouse::new(0, 0, MouseKind::Move));
+    assert_eq!(t.target(&at), Some(first));
+    assert_ne!(t.target(&at), Some(second));
+}
+
+#[test]
+fn the_pointer_entering_and_leaving_a_node_is_reported_once_each() {
+    let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut t = Tree::new();
+    let a = t.add(t.root(), Text::new("aaaa")).unwrap();
+    t.add(t.root(), Text::new("bbbb")).unwrap();
+    let log = seen.clone();
+    t.on(a, move |event| {
+        if matches!(event, Event::Enter | Event::Leave) {
+            log.borrow_mut().push(event.clone());
+        }
+        Response::IGNORE
+    })
+    .unwrap();
+    t.frame(4, 2).unwrap();
+    for (x, y) in [(0, 0), (1, 0), (0, 1)] {
+        t.dispatch(Event::Mouse(Mouse::new(x, y, MouseKind::Move)))
+            .unwrap();
+    }
+    assert_eq!(*seen.borrow(), [Event::Enter, Event::Leave]);
+}
+
+#[test]
+fn window_focus_is_not_mistaken_for_a_node_losing_focus() {
+    let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut t = Tree::new();
+    let input = t.add(t.root(), Input::default()).unwrap();
+    t.focus(Some(input)).unwrap();
+    let log = seen.clone();
+    t.on(input, move |event| {
+        log.borrow_mut().push(event.clone());
+        Response::IGNORE
+    })
+    .unwrap();
+    t.dispatch(Event::WindowFocus(false)).unwrap();
+    assert_eq!(*seen.borrow(), [Event::WindowFocus(false)]);
+    assert_eq!(t.focused(), Some(input));
+}
+
+#[test]
+fn an_input_shows_all_of_its_text_masks_secrets_and_stops_at_its_limit() {
+    let mut screen = testing::Screen::new(12, 1);
+    let mut style = screen.tree.layout(screen.tree.root()).unwrap().clone();
+    style.flex_direction = FlexDirection::Row;
+    screen.tree.set_layout(screen.tree.root(), style).unwrap();
+    let secret = Input {
+        mask: Some('*'),
+        limit: Some(6),
+        cursor: CursorShape::Bar,
+        ..Input::new("hello")
+    };
+    let input = screen.tree.add(screen.tree.root(), secret).unwrap();
+    screen.tree.focus(Some(input)).unwrap();
+    // Sized to its content, it still shows the first cell: the cursor has its own.
+    assert_eq!(screen.frame().unwrap().lines(), ["*****       "]);
+    assert_eq!(screen.frame().unwrap().cursor_shape(), CursorShape::Bar);
+    screen.send(Event::Paste("123".into())).unwrap();
+    assert_eq!(
+        screen.tree.get::<Input>(input).unwrap().editor.text(),
+        "hello1"
+    );
+}
+
+#[test]
+fn a_scrollbar_shows_the_share_and_position_of_what_is_in_view() {
+    let mut t = Tree::new();
+    let scroll = t.add(t.root(), Scroll::with_bar(Style::default())).unwrap();
+    let mut style = t.layout(scroll).unwrap().clone();
+    style.size = Size {
+        width: length(6.0),
+        height: length(4.0),
+    };
+    t.set_layout(scroll, style).unwrap();
+    let text = t.add(scroll, Text::new("1\n2\n3\n4\n5\n6\n7\n8")).unwrap();
+    t.set_layout(
+        text,
+        Layout {
+            flex_shrink: 0.0,
+            ..Layout::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        lines(t.frame(6, 4).unwrap()),
+        ["1    ┃", "2    ┃", "3    │", "4    │"]
+    );
+    t.update::<Scroll>(scroll, |scroll| scroll.follow = true)
+        .unwrap();
+    assert_eq!(
+        lines(t.frame(6, 4).unwrap()),
+        ["5    │", "6    │", "7    ┃", "8    ┃"]
+    );
+}
+
+#[test]
 fn a_panel_draws_its_border_style_title_and_fill() {
     let mut t = Tree::new();
     let panel = Panel {

@@ -14,11 +14,13 @@ An element supplies measurement, drawing, and input behavior. The tree owns its 
   whatever it overlaps.
 - `Text` draws a string.
 - `RichText` draws styled spans with optional word wrapping.
-- `Input` edits a single line.
+- `Input` edits a single line. `mask` hides a secret, `limit` caps its length,
+  and `cursor` chooses the cursor's shape.
 - `Textarea` edits multiple lines and can soft-wrap them.
 - `Select` handles a list of choices.
 - `List` and `Table` draw only their visible rows. `List` rows are styled spans.
 - `Scroll` clips its children to a viewport and paints only those in view.
+  `Scroll::with_bar` adds a scrollbar in a column of its own.
 - `Feed` shows a long document of styled text blocks, such as a log or a
   conversation.
 
@@ -56,4 +58,4 @@ Undo keeps at most 100 edits and stores changed text rather than a copy of the e
 
 ## Custom elements
 
-Implement `wove::Element` and add your type to a tree. Drawing goes through `Canvas`, which clips output to the assigned area, expands tabs, and removes other terminal control characters. An element with nothing visible is not painted, and `Canvas::visible_rows` tells a tall element which of its rows to draw. Mouse events arrive with positions relative to the element's top-left cell, so an element can act on a click without knowing where it was laid out or scrolled to. No global registration is required.
+Implement `wove::Element` and add your type to a tree. Drawing goes through `Canvas`, which clips output to the assigned area, expands tabs, and removes other terminal control characters. An element with nothing visible is not painted, and `Canvas::visible_rows` tells a tall element which of its rows to draw. Mouse events arrive with positions relative to the element's top-left cell, so an element can act on a click without knowing where it was laid out or scrolled to. `Element::overlay` draws over the element's children, which is how `Scroll` draws its bar. No global registration is required.

@@ -23,7 +23,8 @@ mod tree;
 
 pub use input::{Button, Event, Key, Modifiers, Mouse, MouseKind, Response};
 pub use render::{
-    Border, Buffer, Canvas, Cell, Color, Depth, Inline, Options, Rect, Renderer, ScreenMode, Style,
+    Border, Buffer, Canvas, Cell, Color, CursorShape, Depth, Inline, Options, Rect, Renderer,
+    ScreenMode, Style,
 };
 pub use taffy::Style as Layout;
 pub use tree::{Dispatch, Error, Id, Tree};
