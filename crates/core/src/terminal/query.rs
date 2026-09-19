@@ -11,15 +11,23 @@ pub struct Capabilities {
     pub keyboard: bool,
     /// The background color, for choosing between light and dark palettes.
     pub background: Option<(u8, u8, u8)>,
-    /// Zero-based `(column, row)` of the cursor at startup.
-    pub(crate) cursor: Option<(u16, u16)>,
+}
+
+/// Everything one round of questions produced.
+#[derive(Debug, Default, PartialEq)]
+pub struct Probe {
+    pub capabilities: Capabilities,
+    /// Zero-based `(column, row)` of the cursor.
+    pub cursor: Option<(u16, u16)>,
+    /// Keys that arrived among the replies.
+    pub typed: Vec<Event>,
 }
 
 /// Ask everything at once. Every terminal answers the device-attributes
 /// request sent last, which ends the wait without a timeout even when the
 /// other questions go unanswered. Keys typed meanwhile are returned, not lost.
 #[cfg(unix)]
-pub fn probe(output: &mut impl Write) -> io::Result<(Capabilities, Vec<Event>)> {
+pub fn probe(output: &mut impl Write) -> io::Result<Probe> {
     let reply = ask(
         output,
         b"\x1b[?u\x1b]11;?\x1b\\\x1b[6n\x1b[c",
@@ -28,14 +36,16 @@ pub fn probe(output: &mut impl Write) -> io::Result<(Capabilities, Vec<Event>)> 
     Ok(parse(&reply))
 }
 #[cfg(not(unix))]
-pub fn probe(_: &mut impl Write) -> io::Result<(Capabilities, Vec<Event>)> {
-    let capabilities = Capabilities {
-        // Without a probe the request is sent on trust; terminals ignore it.
-        keyboard: true,
+pub fn probe(_: &mut impl Write) -> io::Result<Probe> {
+    Ok(Probe {
+        capabilities: Capabilities {
+            // Without a probe the request is sent on trust; terminals ignore it.
+            keyboard: true,
+            ..Capabilities::default()
+        },
         cursor: crossterm::cursor::position().ok(),
-        ..Capabilities::default()
-    };
-    Ok((capabilities, Vec::new()))
+        typed: Vec::new(),
+    })
 }
 
 /// Zero-based `(column, row)` of the cursor, for anchoring an inline session
@@ -44,7 +54,7 @@ pub fn probe(_: &mut impl Write) -> io::Result<(Capabilities, Vec<Event>)> {
 #[cfg(unix)]
 pub fn cursor(output: &mut impl Write) -> io::Result<Option<(u16, u16)>> {
     let reply = ask(output, b"\x1b[6n", |reply| reply.ends_with(b"R"))?;
-    Ok(parse(&reply).0.cursor)
+    Ok(parse(&reply).cursor)
 }
 #[cfg(not(unix))]
 pub fn cursor(_: &mut impl Write) -> io::Result<Option<(u16, u16)>> {
@@ -108,8 +118,9 @@ fn ask(
 
 /// Pick the replies out of what arrived; whatever is left was typed.
 #[cfg_attr(not(unix), allow(dead_code))]
-fn parse(reply: &[u8]) -> (Capabilities, Vec<Event>) {
+fn parse(reply: &[u8]) -> Probe {
     let mut capabilities = Capabilities::default();
+    let mut cursor = None;
     let mut typed = Vec::new();
     let mut rest = reply;
     while let Some(start) = rest.iter().position(|b| *b == 0x1b) {
@@ -119,12 +130,24 @@ fn parse(reply: &[u8]) -> (Capabilities, Vec<Event>) {
         let end = if sequence.starts_with(b"\x1b]") {
             let bel = sequence.iter().position(|b| *b == 0x07).map(|i| i + 1);
             let st = sequence.windows(2).skip(1).position(|w| w == b"\x1b\\");
-            bel.or(st.map(|i| i + 3))
+            match (bel, st.map(|i| i + 3)) {
+                (Some(bel), Some(st)) => Some(bel.min(st)),
+                (bel, st) => bel.or(st),
+            }
         } else if sequence.starts_with(b"\x1b[") {
             let last = sequence[2..].iter().position(|b| (0x40..=0x7e).contains(b));
             last.map(|i| i + 3)
         } else {
-            None
+            // Escape or an Alt key, typed while the replies were arriving.
+            // Only that key is input; the replies after it still are replies.
+            // An escape byte right after it starts the next sequence instead.
+            let key = match sequence.get(1) {
+                Some(0x1b) | None => 1,
+                Some(_) => 2,
+            };
+            typed.extend_from_slice(&sequence[..key]);
+            rest = &sequence[key..];
+            continue;
         };
         let Some(end) = end else {
             typed.extend_from_slice(sequence);
@@ -143,7 +166,7 @@ fn parse(reply: &[u8]) -> (Capabilities, Vec<Event>) {
                 let column = column.parse::<u16>().ok()?.checked_sub(1)?;
                 Some((column, row.parse::<u16>().ok()?.checked_sub(1)?))
             });
-            capabilities.cursor = cell.or(capabilities.cursor);
+            cursor = cell.or(cursor);
             cell.is_some()
         } else {
             body.starts_with('?') && body.ends_with('c')
@@ -157,7 +180,11 @@ fn parse(reply: &[u8]) -> (Capabilities, Vec<Event>) {
     let mut decoder = Decoder::default();
     let mut events = decoder.push(&typed);
     events.extend(decoder.flush_escape());
-    (capabilities, events)
+    Probe {
+        capabilities,
+        cursor,
+        typed: events,
+    }
 }
 
 /// `RRRR/GGGG/BBBB`, with one to four hex digits per channel.
@@ -184,19 +211,22 @@ mod tests {
     fn replies_are_recognized_and_typed_ahead_keys_survive() {
         let reply = b"l\x1b[?1u\x1b]11;rgb:ffff/8080/1c1c\x1b\\s\x1b[12;40R\x1b[A\x1b[?62;4c";
         assert!(attributes_end(reply));
-        let (capabilities, typed) = parse(reply);
-        assert!(capabilities.keyboard);
-        assert_eq!(capabilities.background, Some((255, 128, 28)));
-        assert_eq!(capabilities.cursor, Some((39, 11)));
+        let probe = parse(reply);
+        assert!(probe.capabilities.keyboard);
+        assert_eq!(probe.capabilities.background, Some((255, 128, 28)));
+        assert_eq!(probe.cursor, Some((39, 11)));
         let keys = [Key::Char('l').into(), Key::Char('s').into(), Key::Up.into()];
-        assert_eq!(typed, keys);
+        assert_eq!(probe.typed, keys);
     }
 
     #[test]
     fn a_terminal_that_answers_only_attributes_has_no_capabilities() {
-        let (capabilities, typed) = parse(b"\x1b[?62c");
-        assert_eq!(capabilities, Capabilities::default());
-        assert!(typed.is_empty());
+        assert_eq!(parse(b"\x1b[?62c"), Probe::default());
+        // Escape and Alt+x typed mid-probe are keys; the replies stay replies.
+        let probe = parse(b"\x1b\x1b]11;rgb:00/00/00\x07\x1bx\x1b[3;1R\x1b[?62c");
+        assert_eq!(probe.capabilities.background, Some((0, 0, 0)));
+        assert_eq!(probe.cursor, Some((0, 2)));
+        assert_eq!(probe.typed.len(), 2);
         // A color reply cut short ends in a hex digit, not in attributes.
         assert!(!attributes_end(b"\x1b[?1u\x1b]11;rgb:1c1c/1c1c/1c1c"));
         assert_eq!(channels("ff/00/7f"), Some((255, 0, 127)));

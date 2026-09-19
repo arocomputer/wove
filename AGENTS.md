@@ -81,9 +81,10 @@ crates/core/       wove: elements, layout, events, text, and terminal rendering
   src/render/     flat cell buffers, styles, geometry, clipped drawing, and output
                   as plain bytes with no backend: renderer.rs (full screen),
                   inline.rs (main screen with native scrollback), session.rs
-                  (the modes a session enables), pen.rs (cells to escapes)
-  src/terminal/   optional crossterm ownership of the local terminal; query.rs
-                  asks it for the cursor position and background color
+                  (the modes a session enables), pen.rs (cells to escapes),
+                  clipboard.rs (OSC 52)
+  src/terminal/   optional crossterm ownership of the local terminal, restored on
+                  panic and fatal signals; query.rs is the one startup probe
   src/{markdown,syntax,diff}.rs  independent optional formatting features
   src/testing.rs headless screens, clocks, and frame recording
 crates/dioxus/    component adapter; core does not depend on it

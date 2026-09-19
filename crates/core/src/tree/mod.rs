@@ -533,6 +533,47 @@ impl Tree {
                 .or(Some(self.root))
         }
     }
+    /// What becomes of a mouse event before any node sees it: selection and
+    /// capture are the tree's business, not an element's.
+    fn pointer(&mut self, mouse: &crate::Mouse, hit: Option<Id>) -> Result<Pointer, Error> {
+        let mut changed = false;
+        let mut target = hit;
+        match (mouse.kind, self.anchor) {
+            (MouseKind::Down(_), _) => {
+                self.capture = None;
+                changed = self.selection.is_some();
+                self.clear_selection();
+            }
+            // A press that no node wanted is dragged into a selection.
+            (MouseKind::Drag(_), Some(anchor)) => {
+                self.selection = Some((anchor, (mouse.x, mouse.y)));
+                self.dirty = true;
+                return Ok(Pointer::Selecting { changed: true });
+            }
+            (MouseKind::Up(_), Some(_)) => {
+                self.anchor = None;
+                return Ok(Pointer::Selecting { changed: false });
+            }
+            // The node that took the press keeps the pointer until release.
+            (MouseKind::Drag(_), None) => {
+                target = self.capture.filter(|id| self.contains(*id)).or(hit);
+            }
+            (MouseKind::Up(_), None) => {
+                target = self.capture.take().filter(|id| self.contains(*id)).or(hit);
+            }
+            _ => {}
+        }
+        if target != self.hover {
+            for (id, event) in [(self.hover, Event::Leave), (target, Event::Enter)] {
+                if let Some(id) = id.filter(|id| self.contains(*id)) {
+                    changed |= self.deliver(id, &event)?.changed;
+                }
+            }
+            self.hover = target;
+        }
+        Ok(Pointer::Target { target, changed })
+    }
+
     pub fn dispatch(&mut self, event: Event) -> Result<Dispatch, Error> {
         let previous_focus = self.focus;
         if self
@@ -542,46 +583,33 @@ impl Tree {
             self.focus(None)?;
         }
         let mut target = self.target(&event);
-        let mut hover_changed = false;
+        let mut changed = false;
         if let Event::Mouse(mouse) = &event {
-            let at = (mouse.x, mouse.y);
-            match mouse.kind {
-                MouseKind::Down(_) => {
-                    self.capture = None;
-                    self.clear_selection();
-                }
-                // A press that no node wanted is dragged into a selection.
-                MouseKind::Drag(_) | MouseKind::Up(_) if self.anchor.is_some() => {
-                    let anchor = self
-                        .anchor
-                        .filter(|_| matches!(mouse.kind, MouseKind::Drag(_)));
-                    if let Some(anchor) = anchor {
-                        self.selection = Some((anchor, at));
-                        self.dirty = true;
-                    }
-                    self.anchor = anchor;
+            match self.pointer(mouse, target)? {
+                Pointer::Selecting { changed } => {
                     return Ok(Dispatch {
                         handled: true,
-                        changed: anchor.is_some(),
+                        changed,
                         ..Dispatch::default()
-                    });
+                    })
                 }
-                // The node that took the press keeps the pointer until release.
-                MouseKind::Drag(_) | MouseKind::Up(_) => {
-                    target = self.capture.filter(|id| self.contains(*id)).or(target);
+                Pointer::Target {
+                    target: to,
+                    changed: moved,
+                } => {
+                    target = to;
+                    changed = moved;
                 }
-                _ => {}
-            }
-            if target != self.hover {
-                for (id, event) in [(self.hover, Event::Leave), (target, Event::Enter)] {
-                    if let Some(id) = id.filter(|id| self.contains(*id)) {
-                        hover_changed |= self.deliver(id, &event)?.changed;
-                    }
-                }
-                self.hover = target;
             }
         }
-        if matches!(event, Event::Mouse(mouse) if matches!(mouse.kind, MouseKind::Down(_))) {
+        let press = match &event {
+            Event::Mouse(mouse) => match mouse.kind {
+                MouseKind::Down(button) => Some((button, (mouse.x, mouse.y))),
+                _ => None,
+            },
+            _ => None,
+        };
+        if press.is_some() {
             let mut ancestor = target;
             while let Some(id) = ancestor {
                 if self.nodes[id].element.focusable() {
@@ -593,7 +621,7 @@ impl Tree {
         }
         let mut result = Dispatch {
             target,
-            changed: self.focus != previous_focus || hover_changed,
+            changed: changed || self.focus != previous_focus,
             ..Dispatch::default()
         };
         let mut next = target;
@@ -603,19 +631,16 @@ impl Tree {
             result.changed |= response.changed;
             if response.handled {
                 result.handled = true;
-                if matches!(event, Event::Mouse(mouse) if matches!(mouse.kind, MouseKind::Down(_)))
-                {
-                    self.capture = Some(id);
-                }
                 break;
             }
             next = self.nodes[id].parent;
         }
-        if let Event::Mouse(mouse) = &event {
-            let pressed = mouse.kind == MouseKind::Down(crate::Button::Left);
-            if pressed && !result.handled && self.selectable {
-                self.anchor = Some((mouse.x, mouse.y));
-            }
+        match press {
+            // The node that handled a press owns the pointer until release.
+            Some(_) if result.handled => self.capture = result.path.last().copied(),
+            // A left press that nothing handled may become a selection.
+            Some((crate::Button::Left, at)) if self.selectable => self.anchor = Some(at),
+            _ => {}
         }
         if !result.handled {
             if let Event::Key(Key::Tab, mods) = event {
@@ -626,4 +651,12 @@ impl Tree {
         }
         Ok(result)
     }
+}
+
+/// The outcome of the tree's own handling of a mouse event.
+enum Pointer {
+    /// The event extended or ended a screen selection and goes no further.
+    Selecting { changed: bool },
+    /// The event goes to `target`; `changed` reports a repaint already owed.
+    Target { target: Option<Id>, changed: bool },
 }

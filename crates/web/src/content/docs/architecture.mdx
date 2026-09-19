@@ -103,7 +103,10 @@ the wait without a timeout. Replies are picked out of what arrives, read with
 safe polling from rustix on Unix, and the rest is decoded as typed-ahead keys.
 The modes to undo live in one place that the session, the panic hook, and the
 signal thread each try to take, so the terminal is restored exactly once however
-the process ends; only an abort or an uncatchable signal leaves them behind. The
+the process ends; only an abort or an uncatchable signal leaves them behind.
+Each frame goes out in a single write, so a restore from another thread cannot
+land inside one. The main and alternate screens keep separate stacks of keyboard
+modes, so `switch` pops on the screen it leaves and pushes on the one it enters. The
 library binds no keys of its own: `terminal::run` ends when its callback says
 so. Portable events keep backend types out of element contracts.
 

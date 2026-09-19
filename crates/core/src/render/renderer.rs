@@ -3,13 +3,18 @@ use super::pen::{Depth, Pen};
 use crate::{Buffer, CursorShape};
 use std::io::{self, Write};
 
+/// The synchronized-update markers around a frame.
+pub(crate) const BEGIN: &[u8] = b"\x1b[?2026h";
+pub(crate) const END: &[u8] = b"\x1b[?2026l";
+
 /// Writes changed cells to any byte sink. Does not acquire terminal modes.
 #[derive(Default)]
 pub struct Renderer {
     previous: Option<Buffer>,
     /// The version of the last frame drawn; zero when unknown.
     seen: u64,
-    shape: CursorShape,
+    /// The cursor shape the terminal was last told; `None` when unknown.
+    shape: Option<CursorShape>,
     output: Vec<u8>,
     depth: Depth,
 }
@@ -27,10 +32,13 @@ impl Renderer {
     pub fn invalidate(&mut self) {
         self.previous = None;
         self.seen = 0;
+        // Leaving a session resets the shape, and a failed write may have too.
+        self.shape = None;
     }
 
-    /// Emit changed cells as one synchronized update and flush once. Failed
-    /// writes invalidate the shadow frame so a subsequent call repaints
+    /// Emit changed cells as one synchronized update, in a single write, so
+    /// nothing else that writes to the terminal can land inside a frame.
+    /// A failed write invalidates the shadow frame, so the next call repaints
     /// everything instead of losing changes.
     pub fn draw(&mut self, writer: &mut impl Write, frame: &Buffer) -> io::Result<()> {
         if frame.version != 0 && frame.version == self.seen {
@@ -41,6 +49,7 @@ impl Renderer {
         let old = previous.as_ref().filter(|old| old.area() == frame.area());
         let output = &mut self.output;
         output.clear();
+        output.extend_from_slice(BEGIN);
         let mut pen = Pen::new(self.depth);
         let mut next_position = None;
         for y in 0..frame.area().height {
@@ -68,20 +77,22 @@ impl Renderer {
             }
         }
         let cursor_moved = old.is_none_or(|old| old.cursor() != frame.cursor());
-        if !output.is_empty() || cursor_moved || frame.cursor_shape() != self.shape {
+        let shape = Some(frame.cursor_shape());
+        if output.len() > BEGIN.len() || cursor_moved || shape != self.shape {
             pen.reset(output);
-            if frame.cursor_shape() != self.shape {
-                self.shape = frame.cursor_shape();
-                write!(output, "\x1b[{} q", self.shape.code())?;
+            if shape != self.shape {
+                write!(output, "\x1b[{} q", frame.cursor_shape().code())?;
             }
             match frame.cursor() {
                 Some((x, y)) => write!(output, "\x1b[{};{}H\x1b[?25h", y + 1, x + 1)?,
                 None => output.extend_from_slice(b"\x1b[?25l"),
             }
-            writer.write_all(b"\x1b[?2026h")?;
-            writer.write_all(output)?;
-            writer.write_all(b"\x1b[?2026l")?;
-            writer.flush()?;
+            output.extend_from_slice(END);
+            if let Err(error) = writer.write_all(output).and_then(|()| writer.flush()) {
+                self.invalidate();
+                return Err(error);
+            }
+            self.shape = shape;
             // The shadow frame is only copied when something was written.
             match &mut previous {
                 Some(buffer) => buffer.clone_from(frame),

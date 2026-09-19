@@ -10,7 +10,9 @@ pub struct Text {
     pub content: String,
     pub style: Style,
     pub wrap: bool,
-    /// Public only so struct update syntax keeps working; leave it defaulted.
+    /// The wrapped layout, reused until the fields above change. It is a
+    /// field because a struct with a private one cannot be built with
+    /// `..Default::default()`; nothing but this element reads it.
     #[doc(hidden)]
     pub cache: Cache,
 }
@@ -46,7 +48,9 @@ impl Element for Text {
 pub struct RichText {
     pub spans: Vec<Span>,
     pub wrap: Wrap,
-    /// Public only so struct update syntax keeps working; leave it defaulted.
+    /// The wrapped layout, reused until the fields above change. It is a
+    /// field because a struct with a private one cannot be built with
+    /// `..Default::default()`; nothing but this element reads it.
     #[doc(hidden)]
     pub cache: Cache,
 }

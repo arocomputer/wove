@@ -16,6 +16,7 @@
 //! Absolute positioning starts with a carriage return, so it never depends on
 //! the terminal's pending-wrap state.
 use super::pen::{trimmed, Depth, Pen};
+use super::renderer::{BEGIN, END};
 use super::Slot;
 use crate::Buffer;
 use std::io::{self, Write};
@@ -30,7 +31,8 @@ pub struct Inline {
     screen: Option<(u16, u16)>,
     /// The version of the last frame drawn; zero when unknown.
     seen: u64,
-    shape: crate::CursorShape,
+    /// The cursor shape the terminal was last told; `None` when unknown.
+    shape: Option<crate::CursorShape>,
     /// Positions are unknown; the next draw clears the visible screen first.
     redraw: bool,
     output: Vec<u8>,
@@ -45,7 +47,7 @@ impl Inline {
             previous: None,
             screen: None,
             seen: 0,
-            shape: crate::CursorShape::Default,
+            shape: None,
             redraw: false,
             output: Vec::new(),
             depth,
@@ -60,6 +62,7 @@ impl Inline {
     pub fn invalidate(&mut self) {
         self.previous = None;
         self.redraw = true;
+        self.shape = None;
     }
 
     /// Release the first `rows` rows of the last frame. They are never drawn
@@ -101,7 +104,8 @@ impl Inline {
         let reachable = (-self.top).max(0);
         let mut first_changed =
             (reachable..len.max(old_len)).find(|&index| !same(&previous, index));
-        let cursor_moved = frame.cursor_shape() != self.shape
+        let shape = Some(frame.cursor_shape());
+        let cursor_moved = shape != self.shape
             || previous
                 .as_ref()
                 .is_none_or(|old| old.cursor() != frame.cursor());
@@ -115,6 +119,8 @@ impl Inline {
 
         let output = &mut self.output;
         output.clear();
+        output.extend_from_slice(BEGIN);
+        output.extend_from_slice(b"\x1b[?25l");
         let mut pen = Pen::new(self.depth);
         // A full row leaves the cursor on its last cell, where erasing to the
         // end of the line would eat that cell. Full rows need no erase.
@@ -193,9 +199,8 @@ impl Inline {
             }
         }
 
-        if frame.cursor_shape() != self.shape {
-            self.shape = frame.cursor_shape();
-            write!(output, "\x1b[{} q", self.shape.code())?;
+        if shape != self.shape {
+            write!(output, "\x1b[{} q", frame.cursor_shape().code())?;
         }
         match frame.cursor().map(|(x, y)| (x, self.top + i64::from(y))) {
             Some((x, y)) if (0..rows).contains(&y) => {
@@ -203,10 +208,14 @@ impl Inline {
             }
             _ => {}
         }
-        writer.write_all(b"\x1b[?2026h\x1b[?25l")?;
+        // One write, so nothing else that writes to the terminal can land
+        // inside a frame.
+        output.extend_from_slice(END);
+        // Until the write succeeds, what the terminal was told is unknown.
+        self.shape = None;
         writer.write_all(output)?;
-        writer.write_all(b"\x1b[?2026l")?;
         writer.flush()?;
+        self.shape = shape;
         self.redraw = false;
         self.seen = frame.version;
         match &mut previous {
@@ -220,16 +229,33 @@ impl Inline {
     /// Park the cursor on a fresh line beneath the last frame, where a shell
     /// prompt or a child program can continue.
     pub fn finish(&mut self, writer: &mut impl Write) -> io::Result<()> {
-        let len = self
-            .previous
-            .as_ref()
-            .map_or(0, |old| i64::from(old.area().height));
-        let rows = i64::from(self.screen.map_or(1, |(_, rows)| rows.max(1)));
-        if len == 0 {
-            write!(writer, "\r\x1b[{};1H", (self.top + 1).clamp(1, rows))?;
-        } else {
-            write!(writer, "\r\x1b[{};1H\r\n", (self.top + len).clamp(1, rows))?;
-        }
+        writer.write_all(&self.park())?;
         writer.flush()
+    }
+
+    /// The bytes that put the cursor on a fresh line beneath the last frame.
+    /// A session keeps them current so that even a crash leaves the frame
+    /// intact above whatever is printed next.
+    pub fn park(&self) -> Vec<u8> {
+        let rows = i64::from(self.screen.map_or(1, |(_, rows)| rows.max(1)));
+        match self.len() {
+            0 => format!("\r\x1b[{};1H", (self.top + 1).clamp(1, rows)),
+            len => format!("\r\x1b[{};1H\r\n", (self.top + len).clamp(1, rows)),
+        }
+        .into_bytes()
+    }
+
+    /// Rows in the last frame, less any committed.
+    fn len(&self) -> i64 {
+        self.previous
+            .as_ref()
+            .map_or(0, |old| i64::from(old.area().height))
+    }
+
+    /// The frame row shown at a screen row, for mapping a mouse report onto
+    /// the frame. `None` when the row is above or below the frame.
+    pub fn frame_row(&self, screen_row: u16) -> Option<u16> {
+        let row = i64::from(screen_row) - self.top;
+        (0..self.len()).contains(&row).then_some(row as u16)
     }
 }

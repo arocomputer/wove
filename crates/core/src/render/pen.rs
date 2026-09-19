@@ -18,19 +18,21 @@ pub enum Depth {
 }
 
 impl Depth {
-    /// Read the conventional environment hints: `NO_COLOR`, `COLORTERM`,
-    /// `TERM`, and `TERM_PROGRAM`.
+    /// Read the conventional hints from the process environment.
     pub fn detect() -> Self {
-        let var = |name| std::env::var(name).unwrap_or_default();
-        let program = var("TERM_PROGRAM");
-        Self::from_hints(&var("NO_COLOR"), &var("COLORTERM"), &var("TERM"), &program)
+        Self::from_env(|name| std::env::var(name).ok())
     }
 
-    /// `detect` with the environment supplied, for remote peers and tests.
-    /// `COLORTERM` is often lost, under sudo or over SSH, so terminals known
-    /// for 24-bit color are recognized by name, and anything that is not
-    /// plainly limited gets the 256-color palette rather than sixteen.
-    pub fn from_hints(no_color: &str, colorterm: &str, term: &str, program: &str) -> Self {
+    /// `detect` against any environment, such as a remote peer's. It reads
+    /// `NO_COLOR`, `COLORTERM`, `TERM`, and `TERM_PROGRAM`. `COLORTERM` is often
+    /// lost, under sudo or over SSH, so terminals known for 24-bit color are
+    /// recognized by name, and anything that is not plainly limited gets the
+    /// 256-color palette rather than sixteen.
+    pub fn from_env(var: impl Fn(&str) -> Option<String>) -> Self {
+        let var = |name| var(name).unwrap_or_default();
+        let (no_color, colorterm) = (var("NO_COLOR"), var("COLORTERM"));
+        let (term, program) = (var("TERM"), var("TERM_PROGRAM"));
+        let (term, program) = (term.as_str(), program.as_str());
         const RGB: [&str; 8] = [
             "direct",
             "kitty",
@@ -47,7 +49,7 @@ impl Depth {
         };
         if !no_color.is_empty() || term == "dumb" {
             Self::Mono
-        } else if matches!(colorterm, "truecolor" | "24bit")
+        } else if matches!(colorterm.as_str(), "truecolor" | "24bit")
             || named(&RGB, term)
             || named(&["iterm", "wezterm", "ghostty", "vscode"], program)
         {

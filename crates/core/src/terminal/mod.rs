@@ -4,30 +4,52 @@ pub use crate::{Options, ScreenMode};
 pub use crossterm::event::EventStream;
 use crossterm::{event, terminal};
 use std::io::{self, IsTerminal, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, Once};
 
 mod query;
 pub use query::Capabilities;
 
 static OWNED: AtomicBool = AtomicBool::new(false);
-/// The modes to undo if the process ends without dropping the session.
-/// Whoever takes them, the session, the panic hook, or the signal thread,
+/// What to undo if the process ends without dropping the session.
+struct Active {
+    options: Options,
+    /// Puts the cursor beneath an inline frame, so that what prints next
+    /// lands under the frame instead of over it.
+    park: Vec<u8>,
+}
+
+/// Whoever takes this, the session, the panic hook, or the signal thread,
 /// restores the terminal, so it happens exactly once.
-static ACTIVE: Mutex<Option<Options>> = Mutex::new(None);
+static ACTIVE: Mutex<Option<Active>> = Mutex::new(None);
+
+/// A panic elsewhere must not stop the terminal from being restored, so a
+/// poisoned lock is used like any other.
+fn active() -> std::sync::MutexGuard<'static, Option<Active>> {
+    ACTIVE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// Restore the terminal from wherever the process is ending.
 fn rescue() {
-    let active = ACTIVE.lock().ok().and_then(|mut active| active.take());
-    if let Some(options) = active {
+    let taken = active().take();
+    if let Some(Active { options, park }) = taken {
         let mut output = io::stdout();
-        if options.screen != ScreenMode::Alternate {
-            let _ = output.write_all(b"\r\n");
-        }
+        let _ = output.write_all(&park);
         let _ = options.leave(&mut output);
         let _ = terminal::disable_raw_mode();
     }
 }
+
+/// What the signal thread does when a fatal signal arrives.
+static SIGNALS: AtomicU8 = AtomicU8::new(DEFAULT);
+/// No session is active: the signal has its usual effect.
+const DEFAULT: u8 = 0;
+/// A session asked for rescue: restore the terminal, then the usual effect.
+const RESCUE: u8 = 1;
+/// A session handles signals itself: stay out of the way.
+const HANDS_OFF: u8 = 2;
 
 /// A panic message printed onto the alternate screen vanishes with it, and one
 /// printed in raw mode staircases. Restore first, then let the message print.
@@ -45,6 +67,11 @@ fn install_panic_hook() {
 /// A killed process runs no destructors, which would leave the user's shell
 /// in raw mode with mouse reports pouring in. Restore, then let the signal
 /// have its usual effect.
+///
+/// Registering for a signal replaces its default action for the life of the
+/// process, so the thread stays once started and consults `SIGNALS`: it still
+/// ends the process when no session is active, and does nothing while a
+/// session that handles signals itself is.
 #[cfg(unix)]
 fn watch_signals() {
     use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
@@ -57,6 +84,9 @@ fn watch_signals() {
         };
         std::thread::spawn(move || {
             for signal in signals.forever() {
+                if SIGNALS.load(Ordering::Acquire) == HANDS_OFF {
+                    continue;
+                }
                 rescue();
                 let _ = signal_hook::low_level::emulate_default_handler(signal);
             }
@@ -81,6 +111,9 @@ pub struct Terminal {
     renderer: Renderer,
     inline: Option<Inline>,
     capabilities: Capabilities,
+    /// Where the cursor was when the session started, until an inline frame
+    /// is anchored there.
+    start: Option<(u16, u16)>,
     typed: Vec<crate::Event>,
     probed: bool,
     raw: bool,
@@ -124,6 +157,7 @@ impl Terminal {
             renderer: Renderer::with_depth(depth),
             inline: None,
             capabilities: Capabilities::default(),
+            start: None,
             typed: Vec::new(),
             probed: false,
             raw: false,
@@ -136,6 +170,8 @@ impl Terminal {
         if options.signals {
             watch_signals();
         }
+        let signals = if options.signals { RESCUE } else { HANDS_OFF };
+        SIGNALS.store(signals, Ordering::Release);
         session.resume()?;
         Ok(session)
     }
@@ -143,12 +179,6 @@ impl Terminal {
     /// What the terminal reported at startup.
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
-    }
-
-    /// The background color the terminal reported at startup, to choose
-    /// between light and dark palettes. `None` means it did not say.
-    pub fn background(&self) -> Option<(u8, u8, u8)> {
-        self.capabilities.background
     }
 
     /// Keys typed while the terminal was being probed. Handle them before
@@ -163,8 +193,8 @@ impl Terminal {
     pub fn suspend(&mut self) -> io::Result<()> {
         let mut result = Ok(());
         // Whoever holds the modes undoes them; a panic hook may have already.
-        let active = ACTIVE.lock().ok().and_then(|mut active| active.take());
-        if self.entered && active.is_some() {
+        let taken = active().take();
+        if self.entered && taken.is_some() {
             if self.options.screen == ScreenMode::Inline {
                 if let Some(inline) = &mut self.inline {
                     result = inline.finish(&mut self.output);
@@ -196,9 +226,10 @@ impl Terminal {
         let _ = crossterm::ansi_support::supports_ansi();
         if !self.probed {
             self.probed = true;
-            let (capabilities, typed) = query::probe(&mut self.output)?;
-            self.capabilities = capabilities;
-            self.typed = typed;
+            let probe = query::probe(&mut self.output)?;
+            self.capabilities = probe.capabilities;
+            self.start = probe.cursor;
+            self.typed = probe.typed;
             // A request for key reports the terminal never answered is dropped.
             self.options.keyboard &= self.capabilities.keyboard;
         }
@@ -208,16 +239,41 @@ impl Terminal {
             // Whatever ran during the suspension may have written anywhere.
             Some(inline) => inline.invalidate(),
             None if self.options.screen == ScreenMode::Inline => {
-                let cursor = self.capabilities.cursor.take();
+                let cursor = self.start.take();
                 self.anchor(cursor)?;
             }
             None => {}
         }
         self.options.enter(&mut self.output)?;
-        if let Ok(mut active) = ACTIVE.lock() {
-            *active = Some(self.options);
-        }
+        self.record();
         Ok(())
+    }
+
+    /// Keep what a crash would need to restore the terminal up to date.
+    fn record(&self) {
+        let park = match (&self.inline, self.options.screen) {
+            (Some(inline), ScreenMode::Inline) => inline.park(),
+            (_, ScreenMode::Alternate) => Vec::new(),
+            _ => b"\r\n".to_vec(),
+        };
+        *active() = Some(Active {
+            options: self.options,
+            park,
+        });
+    }
+
+    /// Map an event from the screen onto the frame. An inline frame starts
+    /// wherever the session began and moves as it scrolls, so a mouse report's
+    /// row is not the frame's row. Pass every event through this before
+    /// dispatching it; one that falls outside an inline frame is `None`.
+    pub fn to_frame(&self, event: crate::Event) -> Option<crate::Event> {
+        match (event, &self.inline, self.options.screen) {
+            (crate::Event::Mouse(mouse), Some(inline), ScreenMode::Inline) => {
+                let y = inline.frame_row(mouse.y)?;
+                Some(crate::Event::Mouse(crate::Mouse { y, ..mouse }))
+            }
+            (event, ..) => Some(event),
+        }
     }
 
     /// Stop the process as Ctrl-Z does in a shell, and come back when it is
@@ -282,14 +338,22 @@ impl Terminal {
         if !self.entered {
             return Ok(());
         }
-        if let Ok(mut active) = ACTIVE.lock() {
-            *active = Some(self.options);
+        // The main and alternate screens keep separate stacks of keyboard
+        // modes, so ours is popped from the screen being left and pushed on the
+        // one being entered. Otherwise the pop at exit misses, and the shell
+        // inherits key reports it cannot read.
+        let crossing = old == ScreenMode::Alternate || screen == ScreenMode::Alternate;
+        if crossing && self.options.keyboard {
+            self.output.write_all(b"\x1b[<1u")?;
         }
         if old == ScreenMode::Alternate {
             self.output.write_all(b"\x1b[?1049l")?;
         }
         if screen == ScreenMode::Alternate {
             self.output.write_all(b"\x1b[?1049h")?;
+        }
+        if crossing && self.options.keyboard {
+            self.output.write_all(b"\x1b[>1u")?;
         }
         self.output.flush()?;
         match (&mut self.inline, screen, old) {
@@ -300,6 +364,7 @@ impl Terminal {
             (Some(inline), ScreenMode::Inline, ScreenMode::Main) => inline.invalidate(),
             _ => {}
         }
+        self.record();
         Ok(())
     }
 
@@ -316,7 +381,10 @@ impl Terminal {
         }
         match (&mut self.inline, self.options.screen) {
             (Some(inline), ScreenMode::Inline) => {
-                inline.draw(&mut self.output, frame, terminal::size()?.1)
+                inline.draw(&mut self.output, frame, terminal::size()?.1)?;
+                // The frame may have grown or scrolled; a crash parks beneath it.
+                self.record();
+                Ok(())
             }
             _ => self.renderer.draw(&mut self.output, frame),
         }
@@ -342,6 +410,7 @@ impl Terminal {
 impl Drop for Terminal {
     fn drop(&mut self) {
         let _ = self.suspend();
+        SIGNALS.store(DEFAULT, Ordering::Release);
         OWNED.store(false, Ordering::Release);
     }
 }

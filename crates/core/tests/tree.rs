@@ -276,12 +276,12 @@ fn a_click_selects_the_list_row_under_it_after_scrolling() {
     t.dispatch(Key::End.into()).unwrap();
     t.frame(8, 4).unwrap();
     // Rows 97 to 99 are showing beneath the header; click the middle one.
-    t.dispatch(Event::Mouse(Mouse::new(
-        2,
-        2,
-        MouseKind::Down(Button::Left),
-    )))
-    .unwrap();
+    let click = Event::Mouse(Mouse::new(2, 2, MouseKind::Down(Button::Left)));
+    t.dispatch(click.clone()).unwrap();
+    assert_eq!(t.get::<List>(list).unwrap().selected, 98);
+    // The view holds still, so the same cell is the same row a second time.
+    t.frame(8, 4).unwrap();
+    t.dispatch(click).unwrap();
     assert_eq!(t.get::<List>(list).unwrap().selected, 98);
 }
 
@@ -326,7 +326,18 @@ fn a_press_captures_the_pointer_and_an_unclaimed_drag_selects_the_screen() {
     let frame = screen.frame().unwrap();
     assert!(frame.cell(6, 0).unwrap().style().reverse);
     assert!(!frame.cell(5, 0).unwrap().style().reverse);
+    // The selection outlives a resize that leaves part of it off the frame.
+    screen.resize(4, 1);
+    screen.frame().unwrap();
+    assert_eq!(screen.tree.selected_text().as_deref(), Some(""));
+    screen.resize(12, 3);
+    screen.frame().unwrap();
     // A press inside the input belongs to it, even once the pointer leaves.
+    let press = Event::Mouse(Mouse::new(1, 2, MouseKind::Down(Button::Left)));
+    assert!(
+        screen.send(press).unwrap().changed,
+        "clearing a selection repaints"
+    );
     screen.drag((1, 2), (4, 0)).unwrap();
     assert_eq!(
         screen.tree.selected_text(),

@@ -80,15 +80,23 @@ pub struct Editor {
     /// The last edit was typed text that the next typed grapheme may join.
     typing: bool,
     /// Display width for soft wrapping. When set, `Up` and `Down` move through
-    /// wrapped rows instead of logical lines.
+    /// wrapped rows instead of logical lines. A `Textarea` sets it to its
+    /// painted width on every frame; set it yourself only in a custom element.
     pub width: Option<u16>,
     /// The display row and column at the top-left of the element showing this
     /// editor, recorded while painting so a click can be mapped to a position.
     view: Cell<(usize, usize)>,
-    /// The display rows at a width with their greatest width, until the text
-    /// changes. Layout asks at a few widths per pass, so a few are kept.
-    #[allow(clippy::type_complexity)]
-    rows: RefCell<Vec<(Option<u16>, Rc<Vec<Range<usize>>>, usize)>>,
+    /// Wrapped rows, until the text changes. Layout asks at a few widths per
+    /// pass, so a few are kept.
+    rows: RefCell<Vec<Rows>>,
+}
+
+/// The display rows of the text at one wrapping width.
+struct Rows {
+    width: Option<u16>,
+    ranges: Rc<Vec<Range<usize>>>,
+    /// The width of the widest row.
+    widest: usize,
 }
 
 impl Editor {
@@ -210,6 +218,7 @@ impl Editor {
         if text.is_empty() {
             return;
         }
+        self.typing = false;
         self.insert(text);
         self.typing = false;
         let end = self.state.cursor;
@@ -258,18 +267,18 @@ impl Editor {
 
     /// The widest row and the number of rows at a width.
     pub fn extent_at(&self, width: Option<u16>) -> (usize, usize) {
-        let rows = self.rows_at(width);
+        let rows = self.rows_at(width).len();
         let cached = self.rows.borrow();
-        let widest = cached.iter().find(|(w, ..)| *w == width);
-        (widest.map_or(0, |(_, _, widest)| *widest), rows.len())
+        let widest = cached.iter().find(|rows| rows.width == width);
+        (widest.map_or(0, |rows| rows.widest), rows)
     }
 
     /// `rows` at an explicit width, for measuring before a width is assigned.
     /// Rows are wrapped once per edit and width, not once per paint or cursor
     /// move, which is what keeps a large document responsive.
     pub fn rows_at(&self, width: Option<u16>) -> Rc<Vec<Range<usize>>> {
-        if let Some((_, rows, _)) = self.rows.borrow().iter().find(|(w, ..)| *w == width) {
-            return rows.clone();
+        if let Some(rows) = self.rows.borrow().iter().find(|rows| rows.width == width) {
+            return rows.ranges.clone();
         }
         let mut rows = Vec::new();
         let mut base = 0;
@@ -294,7 +303,11 @@ impl Editor {
         if cached.len() == 3 {
             cached.remove(0);
         }
-        cached.push((width, rows.clone(), widest));
+        cached.push(Rows {
+            width,
+            ranges: rows.clone(),
+            widest,
+        });
         rows
     }
 
@@ -307,17 +320,8 @@ impl Editor {
     pub fn position_at(&self, x: u16, y: u16) -> usize {
         let (top, left) = self.view.get();
         let rows = self.rows();
-        let row = &rows[(top + usize::from(y)).min(rows.len() - 1)];
-        let column = left + usize::from(x);
-        let (mut width, mut offset) = (0, row.start);
-        for g in self.state.text[row.clone()].graphemes(true) {
-            if width + g.width() > column {
-                break;
-            }
-            width += g.width();
-            offset += g.len();
-        }
-        offset
+        let index = (top + usize::from(y)).min(rows.len() - 1);
+        self.offset_in(&rows, index, left + usize::from(x))
     }
 
     /// The display row holding a position. A position on a wrap seam belongs
@@ -334,21 +338,24 @@ impl Editor {
             .column
             .unwrap_or_else(|| self.state.text[rows[row].start..self.state.cursor].width());
         self.column = Some(column);
-        let Some((index, next)) = row
-            .checked_add_signed(delta)
-            .and_then(|index| Some((index, rows.get(index)?)))
-        else {
-            return self.state.cursor;
-        };
-        // The end of a soft-wrapped row is the start of the next one, so the
-        // last position that still belongs to such a row is before its end.
+        match row.checked_add_signed(delta).filter(|i| *i < rows.len()) {
+            Some(index) => self.offset_in(&rows, index, column),
+            None => self.state.cursor,
+        }
+    }
+
+    /// The position at a display column of a row: the last grapheme boundary
+    /// at or before it. The end of a soft-wrapped row is the start of the next
+    /// one, so the last position that still belongs to such a row is before
+    /// its end.
+    fn offset_in(&self, rows: &[Range<usize>], index: usize, column: usize) -> usize {
+        let row = &rows[index];
         let soft = rows
             .get(index + 1)
-            .is_some_and(|after| after.start == next.end);
-        let mut width = 0;
-        let mut offset = next.start;
-        for g in self.state.text[next.clone()].graphemes(true) {
-            if width + g.width() > column || soft && offset + g.len() >= next.end {
+            .is_some_and(|after| after.start == row.end);
+        let (mut width, mut offset) = (0, row.start);
+        for g in self.state.text[row.clone()].graphemes(true) {
+            if width + g.width() > column || soft && offset + g.len() >= row.end {
                 break;
             }
             width += g.width();

@@ -19,6 +19,8 @@ An element supplies measurement, drawing, and input behavior. The tree owns its 
 - `Textarea` edits multiple lines and can soft-wrap them.
 - `Select` handles a list of choices.
 - `List` and `Table` draw only their visible rows. `List` rows are styled spans.
+  Their view moves only when the selection leaves it, so a click never slides
+  the rows under the pointer.
 - `Scroll` clips its children to a viewport and paints only those in view.
   `Scroll::with_bar` adds a scrollbar in a column of its own.
 - `Feed` shows a long document of styled text blocks, such as a log or a

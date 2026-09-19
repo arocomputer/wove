@@ -34,7 +34,11 @@ pub struct Options {
     pub keyboard: bool,
     /// Restore the terminal before a fatal signal (hangup, terminate,
     /// interrupt, quit) ends the process. Turn it off when the application
-    /// handles those signals itself.
+    /// handles those signals itself; the session then leaves them alone.
+    ///
+    /// Watching a signal replaces its default action for the rest of the
+    /// process, so once any session has asked for this the watcher stays.
+    /// With no session active it lets the signal end the process as usual.
     pub signals: bool,
 }
 

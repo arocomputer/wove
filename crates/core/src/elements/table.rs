@@ -1,4 +1,5 @@
 //! A table with explicit column widths and a fixed header.
+use super::window;
 use crate::{Button, Canvas, Element, Event, Key, MouseKind, Response, Style};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -14,6 +15,8 @@ pub struct Table {
     pub header: Style,
     pub highlight: Style,
     page: usize,
+    /// The first body row shown. It moves only when the selection leaves the view.
+    offset: usize,
 }
 impl Table {
     pub fn new(columns: Vec<(String, u16)>, rows: Vec<Vec<String>>) -> Self {
@@ -78,6 +81,7 @@ impl Element for Table {
     }
     fn viewport(&mut self, size: (u16, u16), _: (u32, u32)) -> (u32, u32) {
         self.page = usize::from(size.1.saturating_sub(1)).max(1);
+        self.offset = window(self.offset, self.selected, self.rows.len(), self.page);
         (0, 0)
     }
     fn paint(&self, canvas: &mut Canvas<'_>) {
@@ -89,7 +93,7 @@ impl Element for Table {
         );
         let height = usize::from(canvas.size().1.saturating_sub(1));
         let selected = self.selected.min(self.rows.len().saturating_sub(1));
-        let offset = selected.saturating_sub(height.saturating_sub(1));
+        let offset = window(self.offset, selected, self.rows.len(), height);
         for (y, (index, row)) in self
             .rows
             .iter()
@@ -112,9 +116,7 @@ impl Element for Table {
     }
     fn event(&mut self, event: &Event) -> Response {
         let old = self.selected;
-        let first = old
-            .min(self.rows.len().saturating_sub(1))
-            .saturating_sub(self.page.saturating_sub(1));
+        let first = window(self.offset, old, self.rows.len(), self.page);
         match event {
             Event::Mouse(mouse) => match mouse.kind {
                 // Row zero is the header.
@@ -134,6 +136,7 @@ impl Element for Table {
             _ => return Response::IGNORE,
         }
         self.selected = self.selected.min(self.rows.len().saturating_sub(1));
+        self.offset = window(first, self.selected, self.rows.len(), self.page);
         Response {
             handled: true,
             changed: self.selected != old,

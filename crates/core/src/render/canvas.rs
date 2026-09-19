@@ -105,12 +105,14 @@ impl Canvas<'_> {
             && self.clip.contains(x as u16, y as u16)
         {
             self.buffer.cursor = Some((x as u16, y as u16));
+            self.buffer.version = 0;
         }
     }
 
     /// The shape of the cursor this element shows.
     pub fn cursor_shape(&mut self, shape: CursorShape) {
         self.buffer.shape = shape;
+        self.buffer.version = 0;
     }
 
     /// Blank the visible part of the element in `style`. A `Default` background

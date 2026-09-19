@@ -47,9 +47,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
     let header = "Wove inline · Enter commits a line · Esc quits";
     commit(&mut terminal, &mut tree, input, header)?;
+    // Keys typed while the session was starting come first.
+    let mut typed = terminal.typed_ahead().into_iter();
     loop {
         draw(&mut terminal, &mut tree)?;
-        let Some(event) = terminal::read()? else {
+        let event = match typed.next() {
+            Some(event) => Some(event),
+            None => terminal::read()?,
+        };
+        let Some(event) = event else {
             continue;
         };
         match event {

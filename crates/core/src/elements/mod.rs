@@ -10,6 +10,22 @@ pub use scroll::Scroll;
 pub use select::Select;
 pub use text::{RichText, Text};
 
+/// The first row to show so that `selected` is within `height` rows: the
+/// current `offset`, moved only as far as the selection requires. A view that
+/// followed the selection instead would slide under the pointer on a click.
+pub(crate) fn window(offset: usize, selected: usize, count: usize, height: usize) -> usize {
+    let height = height.max(1);
+    let selected = selected.min(count.saturating_sub(1));
+    let first = if selected < offset {
+        selected
+    } else if selected >= offset + height {
+        selected + 1 - height
+    } else {
+        offset
+    };
+    first.min(count.saturating_sub(height))
+}
+
 /// A layout-only container, useful for rows, columns, and grids.
 #[derive(Default)]
 pub struct Container;

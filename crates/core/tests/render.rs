@@ -87,17 +87,20 @@ fn colors_map_to_the_nearest_one_the_terminal_accepts() {
     assert!(at(Depth::Indexed).contains("\x1b[0;1;38;5;196mx"));
     assert!(at(Depth::Basic).contains("\x1b[0;1;91mx"));
     assert!(at(Depth::Mono).contains("\x1b[0;1mx"));
+    let env = |vars: &[(&str, &str)]| {
+        Depth::from_env(move |name| {
+            let found = vars.iter().find(|(key, _)| *key == name);
+            found.map(|(_, value)| value.to_string())
+        })
+    };
     assert_eq!(
-        Depth::from_hints("1", "truecolor", "xterm", ""),
+        env(&[("NO_COLOR", "1"), ("COLORTERM", "truecolor")]),
         Depth::Mono
     );
-    assert_eq!(
-        Depth::from_hints("", "", "xterm-256color", ""),
-        Depth::Indexed
-    );
+    assert_eq!(env(&[("TERM", "xterm-256color")]), Depth::Indexed);
     // A terminal known for 24-bit color keeps it when COLORTERM was stripped.
-    assert_eq!(Depth::from_hints("", "", "xterm-ghostty", ""), Depth::Rgb);
-    assert_eq!(Depth::from_hints("", "", "linux", ""), Depth::Basic);
+    assert_eq!(env(&[("TERM", "xterm-ghostty")]), Depth::Rgb);
+    assert_eq!(env(&[("TERM", "linux")]), Depth::Basic);
 }
 
 #[test]
@@ -143,6 +146,22 @@ fn the_cursor_is_placed_again_after_a_cluster_terminals_measure_differently() {
     // ASCII runs on; after the emoji the next cell's column is stated outright,
     // so a terminal that thinks the emoji is one cell wide cannot drift.
     assert!(output.contains("ab👍\x1b[1;5Hc"), "{output:?}");
+}
+
+#[test]
+fn the_cursor_shape_is_sent_again_after_the_session_was_left() {
+    let mut screen = Screen::new(8, 1);
+    let input = wove::elements::Input {
+        cursor: wove::CursorShape::Bar,
+        ..Default::default()
+    };
+    let id = screen.tree.add(screen.tree.root(), input).unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    let mut renderer = Renderer::default();
+    assert!(drawn(&mut renderer, screen.frame().unwrap()).contains("\x1b[6 q"));
+    // Leaving a session resets the shape on the terminal's side.
+    renderer.invalidate();
+    assert!(drawn(&mut renderer, screen.frame().unwrap()).contains("\x1b[6 q"));
 }
 
 #[test]

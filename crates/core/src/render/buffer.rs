@@ -1,6 +1,6 @@
 //! A clipped cell grid that keeps grapheme clusters and wide-cell ownership intact.
 use crate::Rect;
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -76,7 +76,7 @@ pub(crate) struct Slot {
     glyph: [u8; INLINE + 1],
     fg: u32,
     bg: u32,
-    /// Attribute bits in the order of `Style`'s flags.
+    /// Attribute bits: `BOLD`, `DIM`, and the rest.
     flags: u8,
     /// Zero marks the continuation of a wide grapheme.
     pub(crate) width: u8,
@@ -118,12 +118,12 @@ impl Slot {
         Style {
             fg: unpack(self.fg),
             bg: unpack(self.bg),
-            bold: flag(1),
-            dim: flag(2),
-            italic: flag(4),
-            underline: flag(8),
-            strikethrough: flag(16),
-            reverse: flag(32),
+            bold: flag(BOLD),
+            dim: flag(DIM),
+            italic: flag(ITALIC),
+            underline: flag(UNDERLINE),
+            strikethrough: flag(STRIKETHROUGH),
+            reverse: flag(REVERSE),
         }
     }
 }
@@ -154,13 +154,22 @@ pub(crate) struct Brush {
     inherit: bool,
 }
 
+/// A slot's attribute bits.
+const BOLD: u8 = 1;
+const DIM: u8 = 1 << 1;
+const ITALIC: u8 = 1 << 2;
+const UNDERLINE: u8 = 1 << 3;
+const STRIKETHROUGH: u8 = 1 << 4;
+const REVERSE: u8 = 1 << 5;
+
 fn flags(style: Style) -> u8 {
-    u8::from(style.bold)
-        | u8::from(style.dim) << 1
-        | u8::from(style.italic) << 2
-        | u8::from(style.underline) << 3
-        | u8::from(style.strikethrough) << 4
-        | u8::from(style.reverse) << 5
+    let bit = |on: bool, bit: u8| if on { bit } else { 0 };
+    bit(style.bold, BOLD)
+        | bit(style.dim, DIM)
+        | bit(style.italic, ITALIC)
+        | bit(style.underline, UNDERLINE)
+        | bit(style.strikethrough, STRIKETHROUGH)
+        | bit(style.reverse, REVERSE)
 }
 
 /// One terminal cell of a frame. Wide graphemes own following continuation cells.
@@ -474,13 +483,26 @@ impl Buffer {
         used as u16
     }
 
-    /// The cells from `from` to `to` inclusive, in reading order.
-    fn span(&self, from: (u16, u16), to: (u16, u16)) -> impl Iterator<Item = (u16, u16, u16)> {
-        let last = self.width.saturating_sub(1);
-        (from.1..=to.1.min(self.height.saturating_sub(1))).map(move |y| {
-            let start = if y == from.1 { from.0 } else { 0 };
-            let end = if y == to.1 { to.0.min(last) } else { last };
-            (y, start, end)
+    /// The cells between two positions inclusive, in reading order, as a row
+    /// and a column range within it. Either end may come first and either may
+    /// lie outside the frame, as a selection does after a resize; the result
+    /// is clamped and may be empty.
+    fn span(&self, a: (u16, u16), b: (u16, u16)) -> impl Iterator<Item = (u16, Range<usize>)> {
+        let (from, to) = if (a.1, a.0) <= (b.1, b.0) {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        let width = usize::from(self.width);
+        let rows = if width == 0 { 0 } else { self.height };
+        (from.1..rows.min(to.1.saturating_add(1))).map(move |y| {
+            let start = if y == from.1 { usize::from(from.0) } else { 0 };
+            let end = if y == to.1 {
+                usize::from(to.0) + 1
+            } else {
+                width
+            };
+            (y, start.min(width)..end.min(width).max(start.min(width)))
         })
     }
 
@@ -489,10 +511,10 @@ impl Buffer {
     pub(crate) fn invert(&mut self, from: (u16, u16), to: (u16, u16)) {
         let width = usize::from(self.width);
         let rows: Vec<_> = self.span(from, to).collect();
-        for (y, start, end) in rows {
+        for (y, columns) in rows {
             let row = usize::from(y) * width;
-            for slot in &mut self.cells[row + usize::from(start)..=row + usize::from(end)] {
-                slot.flags ^= 32;
+            for slot in &mut self.cells[row + columns.start..row + columns.end] {
+                slot.flags ^= REVERSE;
             }
         }
         self.version = 0;
@@ -503,8 +525,8 @@ impl Buffer {
     pub fn text(&self, from: (u16, u16), to: (u16, u16)) -> String {
         let lines: Vec<String> = self
             .span(from, to)
-            .map(|(y, start, end)| {
-                let row = &self.row(y)[usize::from(start)..=usize::from(end)];
+            .map(|(y, columns)| {
+                let row = &self.row(y)[columns];
                 let line: String = row.iter().map(|slot| self.symbol(slot)).collect();
                 line.trim_end().to_owned()
             })

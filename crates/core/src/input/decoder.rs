@@ -58,8 +58,11 @@ impl Decoder {
                 } else if self.pending.len() > PASTE_LIMIT {
                     // Deliver what has arrived, keeping enough to recognize a
                     // terminator split across the cut, and cut between characters.
+                    // A character is at most four bytes, so three steps back
+                    // reach its start; bytes that are not text stop there too.
                     let mut cut = self.pending.len() - 5;
-                    while self.pending[cut] & 0xc0 == 0x80 {
+                    let floor = cut - 3;
+                    while cut > floor && self.pending[cut] & 0xc0 == 0x80 {
                         cut -= 1;
                     }
                     let text: Vec<u8> = self.pending.drain(..cut).collect();
@@ -168,8 +171,28 @@ fn sequence(bytes: &[u8]) -> Option<Event> {
             13 => Key::Enter,
             27 => Key::Escape,
             127 => Key::Backspace,
-            // Lock and modifier keys reported on their own.
-            57358..=57363 | 57441..=57454 => return None,
+            // Kitty reports keys without text as private-use code points. The
+            // keypad has ordinary meanings; locks, modifiers, media keys, and
+            // the rest must never reach an application as characters.
+            code @ 57399..=57408 => Key::Char(char::from(b'0' + (code - 57399) as u8)),
+            57409 => Key::Char('.'),
+            57410 => Key::Char('/'),
+            57411 => Key::Char('*'),
+            57412 => Key::Char('-'),
+            57413 => Key::Char('+'),
+            57414 => Key::Enter,
+            57415 => Key::Char('='),
+            57417 => Key::Left,
+            57418 => Key::Right,
+            57419 => Key::Up,
+            57420 => Key::Down,
+            57421 => Key::PageUp,
+            57422 => Key::PageDown,
+            57423 => Key::Home,
+            57424 => Key::End,
+            57425 => Key::Insert,
+            57426 => Key::Delete,
+            0xe000..=0xf8ff => return None,
             code => Key::Char(char::from_u32(code).filter(|c| !c.is_control())?),
         },
         b'~' => match value(0, 0)? {
@@ -200,6 +223,10 @@ fn mouse(body: &str, end: u8) -> Option<Event> {
     let [code, x, y] = values[..] else {
         return None;
     };
+    // Buttons past the third set a high bit; they are not a left click.
+    if code & 128 != 0 {
+        return None;
+    }
     let button = match code & 3 {
         0 => Some(Button::Left),
         1 => Some(Button::Middle),
@@ -292,6 +319,13 @@ mod tests {
         assert_eq!(pasted, body, "chunks never split a character");
         assert!(events.len() > 3);
         assert_eq!(events.last(), Some(&Key::Char('x').into()));
+        // A paste of bytes that are not text is cut without walking off its start.
+        let mut decoder = Decoder::default();
+        decoder.push(b"\x1b[200~");
+        let events = decoder.push(&vec![0x80; PASTE_LIMIT + 16]);
+        assert!(matches!(events[..], [Event::Paste(_), ..]));
+        // A report for a button past the third is not a left click.
+        assert!(Decoder::default().push(b"\x1b[<128;1;1M").is_empty());
         // An endless report and invalid UTF-8 are dropped; typing continues.
         let mut decoder = Decoder::default();
         let mut events = decoder.push(format!("\x1b[{}", "1".repeat(80)).as_bytes());
@@ -322,7 +356,10 @@ mod tests {
     fn kitty_reports_carry_modifiers_a_legacy_terminal_cannot_send() {
         let mut decoder = Decoder::default();
         // Shift+Enter, Super+v, then a release that must not repeat the key.
-        let events = decoder.push(b"\x1b[13;2u\x1b[118;9u\x1b[118;9:3u");
+        let mut events = decoder.push(b"\x1b[13;2u\x1b[118;9u\x1b[118;9:3u");
+        // Keypad Enter is Enter; a media key is not a character.
+        assert_eq!(decoder.push(b"\x1b[57414u\x1b[57430u"), [Key::Enter.into()]);
+        events.truncate(2);
         assert_eq!(
             events,
             vec![

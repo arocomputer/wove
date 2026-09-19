@@ -215,8 +215,12 @@ fn every_input_source_reports_a_shifted_letter_the_same_way() {
     assert_eq!(local, Event::Key(Key::Char('G'), Modifiers::default()));
     assert_eq!(remote, local);
     assert_eq!(kitty, local);
-    // Keys that are not characters keep Shift: it is all that tells them apart.
+    // Keys that are not letters keep Shift: it is all that tells them apart.
     assert_eq!(Event::key(Key::Enter, shift), Event::Key(Key::Enter, shift));
+    assert_eq!(
+        Event::key(Key::Char('1'), shift),
+        Event::Key(Key::Char('1'), shift)
+    );
 }
 
 #[test]
@@ -296,6 +300,31 @@ fn a_wrapping_textarea_breaks_at_words_and_moves_through_display_rows() {
     assert_eq!(screen.frame().unwrap().cursor(), Some((4, 1)));
     screen.send(Key::Up).unwrap();
     assert_eq!(screen.frame().unwrap().cursor(), Some((5, 0)));
+}
+
+#[test]
+fn a_click_past_the_end_of_a_wrapped_row_stays_on_that_row() {
+    use wove::{elements::Textarea, testing::Screen};
+    let mut screen = Screen::new(6, 4);
+    let area = Textarea {
+        wrap: true,
+        ..Textarea::new("hello wide world")
+    };
+    let id = screen.tree.add(screen.tree.root(), area).unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    screen.frame().unwrap();
+    // The first row is `hello `; its end is also where the second row starts.
+    screen.click(5, 0).unwrap();
+    assert_eq!(screen.frame().unwrap().cursor(), Some((5, 0)));
+}
+
+#[test]
+fn an_atom_is_never_part_of_a_typed_words_undo_step() {
+    let mut editor = Editor::new("");
+    editor.insert("a");
+    editor.insert_atom("@", 1);
+    editor.undo();
+    assert_eq!(editor.text(), "a");
 }
 
 #[test]

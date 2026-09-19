@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
-use wove::{input::Decoder, Event, Key, Options, Renderer};
+use wove::{input::Decoder, Depth, Event, Key, Options, Renderer};
 
 pub(crate) enum Message {
     Data(Vec<u8>),
@@ -38,7 +38,10 @@ pub(crate) fn run(
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), Error> {
         let mut app = factory(&peer)?;
         let (mut width, mut height) = (peer.width, peer.height);
-        let mut renderer = Renderer::default();
+        // The peer's terminal type is all that is known of its colors.
+        let term = peer.term.clone();
+        let depth = Depth::from_env(|name| (name == "TERM").then(|| term.clone()));
+        let mut renderer = Renderer::with_depth(depth);
         let mut decoder = Decoder::default();
         let mut bytes = Vec::new();
         modes.enter(&mut bytes)?;

@@ -86,20 +86,24 @@ pub enum Event {
 }
 
 impl Event {
-    /// A key event in the one form every input source produces. A character
-    /// already reflects Shift, so `Char` keys never carry it: Shift+a is
-    /// `Char('A')`, and Ctrl+Shift+a is `Char('A')` with `ctrl`. Bindings then
-    /// match the same way on a local terminal, over SSH, and with or without
-    /// kitty key reports.
+    /// A key event in the one form every input source produces. A letter
+    /// already reflects Shift, so it never carries the flag: Shift+a is
+    /// `Char('A')`, and Ctrl+Shift+a is `Char('A')` with `ctrl`. Sources
+    /// disagree here, one marking `A` with Shift, another not, a third sending
+    /// `a` with Shift, and a binding has to match all three. Characters
+    /// without case keep the flag, which is all that separates Ctrl+1 from
+    /// Ctrl+Shift+1.
     pub fn key(key: Key, mut modifiers: Modifiers) -> Self {
         let key = match key {
             Key::Char(c) => {
                 let mut upper = c.to_uppercase();
-                let shifted = match (modifiers.shift, upper.next(), upper.next()) {
-                    (true, Some(upper), None) => upper,
+                let upper = match (upper.next(), upper.next()) {
+                    (Some(upper), None) => upper,
                     _ => c,
                 };
-                modifiers.shift = false;
+                let cased = c.is_uppercase() || upper != c;
+                let shifted = if modifiers.shift { upper } else { c };
+                modifiers.shift &= !cased;
                 Key::Char(shifted)
             }
             key => key,

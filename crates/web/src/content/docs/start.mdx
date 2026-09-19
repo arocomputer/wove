@@ -113,8 +113,9 @@ for choosing a light or dark palette. Keys typed during the probe come back from
 `Terminal::typed_ahead`; handle them before reading input.
 
 A panic restores the terminal before its message prints, so the message is
-readable. So does a fatal signal such as hangup or terminate; set
-`Options::signals` to false when the application handles signals itself.
+readable. So does a fatal signal such as hangup or terminate, and an inline session
+parks the cursor beneath its frame first, so what prints next lands under it.
+Set `Options::signals` to false when the application handles signals itself.
 `Terminal::stop` suspends the process as Ctrl-Z does in a shell, which raw mode
 otherwise turns into an ordinary key. On Windows, call `Terminal::reassert` when
 `Event::WindowFocus(true)` arrives: the console drops input modes while
@@ -133,6 +134,12 @@ let (width, _) = terminal.size()?;
 let height = tree.height(width)?;
 terminal.draw(tree.frame(width, height)?)?;
 ```
+
+An inline frame starts wherever the session began and moves as it scrolls, so a
+mouse report's row is not the frame's row. Pass events through
+`Terminal::to_frame` before dispatching them; it returns `None` for a report
+outside the frame. The `inline` example leaves the mouse off instead, which keeps
+the terminal's own selection and scrollback gestures.
 
 `Terminal::commit(rows)` releases finished rows at the top of the last frame.
 They stay where they are, and the next frame starts beneath them, so remove

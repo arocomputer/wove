@@ -169,6 +169,23 @@ fn a_resize_repaints_the_visible_tail_without_touching_scrollback() {
 }
 
 #[test]
+fn a_screen_row_maps_onto_the_frame_wherever_it_has_scrolled_to() {
+    let mut vt = Vt::new(8, 3);
+    vt.feed(b"$ app\r\n");
+    let mut inline = Inline::new(1, Depth::Rgb);
+    draw(&mut inline, &mut vt, &["a", "b"]);
+    assert_eq!(
+        inline.frame_row(0),
+        None,
+        "the shell's row is not the frame's"
+    );
+    assert_eq!(inline.frame_row(1), Some(0));
+    draw(&mut inline, &mut vt, &["a", "b", "c", "d"]);
+    assert_eq!(vt.screen(), ["b", "c", "d"]);
+    assert_eq!(inline.frame_row(0), Some(1));
+}
+
+#[test]
 fn finishing_parks_the_cursor_on_a_fresh_line_below_the_frame() {
     let mut vt = Vt::new(8, 3);
     let mut inline = Inline::new(0, Depth::Rgb);

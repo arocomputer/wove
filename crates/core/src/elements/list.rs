@@ -1,4 +1,5 @@
 //! A fixed-height list that asks its row provider only for visible rows.
+use super::window;
 use crate::{text::Span, Button, Canvas, Element, Event, Key, MouseKind, Response, Style};
 use unicode_width::UnicodeWidthStr;
 
@@ -12,6 +13,8 @@ pub struct List {
     pub highlight: Style,
     row: Box<dyn Fn(usize) -> Vec<Span>>,
     page: usize,
+    /// The first row shown. It moves only when the selection leaves the view.
+    offset: usize,
 }
 impl List {
     pub fn new(count: usize, width: u16, row: impl Fn(usize) -> Vec<Span> + 'static) -> Self {
@@ -25,6 +28,7 @@ impl List {
             },
             row: Box::new(row),
             page: 1,
+            offset: 0,
         }
     }
 }
@@ -47,12 +51,13 @@ impl Element for List {
     }
     fn viewport(&mut self, size: (u16, u16), _: (u32, u32)) -> (u32, u32) {
         self.page = usize::from(size.1).max(1);
+        self.offset = window(self.offset, self.selected, self.count, self.page);
         (0, 0)
     }
     fn paint(&self, canvas: &mut Canvas<'_>) {
         let height = usize::from(canvas.size().1);
         let selected = self.selected.min(self.count.saturating_sub(1));
-        let offset = selected.saturating_sub(height.saturating_sub(1));
+        let offset = window(self.offset, selected, self.count, height);
         for (y, index) in (offset..self.count).take(height).enumerate() {
             let mut x = 0;
             for span in (self.row)(index) {
@@ -71,9 +76,7 @@ impl Element for List {
     }
     fn event(&mut self, event: &Event) -> Response {
         let old = self.selected;
-        let first = old
-            .min(self.count.saturating_sub(1))
-            .saturating_sub(self.page.saturating_sub(1));
+        let first = window(self.offset, old, self.count, self.page);
         match event {
             Event::Mouse(mouse) => match mouse.kind {
                 MouseKind::Down(Button::Left) => self.selected = first + usize::from(mouse.y),
@@ -90,6 +93,7 @@ impl Element for List {
             _ => return Response::IGNORE,
         }
         self.selected = self.selected.min(self.count.saturating_sub(1));
+        self.offset = window(first, self.selected, self.count, self.page);
         Response {
             handled: true,
             changed: self.selected != old,
