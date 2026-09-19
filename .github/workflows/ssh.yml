@@ -10,8 +10,22 @@ concurrency:
   group: ssh-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.affected.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: affected
+        run: ./x affected ssh
   test:
-    name: ${{ matrix.platform }}
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -34,10 +48,17 @@ jobs:
       - run: ./x ssh
   complete:
     name: SSH - Build and Test
-    needs: test
+    needs: [changes, test]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Verify all platforms passed
-        run: test '${{ needs.test.result }}' = success
+      - name: Verify affected platforms passed
+        run: |
+          test '${{ needs.changes.result }}' = success
+          if [ '${{ needs.changes.outputs.run }}' = true ]; then
+            test '${{ needs.test.result }}' = success
+          else
+            test '${{ needs.changes.outputs.run }}' = false
+            test '${{ needs.test.result }}' = skipped
+          fi

@@ -54,7 +54,9 @@ case "$command" in
   guard)
     python3 scripts/guard.py
     python3 -m unittest discover -s scripts/hooks -p 'test_*.py'
+    python3 -m unittest discover -s scripts/ci -p 'test_*.py'
     ;;
+  affected) python3 scripts/ci/changes.py "$@" ;;
   hooks)
     python3 scripts/hooks/install.py
     ;;
@@ -62,7 +64,7 @@ case "$command" in
     cargo build --workspace --locked --examples --bins
     python3 -m venv target/ui
     target/ui/bin/python -m pip install --quiet -r scripts/ui/requirements.txt
-    target/ui/bin/python scripts/ui.py
+    target/ui/bin/python scripts/ui.py "$@"
     ;;
-  *) echo 'usage: ./x [hooks|check|quality|core|dioxus|keymap|ssh|fmt|lint|test|docs|package|guard|ui|web]' >&2; exit 2 ;;
+  *) echo 'usage: ./x [hooks|check|quality|core|dioxus|keymap|ssh|fmt|lint|test|docs|package|guard|ui|web|affected]' >&2; exit 2 ;;
 esac
