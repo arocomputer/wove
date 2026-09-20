@@ -12,9 +12,6 @@ Capitalize Wove in prose; keep Cargo packages and Rust imports lowercase.
 
 - Preserve unrelated changes. Never revert or reformat files outside the task.
 - Never expose secrets. Use synthetic fixtures and review logs before sharing them.
-- In a managed `~/Code` collection, follow its README and work in a managed worktree.
-  Base checkouts under `repos/` are for updates, not coding. Other contributors can
-  use an ordinary checkout.
 - Choose the smallest concrete design that solves the problem. A new abstraction,
   dependency, feature flag, or crate needs a use case beyond symmetry.
 - Document public contracts and nontrivial functions by purpose. Update comments
