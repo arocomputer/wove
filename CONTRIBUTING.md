@@ -16,8 +16,7 @@ cargo build --workspace
 ```
 
 Rustup uses the pinned `rust-toolchain.toml`. Install Python 3.12 or newer for
-repository tooling and Bun 1.4.2 or newer for documentation work. Contributors
-using the managed `~/Code` collection should follow its README and use a worktree.
+repository tooling and Bun 1.4.2 or newer for documentation work.
 
 Read [AGENTS.md](AGENTS.md) for the code map, focused test commands, and library
 boundaries. The [architecture guide](crates/web/src/content/docs/architecture.mdx)
