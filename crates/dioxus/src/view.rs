@@ -43,25 +43,22 @@ impl View {
         self.render()?;
         Ok(self.host.tree.frame(width, height)?)
     }
-    /// Dispatch to Dioxus before native element behavior. `prevent_default` cancels
+    /// Dispatch key, paste, and mouse events to Dioxus listeners before native
+    /// element behavior; other events go to the tree only. `prevent_default` cancels
     /// editing or focus traversal; `stop_propagation` stops Dioxus parent listeners.
     /// Mouse listeners follow native pointer capture. A prevented release still
     /// ends the gesture, so later events cannot remain captured by that node.
     pub fn send(&mut self, event: Event) -> Result<Dispatch, Error> {
         self.render()?;
         let target = self.host.tree.target(&event);
+        // Other events have no Dioxus listener and go straight to the tree.
         let name = match event {
-            Event::Key(..) => "key",
-            Event::Paste(..) => "paste",
-            Event::Mouse(..) => "mouse",
-            Event::Focus => "focus",
-            Event::Blur => "blur",
-            Event::Enter => "enter",
-            Event::Leave => "leave",
-            Event::WindowFocus(..) => "window",
-            Event::Resize(..) => "resize",
+            Event::Key(..) => Some("key"),
+            Event::Paste(..) => Some("paste"),
+            Event::Mouse(..) => Some("mouse"),
+            _ => None,
         };
-        if !self.emit(target, name, Rc::new(event.clone())) {
+        if name.is_some_and(|name| !self.emit(target, name, Rc::new(event.clone()))) {
             if matches!(&event, Event::Mouse(mouse) if matches!(mouse.kind, wove::MouseKind::Down(_) | wove::MouseKind::Up(_)))
             {
                 self.host.tree.release_pointer();
@@ -73,8 +70,12 @@ impl View {
                 ..Dispatch::default()
             });
         }
-        let input = std::iter::successors(target, |id| self.host.tree.parent(*id))
-            .find_map(|id| self.input_value(id).map(|value| (id, value.to_owned())));
+        // Snapshot the value only when a listener would hear that it changed.
+        let ancestors = |id| std::iter::successors(id, |id| self.host.tree.parent(*id));
+        let input = ancestors(target)
+            .find(|id| self.input_value(*id).is_some())
+            .filter(|id| ancestors(Some(*id)).any(|id| self.host.listener(id, "input").is_some()))
+            .and_then(|id| self.input_value(id).map(|value| (id, value.to_owned())));
         let result = self.host.tree.dispatch(event)?;
         if let Some((id, before)) = input {
             if let Some(value) = self.input_value(id) {
@@ -102,7 +103,7 @@ impl View {
                     .ok()
             })
     }
-    fn emit(&self, target: Option<wove::Id>, name: &str, data: Rc<dyn Any>) -> bool {
+    fn emit(&self, target: Option<wove::Id>, name: &'static str, data: Rc<dyn Any>) -> bool {
         let mut node = target;
         while let Some(id) = node {
             if let Some(element) = self.host.listener(id, name) {

@@ -38,6 +38,8 @@ are not merged into rich text.
 
 Layout attributes are `width`, `height`, `grow`, `gap`, `padding`, and `direction`.
 Numeric values are nonnegative cell lengths, and direction is `row` or `column`.
+Every tag accepts them and `layout`, including registered tags. Removing one
+restores the element's own default for that property.
 `text` accepts `content` and `wrap`; `input` and `textarea` accept `value` and `placeholder`.
 For full Taffy layout, pass `wove_dioxus::AttributeValue::any_value(layout)` as
 `layout`. Likewise, `style` accepts an `AttributeValue::any_value(Style)` on text,
@@ -45,8 +47,9 @@ input, textarea, and panel. Use either a complete layout or individual layout at
 for a node, to avoid relying on attribute application order.
 
 `onkey`, `onpaste`, and `onmouse` receive `dioxus_core::Event<wove::Event>`.
-The data is the portable core event. Listeners can call `prevent_default` or
-`stop_propagation`. Initial focus is explicit: call `view.focus_next(false)`, send Tab, or let the
+The data is the portable core event. Other core events, such as focus changes
+and resizes, reach native elements without a Dioxus listener. Listeners can call
+`prevent_default` or `stop_propagation`. Initial focus is explicit: call `view.focus_next(false)`, send Tab, or let the
 user choose an element with the mouse. Event handlers on unfocused descendants do
 not receive keyboard events.
 
@@ -55,8 +58,11 @@ goes to the element that handled the press even when the pointer moves over a
 different element. `prevent_default` can cancel a captured drag's native editing;
 a prevented release still ends capture.
 
-A `value` update replaces input text only when it differs. The native element owns cursor and undo state; binding the edited value back
-without changing it preserves that state.
+A `value` update replaces input text only when it differs from the stored text.
+Values are stored as a paste would be: tabs become spaces and control characters
+are removed, and `input` drops newlines. The native element owns cursor and undo
+state; binding the edited value back, or any value that stores the same text,
+preserves that state.
 `oninput` receives `Event<String>` after a native edit, paste, undo, or redo changes
 the value. Set a signal from `event.data.to_string()` and bind that signal to
 `value` to keep component state in sync. It is a notification; cancel editing in
@@ -68,7 +74,8 @@ paint first when hit testing needs current geometry. Async hosts must drive
 on applications.
 
 For custom elements, register a tag with `Registry::register`. Its factory creates
-a detached core node, and its attribute function validates and applies values.
+a detached core node. Its attribute function validates and applies every attribute
+except the layout attributes, which the adapter handles.
 Pass the registry to `View::with_registry`. Hyphenated custom RSX tags work without
 an element schema; applications can define a schema for short tags and completion.
 See the [adapter tests](https://github.com/arocomputer/wove/blob/main/crates/dioxus/tests/view.rs) for a tested custom tag.

@@ -269,3 +269,53 @@ fn mouse_listeners_follow_capture_and_a_prevented_release_ends_it() {
         )
     });
 }
+
+#[test]
+fn an_equivalent_value_with_controls_keeps_the_cursor() {
+    fn app() -> Element {
+        let mut value = use_signal(|| "a\u{7}b".to_string());
+        rsx! {input {value:"{value}",onkey:move |event|{if let InputEvent::Key(Key::Char('!'),_)=*event.data {value.set("a\u{7}\u{7}b".into());event.prevent_default();}}}}
+    }
+    let mut view = View::new(VirtualDom::new(app)).unwrap();
+    view.focus_next(false).unwrap();
+    view.send(Key::Home.into()).unwrap();
+    view.send(Key::Char('!').into()).unwrap();
+    let id = view.tree().focused().unwrap();
+    let editor = &view.tree().get::<Input>(id).unwrap().editor;
+    assert_eq!((editor.text(), editor.cursor()), ("ab", 0));
+}
+
+#[test]
+fn registered_tags_take_layout_attributes_and_restore_their_own_default() {
+    use wove::layout::{length, Dimension};
+    use wove_dioxus::{Error, Registry};
+    fn create(t: &mut Tree) -> Result<Id, Error> {
+        let id = t.create(Text::new("custom"))?;
+        let mut layout = t.layout(id)?.clone();
+        layout.size.width = length(7.0);
+        t.set_layout(id, layout)?;
+        Ok(id)
+    }
+    fn set(_: &mut Tree, _: Id, name: &str, _: &AttributeValue) -> Result<(), Error> {
+        Err(Error::Unsupported(name.into()))
+    }
+    fn app() -> Element {
+        let mut narrow = use_signal(|| true);
+        rsx! {view {onkey:move |_|narrow.toggle(),
+            input {}
+            custom-label {width: if narrow() { Some(3) } else { None }}
+        }}
+    }
+    let mut registry = Registry::default();
+    registry.register("custom-label", create, set);
+    let mut view = View::with_registry(VirtualDom::new(app), registry).unwrap();
+    let width = |view: &View| -> Dimension {
+        let id = view.tree().children(view.tree().root()).unwrap()[0];
+        let id = view.tree().children(id).unwrap()[1];
+        view.tree().layout(id).unwrap().size.width
+    };
+    assert_eq!(width(&view), length(3.0));
+    view.focus_next(false).unwrap();
+    view.send(Key::Char('w').into()).unwrap();
+    assert_eq!(width(&view), length(7.0));
+}

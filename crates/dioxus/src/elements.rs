@@ -51,9 +51,6 @@ pub mod events {
         (onkey, wove::Event),
         (onpaste, wove::Event),
         (onmouse, wove::Event),
-        (oninput, String),
-        (onfocus, wove::Event),
-        (onblur, wove::Event),
-        (onresize, wove::Event)
+        (oninput, String)
     );
 }

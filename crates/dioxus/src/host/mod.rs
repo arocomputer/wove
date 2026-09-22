@@ -33,9 +33,14 @@ impl std::fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 
+/// The listener names behind `elements::events`, without their `on` prefix.
+const EVENTS: [&str; 4] = ["key", "paste", "mouse", "input"];
+
 type Create = fn(&mut Tree) -> Result<Id, Error>;
 type Set = fn(&mut Tree, Id, &str, &AttributeValue) -> Result<(), Error>;
 /// Extra RSX tags can create any core element and define their own attributes.
+/// The adapter applies layout attributes to every tag; a registered tag's `Set`
+/// function receives all other attributes.
 #[derive(Default)]
 pub struct Registry {
     entries: HashMap<String, (Create, Set)>,
@@ -48,10 +53,13 @@ impl Registry {
 
 pub(crate) struct Host {
     pub tree: Tree,
+    /// Dioxus reuses element ids, so a stale entry is overwritten before use.
     ids: HashMap<ElementId, Id>,
     stack: Vec<Id>,
     tags: HashMap<Id, String>,
-    listeners: HashMap<(Id, String), ElementId>,
+    /// A node's layout before its first layout attribute, restored when one is removed.
+    defaults: HashMap<Id, Layout>,
+    listeners: HashMap<(Id, &'static str), ElementId>,
     registry: Registry,
     error: Option<Error>,
     failed: bool,
@@ -65,6 +73,7 @@ impl Host {
             ids,
             stack: vec![],
             tags: HashMap::new(),
+            defaults: HashMap::new(),
             listeners: HashMap::new(),
             registry,
             error: None,
@@ -89,8 +98,8 @@ impl Host {
             self.error = Some(e);
         }
     }
-    pub fn listener(&self, node: Id, name: &str) -> Option<ElementId> {
-        self.listeners.get(&(node, name.to_owned())).copied()
+    pub fn listener(&self, node: Id, name: &'static str) -> Option<ElementId> {
+        self.listeners.get(&(node, name)).copied()
     }
     fn id(&self, id: ElementId) -> Result<Id, Error> {
         self.ids
@@ -182,11 +191,23 @@ impl Host {
             }
         }
     }
+    /// Remove a subtree and forget only its nodes, so clearing a list stays linear.
     fn remove(&mut self, id: Id) -> Result<(), Error> {
+        let mut nodes = vec![id];
+        let mut next = 0;
+        while next < nodes.len() {
+            let children = self.tree.children(nodes[next])?;
+            nodes.extend_from_slice(children);
+            next += 1;
+        }
         self.tree.remove(id)?;
-        self.ids.retain(|_, id| self.tree.contains(*id));
-        self.tags.retain(|id, _| self.tree.contains(*id));
-        self.listeners.retain(|(id, _), _| self.tree.contains(*id));
+        for node in nodes {
+            self.tags.remove(&node);
+            self.defaults.remove(&node);
+            for name in EVENTS {
+                self.listeners.remove(&(node, name));
+            }
+        }
         Ok(())
     }
     fn beside(&mut self, anchor: Id, nodes: Vec<Id>, after: bool) -> Result<(), Error> {
@@ -313,16 +334,16 @@ impl WriteMutations for Host {
     }
     fn create_event_listener(&mut self, name: &'static str, id: ElementId) {
         self.apply(|s| {
-            if !matches!(name, "key" | "paste" | "mouse" | "input") {
+            if !EVENTS.contains(&name) {
                 return Err(Error::Unsupported(format!("event {name}")));
             }
-            s.listeners.insert((s.id(id)?, name.into()), id);
+            s.listeners.insert((s.id(id)?, name), id);
             Ok(())
         });
     }
     fn remove_event_listener(&mut self, name: &'static str, id: ElementId) {
         self.apply(|s| {
-            s.listeners.remove(&(s.id(id)?, name.into()));
+            s.listeners.remove(&(s.id(id)?, name));
             Ok(())
         });
     }
