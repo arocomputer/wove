@@ -1,6 +1,6 @@
 Wove · Dioxus counter
 Count: 3
 + / - change · Tab focus · Esc quit
-
+Type here
 Name:
 @cursor 0,3

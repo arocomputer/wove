@@ -16,6 +16,7 @@ pub struct Textarea {
     pub style: Style,
     /// Drawn over `style` for atoms, the editor's indivisible tokens.
     pub atom: Style,
+    /// Shown while the value is empty, with the cursor at its start when focused.
     pub placeholder: String,
     pub wrap: bool,
     pub cursor: crate::CursorShape,
@@ -61,9 +62,8 @@ impl Element for Textarea {
     fn paint(&self, canvas: &mut Canvas<'_>) {
         let (width, height) = canvas.size();
         let value = self.editor.text();
-        if value.is_empty() && !canvas.focused() {
+        if value.is_empty() {
             canvas.text(0, 0, &self.placeholder, self.style);
-            return;
         }
         let rows = self.editor.rows();
         let (top, left) = self.editor.view();
