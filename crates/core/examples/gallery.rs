@@ -1,5 +1,6 @@
 //! A small catalogue demonstrates direct tree ownership and independent elements.
-use wove::{elements::*, layout::*, terminal, Color, Layout, Style, Tree};
+use std::{cell::RefCell, rc::Rc};
+use wove::{elements::*, layout::*, terminal, text::Span, Color, Layout, Style, Tree};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tree = Tree::new();
     let title = tree.add(tree.root(), Text::new("Wove · element gallery"))?;
@@ -33,8 +34,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..Layout::default()
         },
     )?;
-    let names = ["Text", "Input", "Select", "Scroll", "Panel"];
-    let list = tree.add(body, Select::new(names))?;
+    let names = ["Text", "Input", "List", "Scroll", "Panel"];
+    // The list asks for rows by index; the filtered names are shared with it.
+    let shown = Rc::new(RefCell::new(names.map(String::from).to_vec()));
+    let rows = shown.clone();
+    let row = move |i: usize| vec![Span::new(rows.borrow()[i].clone(), Style::default())];
+    let list = tree.add(body, List::new(names.len(), 16, row))?;
     tree.set_layout(
         list,
         Layout {
@@ -84,17 +89,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .filter(|name| name.to_lowercase().contains(&filter))
             .map(|s| s.to_string())
             .collect();
-        if tree.get::<Select>(list).expect("list exists").items != items {
-            tree.update::<Select>(list, |w| {
-                w.items = items;
+        if *shown.borrow() != items {
+            let count = items.len();
+            *shown.borrow_mut() = items;
+            tree.update::<List>(list, |w| {
+                w.count = count;
                 w.selected = 0;
             })
             .expect("list exists");
         }
-        let selected = tree.get::<Select>(list).expect("list exists");
-        let content = selected
-            .items
-            .get(selected.selected)
+        let selected = tree.get::<List>(list).expect("list exists").selected;
+        let content = shown
+            .borrow()
+            .get(selected)
             .map_or_else(|| "No matching elements".into(), |s| description(s));
         if tree.get::<Text>(detail).expect("detail exists").content != content {
             tree.update::<Text>(detail, |w| w.content = content)
@@ -113,7 +120,7 @@ fn description(name: &str) -> String {
     let body=match name {
         "Text"=>"Unicode text measured and painted with the same wrapping rules.\n\nGraphemes stay whole: café · 界.\n\nResize the terminal to see layout recompute.",
         "Input"=>"Editable text with grapheme movement, selection, and undo.\n\nShift + arrows selects. Ctrl + A selects all. Ctrl + Z undoes. Ctrl + Y redoes.\n\nPaste inserts text without terminal controls.",
-        "Select"=>"A list with keyboard selection and a visible selected row.\n\nApplications own item meaning and choose the highlight style.",
+        "List"=>"Rows with keyboard and mouse selection. The list asks for only the rows in view.\n\nApplications own item meaning and choose the highlight style.",
         "Scroll"=>"A clipped viewport.\n\nArrow keys move one row. Page Up and Page Down move a page. End follows new content. Moving away from the end stops following.",
         _=>"A bordered container with one cell reserved on each edge.\n\nPut any elements inside. Layout determines their size and placement.",
     };

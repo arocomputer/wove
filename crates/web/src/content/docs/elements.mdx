@@ -17,11 +17,12 @@ An element supplies measurement, drawing, and input behavior. The tree owns its 
 - `Input` edits a single line. `mask` hides a secret, `limit` caps its length,
   and `cursor` chooses the cursor's shape.
 - `Textarea` edits multiple lines and can soft-wrap them.
-- `Select` handles a list of choices.
-- `List` and `Table` draw only their visible rows. `List` rows are styled spans.
+- `List` and `Table` draw only their visible rows and share their navigation:
+  arrows, paging, Home, End, the wheel, and clicks. `List` rows are styled spans.
   Their view moves only when the selection leaves it, so a click never slides
   the rows under the pointer.
-- `Scroll` clips its children to a viewport and paints only those in view.
+- `Scroll` clips its children to a viewport and paints only those in view, and
+  scrolls to show a child that receives focus.
   `Scroll::with_bar` adds a scrollbar in a column of its own.
 - `Feed` shows a long document of styled text blocks, such as a log or a
   conversation.
@@ -39,6 +40,10 @@ A feed follows its tail until the user scrolls away, and holds its place while
 blocks arrive beneath. Its position is a block and a row within it, not a row
 count, because the rows above the view are never measured. Use a `Scroll` when the
 content is elements rather than text.
+
+For the same reason a feed has no height of its own: it grows into the space its
+parent gives it. A frame of natural height, such as an inline session, gives it
+none, so set a height in the feed's layout there.
 
 ## Editing
 
@@ -67,4 +72,4 @@ Undo keeps at most 100 edits and stores changed text rather than a copy of the e
 
 ## Custom elements
 
-Implement `wove::Element` and add your type to a tree. Drawing goes through `Canvas`, which clips output to the assigned area, expands tabs, and removes other terminal control characters. An element with nothing visible is not painted, and `Canvas::visible_rows` tells a tall element which of its rows to draw. Mouse events arrive with positions relative to the element's top-left cell, so an element can act on a click without knowing where it was laid out or scrolled to. `Element::overlay` draws over the element's children, which is how `Scroll` draws its bar. No global registration is required.
+Implement `wove::Element` and add your type to a tree. Drawing goes through `Canvas`, which clips output to the assigned area, expands tabs, and removes other terminal control characters. `render::columns` counts the cells a line of text takes the same way, and `render::fit` cuts text to a number of cells, so an element measures what it paints. An element with nothing visible is not painted, and `Canvas::visible_rows` tells a tall element which of its rows to draw. A scrolling element implements `Element::reveal` to show a descendant that receives focus. Just before painting, `Element::viewport` receives the element's inner size, so an element settles what it shows, such as its first row or a scroll offset, and then paints exactly that. Mouse events arrive with positions relative to the element's top-left cell, so an element can act on a click without knowing where it was laid out or scrolled to. `Element::overlay` draws over the element's children, which is how `Scroll` draws its bar. No global registration is required.

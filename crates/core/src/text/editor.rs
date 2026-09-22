@@ -1,13 +1,8 @@
 //! An owned text editor shared by input elements and custom elements.
 use super::{wrap, Wrap};
-use std::{
-    cell::{Cell, RefCell},
-    collections::VecDeque,
-    ops::Range,
-    rc::Rc,
-};
+use crate::render::{cell_width, columns};
+use std::{cell::RefCell, collections::VecDeque, ops::Range, rc::Rc};
 use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
-use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct State {
@@ -81,13 +76,15 @@ pub struct Editor {
     column: Option<usize>,
     /// The last edit was typed text that the next typed grapheme may join.
     typing: bool,
+    /// Counts changes to the text, so `apply` can tell whether a command did anything.
+    edits: u64,
     /// Display width for soft wrapping. When set, `Up` and `Down` move through
     /// wrapped rows instead of logical lines. A `Textarea` sets it to its
     /// painted width on every frame; set it yourself only in a custom element.
     pub width: Option<u16>,
     /// The display row and column at the top-left of the element showing this
-    /// editor, recorded while painting so a click can be mapped to a position.
-    view: Cell<(usize, usize)>,
+    /// editor, recorded before painting so a click can be mapped to a position.
+    view: (usize, usize),
     /// Wrapped rows, until the text changes. Layout asks at a few widths per
     /// pass, so a few are kept.
     rows: RefCell<Vec<Rows>>,
@@ -134,7 +131,10 @@ impl Editor {
         };
     }
 
-    pub fn apply(&mut self, command: Command) {
+    /// Run a command. Returns whether it changed the text, the cursor, or the
+    /// selection; moving left at the start or undoing with no history does not.
+    pub fn apply(&mut self, command: Command) -> bool {
+        let before = (self.edits, self.state.cursor, self.selection());
         match command {
             Command::Insert(text) => self.insert(&text),
             Command::Move(motion, extend) => self.travel(motion, extend),
@@ -143,6 +143,7 @@ impl Editor {
             Command::Undo => self.undo(),
             Command::Redo => self.redo(),
         }
+        before != (self.edits, self.state.cursor, self.selection())
     }
 
     /// Insert at the cursor, replacing the selection as one undoable operation.
@@ -156,6 +157,7 @@ impl Editor {
                 range = range.start.min(atom.range.start)..range.end.max(atom.range.end);
             }
         }
+        self.edits = self.edits.wrapping_add(1);
         let before = (self.state.cursor, self.state.anchor);
         let atoms = self.atoms.clone();
         let removed = self.state.text[range.clone()].to_owned();
@@ -330,7 +332,7 @@ impl Editor {
         }
         let widest = rows
             .iter()
-            .map(|row: &Range<usize>| self.state.text[row.clone()].width())
+            .map(|row: &Range<usize>| columns(&self.state.text[row.clone()]))
             .max()
             .unwrap_or(0);
         let rows = Rc::new(rows);
@@ -346,14 +348,17 @@ impl Editor {
         rows
     }
 
-    pub(crate) fn set_view(&self, top: usize, left: usize) {
-        self.view.set((top, left));
+    pub(crate) fn set_view(&mut self, top: usize, left: usize) {
+        self.view = (top, left);
+    }
+    pub(crate) fn view(&self) -> (usize, usize) {
+        self.view
     }
 
     /// The position shown at a cell of the element displaying this editor:
     /// the nearest grapheme boundary at or before it, on the nearest row.
     pub fn position_at(&self, x: u16, y: u16) -> usize {
-        let (top, left) = self.view.get();
+        let (top, left) = self.view;
         let rows = self.rows();
         let index = (top + usize::from(y)).min(rows.len() - 1);
         self.offset_in(&rows, index, left + usize::from(x))
@@ -371,7 +376,7 @@ impl Editor {
         let row = Self::row_of(&rows, self.state.cursor);
         let column = self
             .column
-            .unwrap_or_else(|| self.state.text[rows[row].start..self.state.cursor].width());
+            .unwrap_or_else(|| columns(&self.state.text[rows[row].start..self.state.cursor]));
         self.column = Some(column);
         match row.checked_add_signed(delta).filter(|i| *i < rows.len()) {
             Some(index) => self.offset_in(&rows, index, column),
@@ -390,10 +395,11 @@ impl Editor {
             .is_some_and(|after| after.start == row.end);
         let (mut width, mut offset) = (0, row.start);
         for g in self.state.text[row.clone()].graphemes(true) {
-            if width + g.width() > column || soft && offset + g.len() >= row.end {
+            let cells = cell_width(g, width);
+            if width + cells > column || soft && offset + g.len() >= row.end {
                 break;
             }
-            width += g.width();
+            width += cells;
             offset += g.len();
         }
         offset
@@ -501,6 +507,7 @@ impl Editor {
     }
     pub fn undo(&mut self) {
         if let Some(mut edit) = self.undo.pop_back() {
+            self.edits = self.edits.wrapping_add(1);
             self.state
                 .text
                 .replace_range(edit.start..edit.start + edit.inserted.len(), &edit.removed);
@@ -514,6 +521,7 @@ impl Editor {
     }
     pub fn redo(&mut self) {
         if let Some(mut edit) = self.redo.pop() {
+            self.edits = self.edits.wrapping_add(1);
             self.state
                 .text
                 .replace_range(edit.start..edit.start + edit.removed.len(), &edit.inserted);

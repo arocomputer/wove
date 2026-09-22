@@ -567,6 +567,38 @@ pub(crate) fn cluster_width(cluster: &str) -> usize {
     }
 }
 
+/// Cells a cluster advances when it starts `column` cells into a line drawn by
+/// `Canvas::text`: a tab reaches the next stop, and controls, zero-width
+/// clusters, and clusters too wide for a cell to record take none.
+pub(crate) fn cell_width(cluster: &str, column: usize) -> usize {
+    match cluster {
+        "\t" => TAB - column % TAB,
+        _ => Some(cluster_width(cluster))
+            .filter(|w| *w <= usize::from(u8::MAX))
+            .unwrap_or(0),
+    }
+}
+
+/// The cells `text` takes when drawn as one line by `Canvas::text`. Tabs reach
+/// the next stop from the start of `text`; controls take none. Measure with
+/// this rather than a Unicode width table, so that layout matches painting.
+pub fn columns(text: &str) -> usize {
+    clusters(text).fold(0, |used, (_, g)| used + cell_width(g, used))
+}
+
+/// The longest start of `text` that fits in `cells` when drawn as one line by
+/// `Canvas::text`, cut at a grapheme boundary.
+pub fn fit(text: &str, cells: usize) -> &str {
+    let mut used = 0;
+    for (offset, g) in clusters(text) {
+        used += cell_width(g, used);
+        if used > cells {
+            return &text[..offset];
+        }
+    }
+    text
+}
+
 /// Printable graphemes with their cell widths. Tabs are yielded with a zero
 /// width for the caller to expand; other controls and zero-width clusters are
 /// dropped, as are clusters too wide for a cell to record.
