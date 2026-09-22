@@ -41,6 +41,9 @@ impl App for Editor {
     }
     fn event(&mut self, event: Event) -> Result<bool, Error> {
         self.seen.send(event.clone())?;
+        if event == ctrl('c') {
+            return Ok(false);
+        }
         self.tree.dispatch(event)?;
         Ok(true)
     }
@@ -49,6 +52,14 @@ impl Drop for Editor {
     fn drop(&mut self) {
         self.alive.fetch_sub(1, Ordering::SeqCst);
     }
+}
+
+fn ctrl(c: char) -> Event {
+    let ctrl = wove::Modifiers {
+        ctrl: true,
+        ..Default::default()
+    };
+    Event::Key(wove::Key::Char(c), ctrl)
 }
 
 fn key() -> PrivateKey {
@@ -310,4 +321,103 @@ async fn application_panic_restores_terminal_and_exits_with_failure() {
         .unwrap()
         .unwrap()
         .unwrap();
+}
+
+#[test]
+fn a_tree_finishes_the_session_on_ctrl_c() {
+    let mut tree = Tree::new();
+    assert!(App::event(&mut tree, wove::Key::Char('c').into()).unwrap());
+    assert!(!App::event(&mut tree, ctrl('c')).unwrap());
+}
+
+/// Holds its first event until released, so input piles up behind a busy app.
+/// Ctrl-C is an ordinary event here; `q` finishes the session.
+struct Gate {
+    tree: Tree,
+    release: Option<std::sync::mpsc::Receiver<()>>,
+    seen: mpsc::UnboundedSender<Event>,
+}
+impl App for Gate {
+    fn frame(&mut self, width: u16, height: u16) -> Result<&Buffer, Error> {
+        Ok(self.tree.frame(width, height)?)
+    }
+    fn event(&mut self, event: Event) -> Result<bool, Error> {
+        self.seen.send(event.clone())?;
+        if let Some(release) = self.release.take() {
+            release.recv()?;
+        }
+        Ok(event != wove::Key::Char('q').into())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_busy_app_receives_an_input_burst_and_ctrl_c_without_disconnecting() {
+    timeout(Duration::from_secs(20), async {
+        let host = key();
+        let host_public = host.public_key().clone();
+        let allowed = Arc::new(key());
+        let public = allowed.public_key().clone();
+        let (release, gate) = std::sync::mpsc::channel();
+        let gate = std::sync::Mutex::new(Some(gate));
+        let (seen, mut events) = mpsc::unbounded_channel();
+        let server = Server::new(
+            host,
+            move |_, key| key == &public,
+            move |_| {
+                Ok(Gate {
+                    tree: Tree::new(),
+                    release: gate.lock().unwrap().take(),
+                    seen: seen.clone(),
+                })
+            },
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let running = tokio::spawn(server.serve(listener, std::future::pending()));
+        let mut client = client::connect(
+            Arc::new(client::Config::default()),
+            address,
+            Client(host_public),
+        )
+        .await
+        .unwrap();
+        assert!(client
+            .authenticate_publickey("guest", PrivateKeyWithHashAlg::new(allowed, None))
+            .await
+            .unwrap()
+            .success());
+        let mut channel = client.channel_open_session().await.unwrap();
+        channel
+            .request_pty(true, "xterm", 40, 8, 0, 0, &[])
+            .await
+            .unwrap();
+        assert!(matches!(message(&mut channel).await, ChannelMsg::Success));
+        channel.request_shell(true).await.unwrap();
+        output(&mut channel, b"\x1b[?1049h").await;
+        // The app blocks on this first key while every later packet arrives.
+        channel.data(&b"a"[..]).await.unwrap();
+        assert_eq!(events.recv().await.unwrap(), wove::Key::Char('a').into());
+        for _ in 0..40 {
+            channel.data(&b"b"[..]).await.unwrap();
+        }
+        channel.window_change(50, 10, 0, 0).await.unwrap();
+        channel.data(&b"\x03"[..]).await.unwrap();
+        // The server answers requests in order, so a reply proves that the
+        // connection survived all of the input above.
+        channel.exec(true, "uname").await.unwrap();
+        assert!(matches!(message(&mut channel).await, ChannelMsg::Failure));
+        release.send(()).unwrap();
+        let mut received = Vec::new();
+        while received.last() != Some(&ctrl('c')) {
+            received.push(events.recv().await.unwrap());
+        }
+        let b: Event = wove::Key::Char('b').into();
+        assert_eq!(received.iter().filter(|event| **event == b).count(), 40);
+        assert!(received.contains(&Event::Resize(50, 10)));
+        channel.data(&b"q"[..]).await.unwrap();
+        output(&mut channel, b"\x1b[?1049l").await;
+        running.abort();
+    })
+    .await
+    .unwrap();
 }

@@ -141,7 +141,7 @@ events. Applications supply a host key, a public-key authorization policy, and
 an application factory. Each accepted interactive session owns a separate app on
 a worker thread, so core elements and callbacks do not need to be Send.
 
-The caller binds the listener and supplies shutdown. Input queues, grid dimensions,
+The caller binds the listener and supplies shutdown. Unread input, grid dimensions,
 and output waits have limits. The package exposes a terminal application, not an
 operating-system shell. Core has no network dependency.
 

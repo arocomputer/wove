@@ -17,8 +17,9 @@ public key. Reject any identity the application does not trust.
 The factory receives `Peer`, including that identity, remote address, terminal
 name, and initial dimensions. It runs on the connection's application thread,
 where it can build a tree with ordinary non-Send elements and callbacks.
-`Tree` implements `App` directly. Custom applications implement `frame` and
-`event`; return false from `event` to close the channel.
+`Tree` implements `App` directly and closes the channel on Ctrl-C. Custom
+applications implement `frame` and `event`; they receive Ctrl-C like any other
+key, and return false from `event` to close the channel.
 
 Bind a Tokio `TcpListener` and pass it to `Server::serve` with a shutdown future.
 The library does not choose a network interface or create host keys. The
@@ -34,7 +35,7 @@ ssh -p 2222 -i ~/.ssh/id_ed25519 guest@localhost
 
 The client must request a PTY before starting the application. Each connection
 permits one interactive channel. Commands, forwarding, and subsystems are not
-supported. Ctrl-C closes the app; disconnecting drops its state. Server shutdown
+supported. Disconnecting drops the app's state. Server shutdown
 disconnects active clients. An unwinding application panic restores remote terminal
 modes and closes its channel with a failure status. Process aborts cannot run
 cleanup. App callbacks must return promptly.
@@ -48,7 +49,10 @@ with `[` or `O`, which begin one. Unsupported
 terminal reports are ignored. Paste is delivered as text, so a control character
 inside a paste does not become a command.
 
-Frames update after input or resize. This initial transport does not yet provide
+Frames update after input or resize. At most one frame is in flight, and it is
+sent only as fast as the peer's SSH window allows. While the peer is slow, events
+keep reaching the app and only its latest state is drawn when the previous frame
+has been sent. This initial transport does not yet provide
 an asynchronous application wakeup mechanism for background tasks or animation.
 Colors are mapped to what the peer's terminal type suggests it can show. The
 session does not ask for kitty key reports.
@@ -57,9 +61,13 @@ session does not ask for kitty key reports.
 
 The default connection limit is 32 and can be changed through `connections`.
 Terminal dimensions must be positive, at most 512 columns and 256 rows, and no
-more than 65,536 cells. Input packets are limited to 64 KiB. A longer paste
-arrives as several paste events in order, and malformed input is dropped rather
-than ending the session.
-The input queue holds 16 messages; overflow closes the connection. A stalled
-output write times out after five seconds. Inactive connections expire after
-five minutes. Applications remain responsible for their own content and work limits.
+more than 65,536 cells. Input the app has not read yet is merged, up to 1 MiB;
+more than that closes the connection. A busy app then receives the waiting
+bytes together and only the latest terminal size. A long paste arrives as
+several paste events in order, and malformed input is dropped rather than
+ending the session.
+Output that waits five seconds for window space ends the session. Connections
+without traffic expire after five minutes; change this through `inactivity`, or
+set it to `None` to keep idle connections. A failed accept, such as running out
+of file descriptors, pauses accepting briefly and does not stop the server.
+Applications remain responsible for their own content and work limits.
