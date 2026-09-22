@@ -20,7 +20,6 @@ WORKFLOWS = {
     "ssh": {"ssh", "quality-rust"},
     "quality": {"quality", "quality-rust"},
     "website": {"website"},
-    "deploy": {"website"},
     "security": {"audit"},
     "publish": {"quality", "quality-rust"},
 }

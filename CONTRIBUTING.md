@@ -245,10 +245,11 @@ Run `./x web` for dependency, type, and build checks.
 
 ### Deployment
 
-`.github/workflows/deploy.yml` runs `./x web`, uploads `crates/web/dist/`, and
-deploys to GitHub Pages on pushes to `main`. It can also be run manually from
-`main`. Pull requests only run checks. Deployment uses GitHub's workflow
-credentials and does not require a separate hosting secret.
+`.github/workflows/website.yml` runs `./x web`. On pushes to `main` that affect
+the site, it uploads `crates/web/dist/` and deploys to GitHub Pages. A manual run
+from `main` rebuilds and deploys the site. Pull requests only run checks.
+Deployment uses GitHub's workflow credentials and does not require a separate
+hosting secret.
 
 The production origin is `https://wovetui.com`, configured in
 `crates/web/astro.config.mjs`. To set up hosting:
