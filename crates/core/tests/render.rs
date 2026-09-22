@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use wove::{
-    elements::{RichText, Text},
-    testing::Screen,
+    elements::{Input, RichText, Text},
+    testing::{self, Screen},
     text::{Span, Wrap},
     Buffer, Canvas, Color, Depth, Element, Rect, Renderer, Style,
 };
@@ -218,4 +218,30 @@ fn a_frame_without_a_shadow_erases_trailing_blanks_and_hides_the_cursor_while_pa
         !output.contains("  "),
         "blank cells are written: {output:?}"
     );
+}
+
+#[test]
+fn a_snapshot_is_the_visible_text_once_per_wide_cell_and_the_cursor() {
+    let mut frame = Buffer::new(6, 4);
+    frame.write(frame.area(), "a界b  ", Style::default());
+    assert_eq!(testing::snapshot(&frame), "a界b\n@cursor none\n");
+    let mut screen = Screen::new(6, 3);
+    let input = screen
+        .tree
+        .add(screen.tree.root(), Input::new("x"))
+        .unwrap();
+    screen.tree.focus(Some(input)).unwrap();
+    testing::assert_frame(screen.frame().unwrap(), "x\n@cursor 1,0\n");
+}
+
+#[test]
+fn a_diff_shows_context_before_the_first_differing_line() {
+    assert_eq!(testing::diff("a\nb\n", "a\nb\n"), None);
+    let report = testing::diff("1\n2\n3\n4\n", "1\n2\n3\nfour\n").unwrap();
+    assert_eq!(
+        report,
+        "frames differ at line 4\n    2 |2\n    3 |3\n-   4 |4\n-   5 |\n+   4 |four\n+   5 |\n"
+    );
+    let missing = testing::diff("a", "a\n").unwrap();
+    assert!(missing.ends_with("-     (end)\n+   2 |\n"), "{missing}");
 }

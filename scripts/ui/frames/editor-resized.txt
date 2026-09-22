@@ -1,0 +1,13 @@
+Wove editor
+Enter adds a line · Shift selects ·
+Ctrl+Z undoes · Esc quits
+Write something.
+Unicode stays whole: 界 · 👩
+New linex
+
+
+
+
+
+66 bytes
+@cursor 9,5

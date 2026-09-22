@@ -69,7 +69,8 @@ cargo run -p wove --example gallery
 cargo run -p wove-dioxus --example counter
 ```
 
-`./x ui` checks input, resize, and terminal restoration through real PTYs on Unix.
+`./x ui` checks input, resize, rendered frames, and terminal restoration through
+real PTYs on Unix.
 For an optional local speed check, run
 `cargo run -p wove --release --example timing`.
 For documentation changes, run `./x web` with Bun 1.4.2 or newer.

@@ -1,0 +1,6 @@
+Wove · Dioxus counter
+Count: 2
++ / - change · Tab focus · Esc quit
+
+Name:
+@cursor 0,3
