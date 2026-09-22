@@ -1,4 +1,5 @@
 //! A clipped cell grid that keeps grapheme clusters and wide-cell ownership intact.
+use super::canvas::Canvas;
 use crate::Rect;
 use std::{ops::Range, sync::Arc};
 use unicode_segmentation::UnicodeSegmentation;
@@ -327,21 +328,17 @@ impl Buffer {
         self.shape = CursorShape::Default;
         self.version = 0;
     }
-    /// The rows from `first` on as a frame of their own.
-    pub(crate) fn tail(&self, first: u16) -> Self {
-        let first = first.min(self.height);
-        Self {
-            width: self.width,
-            height: self.height - first,
-            cells: self.cells[usize::from(first) * usize::from(self.width)..].to_vec(),
-            long: self.long.clone(),
-            links: self.links.clone(),
-            cursor: self
-                .cursor
-                .and_then(|(x, y)| Some((x, y.checked_sub(first)?))),
-            shape: self.shape,
-            version: 0,
-        }
+    /// Remove the first `rows` rows in place, keeping the storage, so that
+    /// what was row `rows` becomes row zero.
+    pub(crate) fn drop_rows(&mut self, rows: u16) {
+        let rows = rows.min(self.height);
+        self.cells
+            .drain(..usize::from(rows) * usize::from(self.width));
+        self.height -= rows;
+        self.cursor = self
+            .cursor
+            .and_then(|(x, y)| Some((x, y.checked_sub(rows)?)));
+        self.version = 0;
     }
 
     /// Erase the complete grapheme covering an index, including its trailing
@@ -462,25 +459,14 @@ impl Buffer {
     /// grapheme clears the whole old grapheme.
     pub fn write(&mut self, area: Rect, text: &str, style: Style) -> u16 {
         let area = area.intersection(self.area());
-        if area.height == 0 || area.width == 0 {
-            return 0;
-        }
-        let mut used = 0usize;
-        for (grapheme, width) in graphemes(text) {
-            let (grapheme, width, count) = if grapheme == "\t" {
-                (" ", 1, TAB - used % TAB)
-            } else {
-                (grapheme, width, 1)
-            };
-            for _ in 0..count {
-                if used + width > usize::from(area.width) {
-                    return used as u16;
-                }
-                self.put(area.x + used as u16, area.y, grapheme, width, style, None);
-                used += width;
-            }
-        }
-        used as u16
+        let mut canvas = Canvas {
+            origin: (i32::from(area.x), i32::from(area.y)),
+            clip: area,
+            size: (area.width, area.height),
+            focused: false,
+            buffer: self,
+        };
+        canvas.run(0, 0, text, style, None) as u16
     }
 
     /// The cells between two positions inclusive, in reading order, as a row

@@ -93,7 +93,8 @@ the reachable suffix of a frame is compared, row by row. Growth that fits is
 scrolled in and diffed; growth whose first changed row would itself scroll away
 is printed in order from that row, so history receives final content. `commit`
 releases rows at the top of the frame, which is what keeps a long session's
-frames small. A resize clears the visible screen, never the scrollback.
+frames small. A resize repaints every visible row from the top of the screen
+and never touches the scrollback.
 
 The optional crossterm backend owns raw mode and reads local input; the modes
 themselves are written through `Options`. `Terminal` draws full-screen or inline,

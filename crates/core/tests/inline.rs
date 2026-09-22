@@ -69,8 +69,9 @@ impl Vt {
                                 row.parse::<usize>().unwrap() - 1,
                             );
                         }
-                        ('J', "2") => self.rows.fill(vec![' '; self.width]),
-                        ('J', other) => panic!("scrollback must survive: ESC[{other}J"),
+                        // Clearing would flash, and some terminals push the
+                        // cleared screen into scrollback.
+                        ('J', other) => panic!("rows are repainted, never cleared: ESC[{other}J"),
                         ('K', _) => self.rows[self.cursor.1][self.cursor.0..].fill(' '),
                         _ => {}
                     }
@@ -93,12 +94,15 @@ fn frame(rows: &[&str]) -> Buffer {
     buffer
 }
 
-fn draw(inline: &mut Inline, vt: &mut Vt, rows: &[&str]) {
+/// Draw and feed the output to `vt`, returning whether anything was written.
+fn draw(inline: &mut Inline, vt: &mut Vt, rows: &[&str]) -> bool {
     let mut bytes = Vec::new();
-    inline
+    let wrote = inline
         .draw(&mut bytes, &frame(rows), vt.rows.len() as u16)
         .unwrap();
+    assert_eq!(wrote, !bytes.is_empty());
     vt.feed(&bytes);
+    wrote
 }
 
 #[test]
@@ -109,7 +113,7 @@ fn a_frame_starts_at_the_launch_row_and_leaves_the_shell_above_it() {
     draw(&mut inline, &mut vt, &["one", "two"]);
     assert_eq!(vt.screen(), ["$ app", "one", "two", ""]);
     let before = vt.bytes.len();
-    draw(&mut inline, &mut vt, &["one", "two"]);
+    assert!(!draw(&mut inline, &mut vt, &["one", "two"]));
     assert_eq!(vt.bytes.len(), before, "an unchanged frame writes nothing");
 }
 
@@ -166,6 +170,32 @@ fn a_resize_repaints_the_visible_tail_without_touching_scrollback() {
     draw(&mut inline, &mut vt, &["a", "b", "c", "d"]);
     assert_eq!(vt.scrollback, ["a"]);
     assert_eq!(vt.screen(), ["c", "d"]);
+
+    // A frame that fits moves to the top, and rows beneath it are erased.
+    let mut vt = Vt::new(8, 4);
+    vt.feed(b"$ app\r\n");
+    let mut inline = Inline::new(1, Depth::Rgb);
+    draw(&mut inline, &mut vt, &["a", "b"]);
+    vt.rows.pop();
+    draw(&mut inline, &mut vt, &["a", "b"]);
+    assert_eq!(vt.screen(), ["a", "b", ""]);
+}
+
+#[test]
+fn an_invalidated_frame_still_parks_commits_and_maps_rows_until_redrawn() {
+    let mut vt = Vt::new(8, 4);
+    vt.feed(b"$ app\r\n");
+    let mut inline = Inline::new(1, Depth::Rgb);
+    draw(&mut inline, &mut vt, &["a", "b", "c"]);
+    inline.invalidate();
+    assert_eq!(inline.frame_row(2), Some(1));
+    inline.commit(1);
+    assert_eq!(inline.frame_row(2), Some(0));
+    let mut bytes = Vec::new();
+    inline.finish(&mut bytes).unwrap();
+    vt.feed(&bytes);
+    vt.feed(b"$ ");
+    assert_eq!(vt.history(), ["$ app", "a", "b", "c", "$"]);
 }
 
 #[test]

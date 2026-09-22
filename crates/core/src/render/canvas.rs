@@ -47,10 +47,20 @@ impl Canvas<'_> {
         self.run(x, y, text, style, Some(url));
     }
 
-    fn run(&mut self, x: i32, y: i32, text: &str, style: Style, link: Option<&Arc<str>>) {
+    /// Write one line of `text` from local `(x, y)`, returning the columns
+    /// it advanced up to the first grapheme that would cross the clip's right
+    /// edge, where it stops.
+    pub(crate) fn run(
+        &mut self,
+        x: i32,
+        y: i32,
+        text: &str,
+        style: Style,
+        link: Option<&Arc<str>>,
+    ) -> i32 {
         let y = self.origin.1.saturating_add(y);
         if y < i32::from(self.clip.y) || y >= i32::from(self.clip.y) + i32::from(self.clip.height) {
-            return;
+            return 0;
         }
         let start = self.origin.0.saturating_add(x);
         let mut x = start;
@@ -66,7 +76,7 @@ impl Canvas<'_> {
                 };
                 for _ in 0..count {
                     if x >= right {
-                        return;
+                        return x - start;
                     }
                     if x >= i32::from(self.clip.x) {
                         self.buffer.stamp(x as u16, y as u16, byte, &brush);
@@ -74,7 +84,7 @@ impl Canvas<'_> {
                     x += 1;
                 }
             }
-            return;
+            return x - start;
         }
         for (grapheme, width) in graphemes(text) {
             let (grapheme, width, count) = if grapheme == "\t" {
@@ -83,16 +93,18 @@ impl Canvas<'_> {
                 (grapheme, width, 1)
             };
             for _ in 0..count {
-                if x >= right {
-                    return;
+                // Nothing after a grapheme that crosses the edge can fit.
+                if x.saturating_add(width as i32) > right {
+                    return x - start;
                 }
-                if x >= i32::from(self.clip.x) && x + width as i32 <= right {
+                if x >= i32::from(self.clip.x) {
                     self.buffer
                         .put(x as u16, y as u16, grapheme, width, style, link);
                 }
                 x = x.saturating_add(width as i32);
             }
         }
+        x - start
     }
 
     pub fn cursor(&mut self, x: i32, y: i32) {
@@ -138,10 +150,15 @@ impl Canvas<'_> {
             Border::Double => ["╔", "╗", "╚", "╝", "═", "║"],
             Border::Heavy => ["┏", "┓", "┗", "┛", "━", "┃"],
         };
-        let line = across.repeat(usize::from(w - 2));
-        self.text(0, 0, &format!("{left}{line}{right}"), style);
-        let bottom = format!("{bottom_left}{line}{bottom_right}");
-        self.text(0, i32::from(h - 1), &bottom, style);
+        let (right_x, bottom_y) = (i32::from(w - 1), i32::from(h - 1));
+        self.text(0, 0, left, style);
+        self.text(right_x, 0, right, style);
+        self.text(0, bottom_y, bottom_left, style);
+        self.text(right_x, bottom_y, bottom_right, style);
+        for x in 1..right_x {
+            self.text(x, 0, across, style);
+            self.text(x, bottom_y, across, style);
+        }
         for y in 1..h - 1 {
             self.text(0, i32::from(y), down, style);
             self.text(i32::from(w - 1), i32::from(y), down, style);
