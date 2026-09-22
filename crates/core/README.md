@@ -42,7 +42,8 @@ them at words.
 The tree selects text on the painted screen by dragging, orders overlays with
 `set_z`, and reports the pointer entering and leaving nodes. A `Terminal` restores
 itself on panic and on fatal signals, copies to the clipboard through the
-terminal, and probes once at startup for what the terminal supports.
+terminal, sets the window title and taskbar progress, rings the bell, and probes
+once at startup for what the terminal supports.
 
 A `Terminal` draws on the alternate screen, over the main screen, or inline:
 frames that grow downward from the shell prompt while finished rows stay in the

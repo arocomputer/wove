@@ -1,5 +1,6 @@
 //! Ownership of the local terminal, kept separate from pure drawing.
-use crate::{render::Park, Buffer, Depth, Inline, Renderer};
+use crate::render::{self, Park, Progress, POP_TITLE, PUSH_TITLE};
+use crate::{Buffer, Depth, Inline, Renderer};
 pub use crate::{Options, ScreenMode};
 pub use crossterm::event::EventStream;
 use crossterm::{event, terminal};
@@ -18,6 +19,41 @@ struct Active {
     /// Puts the cursor beneath an inline frame, so that what prints next
     /// lands under the frame instead of over it.
     park: Park,
+    surface: Surface,
+}
+
+impl Active {
+    /// Undo everything the session changed, in the order that leaves the
+    /// cursor beneath the frame and the user's title in place.
+    fn leave(self, output: &mut impl Write) -> io::Result<()> {
+        self.park.write(output)?;
+        self.surface.restore(output)?;
+        match self.options {
+            Some(options) => options.leave(output),
+            None => output.flush(),
+        }
+    }
+}
+
+/// What the application showed outside the frame that ending the session
+/// must take back: a title pushed over the user's, and taskbar progress.
+#[derive(Clone, Copy, Default)]
+struct Surface {
+    title: bool,
+    progress: bool,
+    tmux: bool,
+}
+
+impl Surface {
+    fn restore(self, output: &mut impl Write) -> io::Result<()> {
+        if self.progress {
+            output.write_all(&render::progress(Progress::Clear, self.tmux))?;
+        }
+        if self.title {
+            output.write_all(POP_TITLE)?;
+        }
+        Ok(())
+    }
 }
 
 /// Whoever takes this, the session, the panic hook, or the signal thread,
@@ -35,12 +71,8 @@ fn active() -> std::sync::MutexGuard<'static, Option<Active>> {
 /// Restore the terminal from wherever the process is ending.
 fn rescue() {
     let taken = active().take();
-    if let Some(Active { options, park }) = taken {
-        let mut output = io::stdout();
-        let _ = park.write(&mut output);
-        if let Some(options) = options {
-            let _ = options.leave(&mut output);
-        }
+    if let Some(active) = taken {
+        let _ = active.leave(&mut io::stdout());
         let _ = terminal::disable_raw_mode();
     }
 }
@@ -118,6 +150,12 @@ pub struct Terminal {
     /// is anchored there.
     start: Option<(u16, u16)>,
     typed: Vec<crate::Event>,
+    /// The title the application set, which a resume shows again.
+    title: Option<String>,
+    /// The progress the application showed, which a resume shows again.
+    progress: Progress,
+    /// Whether requests tmux would swallow need its passthrough wrapper.
+    tmux: bool,
     probed: bool,
     raw: bool,
     entered: bool,
@@ -162,6 +200,9 @@ impl Terminal {
             capabilities: Capabilities::default(),
             start: None,
             typed: Vec::new(),
+            title: None,
+            progress: Progress::Clear,
+            tmux: std::env::var_os("TMUX").is_some(),
             probed: false,
             raw: false,
             entered: false,
@@ -200,13 +241,21 @@ impl Terminal {
         // Keep rescue from observing a half-restored session.
         let mut active = active();
         let taken = active.take();
-        if let Some(options) = taken.and_then(|state| state.options) {
-            if options.screen == ScreenMode::Inline {
+        if let Some(state) = taken.filter(|state| state.options.is_some()) {
+            if state
+                .options
+                .is_some_and(|options| options.screen == ScreenMode::Inline)
+            {
                 if let Some(inline) = &mut self.inline {
                     result = inline.finish(&mut self.output);
                 }
             }
-            result = result.and(options.leave(&mut self.output));
+            // The live frame parks the cursor, not the recorded one.
+            let state = Active {
+                park: Park::default(),
+                ..state
+            };
+            result = result.and(state.leave(&mut self.output));
         }
         self.entered = false;
         if self.raw {
@@ -233,6 +282,7 @@ impl Terminal {
             *active = Some(Active {
                 options: None,
                 park: Park::default(),
+                surface: Surface::default(),
             });
         }
         // Raw escape sequences need virtual terminal processing on Windows.
@@ -261,7 +311,15 @@ impl Terminal {
         let state = self.restoration();
         let mut active = active();
         *active = Some(state);
+        drop(active);
         self.options.enter(&mut self.output)?;
+        // Whatever ran during a suspension had the user's title back.
+        if let Some(title) = self.title.take() {
+            self.title(&title)?;
+        }
+        if self.progress != Progress::Clear {
+            self.progress(self.progress)?;
+        }
         Ok(())
     }
 
@@ -283,6 +341,11 @@ impl Terminal {
         Active {
             options: Some(self.options),
             park,
+            surface: Surface {
+                title: self.title.is_some(),
+                progress: self.progress != Progress::Clear,
+                tmux: self.tmux,
+            },
         }
     }
 
@@ -321,11 +384,61 @@ impl Terminal {
 
     /// Ask the terminal to put text on the system clipboard. It works over
     /// SSH and through tmux, and does nothing where the terminal declines.
+    /// Nothing reads the clipboard back: pasted text arrives as
+    /// `Event::Paste` while `Options::paste` is on.
     pub fn copy(&mut self, text: &str) -> io::Result<()> {
-        let tmux = std::env::var_os("TMUX").is_some();
-        self.output
-            .write_all(&crate::render::clipboard(text, tmux))?;
+        self.output.write_all(&render::clipboard(text, self.tmux))?;
         self.output.flush()
+    }
+
+    /// Set the window and tab title. The user's own title is saved first and
+    /// put back when the session ends or is suspended, where the terminal
+    /// keeps a title stack. A title holding control characters, or longer
+    /// than 2048 bytes, is refused with `InvalidInput`.
+    pub fn title(&mut self, title: &str) -> io::Result<()> {
+        let bytes = render::title(title).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a title must be at most 2048 bytes without control characters",
+            )
+        })?;
+        self.entered()?;
+        let push = self.title.is_none();
+        self.title = Some(title.to_owned());
+        // Recorded before the push, so a crash in between still pops it.
+        self.record();
+        if push {
+            self.output.write_all(PUSH_TITLE)?;
+        }
+        self.output.write_all(&bytes)?;
+        self.output.flush()
+    }
+
+    /// Ring the terminal bell, for example when a long task finishes.
+    pub fn bell(&mut self) -> io::Result<()> {
+        self.output.write_all(render::BELL)?;
+        self.output.flush()
+    }
+
+    /// Show progress in the tab or taskbar, where the terminal supports
+    /// OSC 9;4. The indicator is cleared when the session ends or is
+    /// suspended; `Progress::Clear` removes it sooner.
+    pub fn progress(&mut self, progress: Progress) -> io::Result<()> {
+        self.entered()?;
+        self.progress = progress;
+        self.record();
+        self.output
+            .write_all(&render::progress(progress, self.tmux))?;
+        self.output.flush()
+    }
+
+    /// Output that the end of the session must undo needs an entered session.
+    fn entered(&self) -> io::Result<()> {
+        if self.raw && self.entered {
+            Ok(())
+        } else {
+            Err(io::Error::other("terminal is suspended"))
+        }
     }
 
     /// Start the inline region on a fresh line at the cursor. A terminal that
@@ -406,9 +519,7 @@ impl Terminal {
     /// Paint a frame. A full-screen frame matches the terminal's dimensions.
     /// An inline frame matches its width and may be of any height.
     pub fn draw(&mut self, frame: &Buffer) -> io::Result<()> {
-        if !self.raw || !self.entered {
-            return Err(io::Error::other("terminal is suspended"));
-        }
+        self.entered()?;
         match (&mut self.inline, self.options.screen) {
             (Some(inline), ScreenMode::Inline) => {
                 if inline.draw(&mut self.output, frame, terminal::size()?.1)? {
@@ -556,4 +667,49 @@ pub fn run(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leave(surface: Surface) -> String {
+        let options = Options {
+            screen: ScreenMode::Inline,
+            ..Options::default()
+        };
+        let active = Active {
+            options: Some(options),
+            park: Park {
+                row: Some(3),
+                newline: true,
+            },
+            surface,
+        };
+        let mut output = Vec::new();
+        active.leave(&mut output).unwrap();
+        String::from_utf8(output).unwrap()
+    }
+
+    #[test]
+    fn restoring_after_a_crash_takes_back_the_title_and_progress() {
+        let output = leave(Surface {
+            title: true,
+            progress: true,
+            tmux: false,
+        });
+        let park = output.find("\r\n").unwrap();
+        let pop = output.find("\x1b[23;0t").unwrap();
+        let clear = output.find("\x1b]9;4;0;0\x1b\\").unwrap();
+        assert!(park < clear && park < pop, "{output:?}");
+    }
+
+    #[test]
+    fn a_session_that_set_no_title_or_progress_leaves_them_alone() {
+        let output = leave(Surface::default());
+        assert!(
+            !output.contains("23;0t") && !output.contains("]9;"),
+            "{output:?}"
+        );
+    }
 }

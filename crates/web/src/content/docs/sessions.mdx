@@ -25,6 +25,12 @@ reports a second. Turn `mouse` off to leave text selection to the terminal.
 running; the main screen keeps what the inline session drew while the alternate
 screen is up.
 
+Nothing reads the system clipboard. With `paste` on, text the user pastes
+arrives as one `Event::Paste`, which is how a terminal application receives the
+clipboard. A read on the application's own initiative belongs to the
+application, through a platform clipboard library, because terminals that
+answer an OSC 52 query at all usually ask the user first.
+
 ## Draw a frame
 
 `Tree::frame` recomputes layout after an update or a resize and otherwise returns
@@ -37,6 +43,22 @@ of any height.
 The terminal belongs to the session. An application that prints around a live
 session must call `Terminal::invalidate` afterwards, or the next frame diffs
 against physical contents that are gone and leaves stale cells.
+
+## Title, bell, and progress
+
+A session also speaks to the terminal outside the frame. `Terminal::title` names
+the window or tab, `Terminal::bell` rings the bell, for example when a long task
+finishes, and `Terminal::progress` shows a `Progress` indicator in the tab or
+taskbar where the terminal supports OSC 9;4. `Terminal::copy` puts text on the
+clipboard. None of them passes caller bytes through: a title with a control
+character is refused, and clipboard text is encoded.
+
+What these change outlives a frame, so the session takes it back. The first
+title saves the user's own on the terminal's title stack, and ending the session,
+suspending it, a panic, or a fatal signal restores it and clears the progress
+indicator; `resume` shows both again. The requests are also plain byte
+builders in `render`, `title`, `BELL`, `progress`, and `clipboard`, for a
+transport that owns its own output.
 
 ## Own the loop
 

@@ -79,7 +79,7 @@ crates/core/       wove: elements, layout, events, text, and terminal rendering
                   as plain bytes with no backend: renderer.rs (full screen),
                   inline.rs (main screen with native scrollback), session.rs
                   (the modes a session enables), pen.rs (cells to escapes),
-                  clipboard.rs (OSC 52)
+                  surface.rs (clipboard, title, bell, progress)
   src/terminal/   optional crossterm ownership of the local terminal, restored on
                   panic and fatal signals; query.rs is the one startup probe
   src/{markdown,syntax,diff}.rs  independent optional formatting features
