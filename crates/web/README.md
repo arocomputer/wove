@@ -21,7 +21,7 @@ bun run dev
 bun run build
 ```
 
-Pushes to `main` check, build, and deploy the site through GitHub Actions.
+Pushes to `main` that change the site check, build, and deploy it through GitHub Actions.
 See [website deployment](../../CONTRIBUTING.md#website) for hosting and DNS setup.
 
 Guides live in `src/content/docs/`; page layouts and styles live in `src/`.

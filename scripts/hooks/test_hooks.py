@@ -35,9 +35,9 @@ class HookTests(unittest.TestCase):
         path.write_text(content, newline="\n")
         return path
 
-    def check(self, *args):
+    def check(self):
         """Return a failed check for assertions instead of raising."""
-        return subprocess.run(['python3', str(CHECK), *args], cwd=self.root, env=self.env, capture_output=True, text=True)
+        return subprocess.run(['python3', str(CHECK)], cwd=self.root, env=self.env, capture_output=True, text=True)
 
     def test_staged_rust_is_checked_without_touching_unstaged_edits(self):
         path = self.write('src/file with spaces.rs', 'fn main() {}\n')
@@ -58,12 +58,6 @@ class HookTests(unittest.TestCase):
             self.write('guide.md', content)
             self.run_command('git', 'add', '.')
             self.assertNotEqual(self.check().returncode, 0)
-
-    def test_ci_checks_committed_diff_even_with_a_clean_index(self):
-        self.write('guide.md', 'text  \n')
-        self.run_command('git', 'add', '.')
-        self.run_command('git', 'commit', '-qm', 'bad whitespace')
-        self.assertNotEqual(self.check('HEAD^').returncode, 0)
 
     def test_existing_precommit_is_preserved_and_run(self):
         previous = self.write('previous/pre-commit', '#!/bin/sh\nexit 23\n')

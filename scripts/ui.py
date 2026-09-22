@@ -37,20 +37,30 @@ def scenario(name, steps, fullscreen=True):
                                stdin=slave, stdout=slave, stderr=slave,
                                start_new_session=True, env={**os.environ, "TERM": "xterm-256color"})
 
-    def receive(expected, after=-1):
-        """Drain complete output until the expected frame appears or time expires."""
+    def read():
+        """Record and display one available chunk; False once the child side closes."""
+        try:
+            chunk = os.read(master, 65536)
+        except OSError as error:
+            if error.errno == errno.EIO:
+                return False
+            raise
+        raw.extend(chunk)
+        stream.feed(chunk)
+        return bool(chunk)
+
+    def receive(expected, after=0):
+        """Drain output until a complete frame begun at or after `after` shows `expected`.
+
+        A frame is complete once the last synchronized-update end follows the last
+        begin, so checks and snapshots never observe a half-painted screen.
+        """
         nonlocal cursor_answered, attributes_answered
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             if select.select([master], [], [], 0.05)[0]:
-                try:
-                    chunk = os.read(master, 65536)
-                except OSError as error:
-                    if error.errno == errno.EIO:
-                        break
-                    raise
-                raw.extend(chunk)
-                stream.feed(chunk)
+                if not read():
+                    break
                 # Requests can cross reads. The first step arrives during the
                 # probe, so both library runners must preserve typed-ahead input.
                 reply = bytearray()
@@ -63,7 +73,9 @@ def scenario(name, steps, fullscreen=True):
                     reply.extend(b"\x1b[?62c")
                 if reply:
                     os.write(master, reply)
-            if len(raw) > after and expected in "\n".join(screen.display):
+            begin = raw.rfind(b"\x1b[?2026h")
+            complete = begin >= after and raw.rfind(b"\x1b[?2026l") > begin
+            if complete and expected in "\n".join(screen.display):
                 return
             if process.poll() is not None:
                 break
@@ -72,10 +84,15 @@ def scenario(name, steps, fullscreen=True):
     def finish(fullscreen):
         """Quit with Escape and check that the terminal is as it was found."""
         os.write(master, b"\x1b")
-        assert process.wait(timeout=10) == 0
-        while select.select([master], [], [], 0.05)[0]:
-            chunk = os.read(master, 65536)
-            raw.extend(chunk)
+        # Keep draining while waiting so cleanup output cannot fill the PTY buffer.
+        deadline = time.monotonic() + 10
+        while process.poll() is None:
+            assert time.monotonic() < deadline, f"{name}: did not exit"
+            if select.select([master], [], [], 0.05)[0]:
+                read()
+        assert process.returncode == 0
+        while select.select([master], [], [], 0.05)[0] and read():
+            pass
         restored = termios.tcgetattr(slave)
         assert restored == original, f"{name}: terminal attributes were not restored"
         assert (b"\x1b[?1049l" in raw) == fullscreen, "alternate screen use is wrong"
@@ -105,7 +122,7 @@ def scenario(name, steps, fullscreen=True):
         screen.resize(lines=12, columns=40)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 40, 0, 0))
         os.kill(process.pid, signal.SIGWINCH)
-        # Observe the resize frame before sending a separate keyboard event.
+        # Observe a complete frame painted after the resize before sending a key.
         receive("Wove", after=before_resize)
         # An additional key produces an observable update after the resize.
         os.write(master, b"+" if name == "counter" else b"x" if name == "editor" else b"\x01\x7f")
