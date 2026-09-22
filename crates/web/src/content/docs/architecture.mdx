@@ -100,7 +100,11 @@ and never touches the scrollback.
 
 The optional crossterm backend owns raw mode and reads local input; the modes
 themselves are written through `Options`. `Terminal` draws full-screen or inline,
-and can switch between them while running.
+and can switch between them while running. `Terminal::detach` moves frame writes to a thread
+the session owns. Both renderers sit behind one lock with a queue of frames and
+commits; the writer renders the newest queued frame under the lock and writes
+its bytes with the lock released, so a frame replaced in the queue is never
+rendered, and a commit stays between the frames it separates.
 
 A session probes the terminal once, before the application reads input: the
 kitty keyboard query, the background color, the cursor position, and last a

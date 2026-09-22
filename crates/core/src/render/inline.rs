@@ -76,20 +76,34 @@ impl Inline {
     }
 
     /// Draw a frame as wide as the screen and of any height, as one
-    /// synchronized update. `height` is the screen height in rows. Returns
-    /// whether anything was written; an unchanged frame writes nothing.
+    /// synchronized update in a single write. `height` is the screen height
+    /// in rows. Returns whether anything was written; an unchanged frame
+    /// writes nothing. A failed write invalidates positions.
     pub fn draw(
         &mut self,
         writer: &mut impl Write,
         frame: &Buffer,
         height: u16,
     ) -> io::Result<bool> {
+        let wrote = !self.render(frame, height).is_empty();
+        self.shadow
+            .send(writer)
+            .inspect_err(|_| self.invalidate())?;
+        Ok(wrote)
+    }
+
+    /// The bytes that bring the screen from the last frame to `frame`, as
+    /// one synchronized update; empty when nothing differs. The same contract
+    /// as `Renderer::render`: send them in one write, and call `invalidate`
+    /// if it fails.
+    pub fn render(&mut self, frame: &Buffer, height: u16) -> &[u8] {
+        if self.current(frame, height) {
+            self.shadow.output.clear();
+            return &self.shadow.output;
+        }
         let rows = i64::from(height.max(1));
         let len = i64::from(frame.area().height);
         let screen = Some((frame.area().width, height));
-        if self.shadow.drawn(frame) && !self.redraw && self.screen == screen {
-            return Ok(false);
-        }
         let redraw = self.redraw || self.screen.is_some_and(|old| Some(old) != screen);
         if self.screen.is_none() {
             self.top = self.top.min(rows - 1);
@@ -106,10 +120,8 @@ impl Inline {
         let cursor_changed = self.shadow.cursor_changed(frame, old);
         if first_changed.is_none() && !cursor_changed && !redraw {
             self.shadow.keep(frame, previous);
-            return Ok(false);
+            return &self.shadow.output;
         }
-        // A failed write leaves positions unknown until a draw completes.
-        self.redraw = true;
         let mut pen = self.shadow.begin();
         let output = &mut self.shadow.output;
 
@@ -131,9 +143,9 @@ impl Inline {
             // scroll. A row one past the bottom scrolls in with one newline.
             let position = self.top + first;
             if position >= rows {
-                write!(output, "\r\x1b[{rows};1H\n")?;
+                let _ = write!(output, "\r\x1b[{rows};1H\n");
             } else {
-                write!(output, "\r\x1b[{};1H", position + 1)?;
+                let _ = write!(output, "\r\x1b[{};1H", position + 1);
             }
             for (i, index) in (first..len).enumerate() {
                 if i > 0 {
@@ -144,7 +156,7 @@ impl Inline {
             self.top = top;
         } else {
             if scroll > 0 {
-                write!(output, "\r\x1b[{rows};1H")?;
+                let _ = write!(output, "\r\x1b[{rows};1H");
                 output.extend(std::iter::repeat_n(b'\n', scroll as usize));
             }
             self.top = top;
@@ -158,7 +170,7 @@ impl Inline {
                 if written == Some(screen_row - 1) {
                     output.extend_from_slice(b"\r\n");
                 } else {
-                    write!(output, "\r\x1b[{};1H", screen_row + 1)?;
+                    let _ = write!(output, "\r\x1b[{};1H", screen_row + 1);
                 }
                 let index = index.min(i64::from(u16::MAX)) as u16;
                 pen.row(output, frame, frame.row(index));
@@ -170,9 +182,17 @@ impl Inline {
             let y = self.top + i64::from(y);
             (0..rows).contains(&y).then_some((x, y as u16))
         });
-        self.shadow.finish(writer, pen, frame, previous, cursor)?;
+        self.shadow.finish(pen, frame, previous, cursor);
         self.redraw = false;
-        Ok(true)
+        &self.shadow.output
+    }
+
+    /// Whether `render` would return no bytes without comparing a row:
+    /// `frame` is the one last rendered, on a screen of the same size.
+    pub(crate) fn current(&self, frame: &Buffer, height: u16) -> bool {
+        self.shadow.drawn(frame)
+            && !self.redraw
+            && self.screen == Some((frame.area().width, height))
     }
 
     /// Park the cursor on a fresh line beneath the last frame, where a shell
