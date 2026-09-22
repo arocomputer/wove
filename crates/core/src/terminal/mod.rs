@@ -10,9 +10,12 @@ use std::sync::{Mutex, Once};
 
 mod output;
 mod query;
+mod wake;
 use output::{Output, Screen};
 pub use query::Capabilities;
 use std::sync::Arc;
+use wake::Ready;
+pub use wake::{waker, Waker};
 
 static OWNED: AtomicBool = AtomicBool::new(false);
 /// What to undo if the process ends without dropping the session.
@@ -625,8 +628,13 @@ impl Drop for Terminal {
     }
 }
 
-/// Terminal events are converted here so core elements never depend on crossterm.
+/// Wait for the next event. Terminal events are converted here so core
+/// elements never depend on crossterm. `None` means there is nothing to
+/// dispatch: an event with no portable form, or a `Waker` ended the wait.
 pub fn read() -> io::Result<Option<crate::Event>> {
+    if wake::wait(None, true)? == Ready::Wake {
+        return Ok(None);
+    }
     Ok(convert(event::read()?))
 }
 
@@ -700,15 +708,18 @@ pub fn convert(input: event::Event) -> Option<crate::Event> {
     }
 }
 
-/// Wait without reading. Custom loops can multiplex terminal input and their own work.
+/// Wait up to `timeout` without reading, and report whether `read` has
+/// something: input, or a wake from a `Waker`. Give it the time until the
+/// loop's next deadline, such as a key sequence's timeout.
 pub fn poll(timeout: std::time::Duration) -> io::Result<bool> {
-    event::poll(timeout)
+    Ok(wake::wait(Some(timeout), false)? != Ready::Timeout)
 }
 
 /// Run a tree on the alternate screen, calling `update` after each dispatched
 /// event. The loop ends when `update` returns false; which keys quit is the
 /// application's decision, so handle one or the terminal stays captured.
 /// Input received during the startup probe is dispatched before new input.
+/// A `Waker` makes it draw again without an event.
 pub fn run(
     tree: &mut crate::Tree,
     mut update: impl FnMut(&mut crate::Tree, &crate::Event, &crate::Dispatch) -> bool,

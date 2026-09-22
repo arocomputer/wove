@@ -1,4 +1,4 @@
-use crate::runtime::{run, Inbox};
+use crate::runtime::{run, Inbox, Waker};
 use crate::{Error, PrivateKey, PublicKey};
 use russh::{
     server::{self, Auth, Msg, Session},
@@ -17,6 +17,8 @@ use wove::{Buffer, Event, Key, Modifiers, Tree};
 /// A remote application owns its state on one worker thread. It need not be Send.
 pub trait App {
     /// Render the current application into a frame of the requested dimensions.
+    /// It is also called after `Peer::waker` wakes the session, so take
+    /// work that arrived from other threads here.
     fn frame(&mut self, width: u16, height: u16) -> Result<&Buffer, Error>;
     /// Handle one event, including Ctrl-C, which the transport does not reserve.
     /// Return false to finish the SSH session after this event.
@@ -40,7 +42,8 @@ impl App for Tree {
     }
 }
 
-/// Identity and PTY metadata verified before constructing the application.
+/// Identity and PTY metadata verified before constructing the application,
+/// and the waker for the application's thread.
 #[derive(Clone, Debug)]
 pub struct Peer {
     pub user: String,
@@ -49,6 +52,9 @@ pub struct Peer {
     pub term: String,
     pub width: u16,
     pub height: u16,
+    /// Hand this to background work that should reach the peer while the
+    /// application is idle.
+    pub waker: Waker,
 }
 
 type Authorize = Arc<dyn Fn(&str, &PublicKey) -> bool + Send + Sync>;
@@ -265,6 +271,7 @@ impl server::Handler for Client {
         }
         let (user, key) = self.identity.clone().unwrap();
         let (term, width, height) = self.pty.clone().unwrap();
+        let input = Arc::new(Inbox::default());
         let peer = Peer {
             user,
             key,
@@ -272,8 +279,8 @@ impl server::Handler for Client {
             term,
             width,
             height,
+            waker: Waker::new(&input),
         };
-        let input = Arc::new(Inbox::default());
         self.input = Some(input.clone());
         let output = self.output.take().unwrap();
         let factory = self.factory.clone();

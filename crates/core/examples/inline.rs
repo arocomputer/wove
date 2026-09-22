@@ -1,5 +1,7 @@
 //! An inline session. Finished lines join the terminal's own scrollback while
-//! a one-row input stays live beneath them. Enter commits a line; Esc quits.
+//! a one-row input stays live beneath them. Enter commits a line, which a
+//! worker thread answers the way a chat or an agent would; Esc quits.
+use std::{sync::mpsc, thread, time::Duration};
 use wove::{
     elements::{Input, Text},
     terminal::{self, Terminal},
@@ -50,9 +52,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     terminal.detach()?;
     let header = "Wove inline · Enter commits a line · Esc quits";
     commit(&mut terminal, &mut tree, input, header)?;
+    // The worker wakes the loop, so its answer is drawn without a key press.
+    let waker = terminal::waker()?;
+    let (ask, questions) = mpsc::channel::<String>();
+    let (answer, answers) = mpsc::channel();
+    thread::spawn(move || {
+        for line in questions {
+            thread::sleep(Duration::from_millis(50));
+            if answer.send(format!("echo: {line}")).is_err() {
+                break;
+            }
+            waker.wake();
+        }
+    });
     // Keys typed while the session was starting come first.
     let mut typed = terminal.typed_ahead().into_iter();
     loop {
+        for line in answers.try_iter() {
+            commit(&mut terminal, &mut tree, input, &line)?;
+        }
         draw(&mut terminal, &mut tree)?;
         let event = match typed.next() {
             Some(event) => Some(event),
@@ -67,6 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let line = tree.get::<Input>(input)?.editor.text().to_owned();
                 tree.update::<Input>(input, |input| input.editor.set(""))?;
                 commit(&mut terminal, &mut tree, input, &line)?;
+                ask.send(line)?;
             }
             event => {
                 tree.dispatch(event)?;

@@ -52,8 +52,9 @@ inside a paste does not become a command.
 Frames update after input or resize. At most one frame is in flight, and it is
 sent only as fast as the peer's SSH window allows. While the peer is slow, events
 keep reaching the app and only its latest state is drawn when the previous frame
-has been sent. This initial transport does not yet provide
-an asynchronous application wakeup mechanism for background tasks or animation.
+has been sent. `Peer::waker` asks for a new frame from any thread, for work
+that finishes while the app is idle, such as a background task or a timer; the
+app takes that work in `App::frame`.
 Colors are mapped to what the peer's terminal type suggests it can show. The
 session does not ask for kitty key reports.
 

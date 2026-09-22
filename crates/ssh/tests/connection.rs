@@ -16,7 +16,10 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::timeout,
 };
-use wove::{elements::Input, Buffer, Event, Tree};
+use wove::{
+    elements::{Input, Text},
+    Buffer, Event, Tree,
+};
 use wove_ssh::{App, Error, PrivateKey, PublicKey, Server};
 
 struct Client(PublicKey);
@@ -416,6 +419,79 @@ async fn a_busy_app_receives_an_input_burst_and_ctrl_c_without_disconnecting() {
         assert!(received.contains(&Event::Resize(50, 10)));
         channel.data(&b"q"[..]).await.unwrap();
         output(&mut channel, b"\x1b[?1049l").await;
+        running.abort();
+    })
+    .await
+    .unwrap();
+}
+
+/// Shows the latest number another thread sent, taking it when asked for a frame.
+struct Ticker {
+    tree: Tree,
+    text: wove::Id,
+    ticks: std::sync::mpsc::Receiver<u32>,
+}
+impl App for Ticker {
+    fn frame(&mut self, width: u16, height: u16) -> Result<&Buffer, Error> {
+        for tick in self.ticks.try_iter() {
+            self.tree
+                .update::<Text>(self.text, |text| text.content = format!("tick {tick}"))?;
+        }
+        Ok(self.tree.frame(width, height)?)
+    }
+    fn event(&mut self, _: Event) -> Result<bool, Error> {
+        Ok(true)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_waker_draws_background_work_without_waiting_for_input() {
+    timeout(Duration::from_secs(20), async {
+        let host = key();
+        let host_public = host.public_key().clone();
+        let allowed = Arc::new(key());
+        let public = allowed.public_key().clone();
+        let server = Server::new(
+            host,
+            move |_, key| key == &public,
+            |peer| {
+                let mut tree = Tree::new();
+                let text = tree.add(tree.root(), Text::new("waiting"))?;
+                let (send, ticks) = std::sync::mpsc::channel();
+                let waker = peer.waker.clone();
+                std::thread::spawn(move || {
+                    // Arrive after the first frame, while the app is idle.
+                    std::thread::sleep(Duration::from_millis(100));
+                    send.send(7).unwrap();
+                    waker.wake();
+                });
+                Ok(Ticker { tree, text, ticks })
+            },
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let running = tokio::spawn(server.serve(listener, std::future::pending()));
+        let mut client = client::connect(
+            Arc::new(client::Config::default()),
+            address,
+            Client(host_public),
+        )
+        .await
+        .unwrap();
+        assert!(client
+            .authenticate_publickey("guest", PrivateKeyWithHashAlg::new(allowed, None))
+            .await
+            .unwrap()
+            .success());
+        let mut channel = client.channel_open_session().await.unwrap();
+        channel
+            .request_pty(true, "xterm", 40, 8, 0, 0, &[])
+            .await
+            .unwrap();
+        assert!(matches!(message(&mut channel).await, ChannelMsg::Success));
+        channel.request_shell(true).await.unwrap();
+        output(&mut channel, b"waiting").await;
+        output(&mut channel, b"tick 7").await;
         running.abort();
     })
     .await

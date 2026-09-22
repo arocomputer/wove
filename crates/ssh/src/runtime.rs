@@ -4,7 +4,7 @@ use russh::{server::Msg, ChannelWriteHalf};
 use std::{
     mem,
     panic::{catch_unwind, AssertUnwindSafe},
-    sync::{Arc, Mutex, PoisonError},
+    sync::{Arc, Mutex, PoisonError, Weak},
     time::Duration,
 };
 use tokio::{sync::Notify, task::JoinHandle};
@@ -30,6 +30,8 @@ pub(crate) struct Inbox {
 struct Pending {
     data: Vec<u8>,
     resize: Option<(u16, u16)>,
+    /// A `Waker` asked for a new frame.
+    woken: bool,
     closed: bool,
 }
 
@@ -50,6 +52,11 @@ impl Inbox {
         self.lock().resize = Some((width, height));
         self.ready.notify_one();
     }
+    /// Ask the application thread for a new frame.
+    fn wake(&self) {
+        self.lock().woken = true;
+        self.ready.notify_one();
+    }
     /// End the application after it reads the remaining input.
     pub(crate) fn close(&self) {
         self.lock().closed = true;
@@ -65,6 +72,33 @@ impl Inbox {
     }
     fn lock(&self) -> std::sync::MutexGuard<'_, Pending> {
         self.pending.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Asks a remote application for a new frame from any thread, so work that
+/// finishes while the application is idle, such as a background task or a
+/// timer, reaches the peer without waiting for input. The application thread
+/// calls `App::frame`, where the application takes that work; wakes that
+/// arrive before it does are merged into one. Waking a session that has ended
+/// does nothing.
+#[derive(Clone)]
+pub struct Waker(Weak<Inbox>);
+
+impl Waker {
+    pub(crate) fn new(inbox: &Arc<Inbox>) -> Self {
+        Self(Arc::downgrade(inbox))
+    }
+
+    pub fn wake(&self) {
+        if let Some(inbox) = self.0.upgrade() {
+            inbox.wake();
+        }
+    }
+}
+
+impl std::fmt::Debug for Waker {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("Waker").finish_non_exhaustive()
     }
 }
 
@@ -167,6 +201,7 @@ pub(crate) fn run(factory: Factory, peer: Peer, input: Arc<Inbox>, output: Chann
                         events.push(Event::Resize(w, h));
                     }
                     events.extend(decoder.push(&pending.data));
+                    dirty |= pending.woken;
                     closed = pending.closed;
                 }
             }
