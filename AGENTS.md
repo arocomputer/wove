@@ -58,7 +58,9 @@ adding dependencies, packages, or shared build inputs.
 
 Run `./x check` before submitting changes. Rendering, input, or terminal changes
 also need `./x ui`; documentation or website changes need `./x web`. The PTY suite
-runs on Unix and retains frames and terminal bytes in `artifacts/ui/`.
+runs on Unix and retains frames and terminal bytes in `artifacts/ui/`. Each frame
+must match its golden in `scripts/ui/frames/`, written in the `testing::snapshot`
+format; after reviewing an intended change, copy the artifact over the golden.
 Do not relax an assertion to hide a rendering regression. Review the actual frame.
 
 The optional `cargo run -p wove --release --example timing` command prints local

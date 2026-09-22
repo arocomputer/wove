@@ -1,0 +1,6 @@
+Wove inline · Enter commits a line · Esc quits
+one
+echo: one
+two
+echo: two
+@cursor 0,5
