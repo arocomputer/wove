@@ -73,11 +73,46 @@ input with a timeout. `convert` turns a backend event into a portable one for an
 application that already owns its input source. `Terminal::draw` takes the frame
 and `Terminal::size` reports the current dimensions after a resize.
 
-The library provides no wakeup channel: `poll` waits for terminal input, so a
-loop that also runs timers or awaits background work gives `poll` a timeout and
-checks its own schedule, or receives work on a channel and draws when it arrives.
+Work that arrives from another thread, a background task or a network reply,
+ends the wait through a `Waker`. `terminal::waker` returns one; it is `Send` and
+`Copy`, so hand it to every producer. Waking makes `poll` return true and `read`
+return `Ok(None)`, the same answer as an event with nothing to dispatch, so the
+loop takes the work it was sent and draws. Wakes that arrive before the loop
+waits again are merged, and the library runs no executor or timer of its own.
+A deadline of the loop's own, such as a key sequence's timeout from
+`wove_keymap::Keymap::deadline`, becomes the timeout it gives `poll`.
+
+```rust
+let waker = terminal::waker()?;
+let (send, work) = std::sync::mpsc::channel();
+std::thread::spawn(move || {
+    for line in fetch_lines() {
+        let _ = send.send(line);
+        waker.wake();
+    }
+});
+loop {
+    for line in work.try_iter() {
+        log.push(line);
+    }
+    terminal.draw(tree.frame(width, height)?)?;
+    let timeout = keymap.deadline().map_or(Duration::MAX, |at| at.saturating_sub(now()));
+    if terminal::poll(timeout)? {
+        if let Some(event) = terminal::read()? {
+            tree.dispatch(event)?;
+        }
+    } else {
+        run_commands(keymap.expire(now()));
+    }
+}
+```
+
 Drawing more often than the content changes costs nothing, because an unchanged
-frame is skipped before any cell is compared.
+frame is skipped before any cell is compared. On Unix the wait sleeps until
+input, a resize, or a wake. Windows offers no way to add a wake to the console
+wait, so there a loop that has made a waker checks for wakes every 20
+milliseconds while it waits. `terminal::run` draws again on a wake; the Dioxus
+runner already waits for component work alongside input.
 
 Dispatch every event through `Terminal::to_frame` first when the session is
 inline, and handle the events from `Terminal::typed_ahead` before reading more

@@ -189,7 +189,8 @@ scenarios = {
     "counter": [(b"++", "Count: 2")],
     "gallery": [(b"\x1b[200~scroll\x1b[201~", "A clipped viewport.")],
     "editor": [(b"\x1b[200~\nNew line\x1b[201~", "New line")],
-    "inline": [(b"one\r", "one"), (b"two\r", "two")],
+    # The answers come from a worker thread and are drawn only if it wakes the loop.
+    "inline": [(b"one\r", "echo: one"), (b"two\r", "echo: two")],
 }
 # Package CI selects its own examples; a local invocation without names runs all.
 selected = sys.argv[1:] or list(scenarios)
