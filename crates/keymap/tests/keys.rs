@@ -34,8 +34,8 @@ fn ambiguous_sequences_wait_for_timeout_and_focus_changes_clear_pending() {
         keys.feed(Key::Char('g').into(), &[], Duration::ZERO),
         Match::Pending
     );
-    assert_eq!(keys.expire(Duration::from_millis(299)), None);
-    assert_eq!(keys.expire(Duration::from_millis(300)), Some("single"));
+    assert!(keys.expire(Duration::from_millis(299)).is_empty());
+    assert_eq!(keys.expire(Duration::from_millis(300)), ["single"]);
     keys.feed(Key::Char('g').into(), &[], Duration::ZERO);
     assert_eq!(
         keys.feed(Key::Char('g').into(), &[id], Duration::ZERO),
@@ -45,4 +45,65 @@ fn ambiguous_sequences_wait_for_timeout_and_focus_changes_clear_pending() {
         keys.feed(Key::Char('g').into(), &[id], Duration::ZERO),
         Match::Command("double")
     );
+}
+#[test]
+fn unmatched_continuation_flushes_the_deferred_command_before_the_retry() {
+    let mut keys = Keymap::new(Duration::from_millis(300));
+    keys.bind(None, [Key::Char('g').into()], "single");
+    keys.bind(
+        None,
+        [Key::Char('g').into(), Key::Char('g').into()],
+        "double",
+    );
+    keys.bind(None, [Key::Char('x').into()], "x");
+    keys.feed(Key::Char('g').into(), &[], Duration::ZERO);
+    assert_eq!(
+        keys.feed(Key::Char('x').into(), &[], Duration::ZERO),
+        Match::Flushed(vec!["single"], Box::new(Match::Command("x")))
+    );
+    keys.feed(Key::Char('g').into(), &[], Duration::ZERO);
+    assert_eq!(
+        keys.feed(Key::Char('y').into(), &[], Duration::ZERO),
+        Match::Flushed(vec!["single"], Box::new(Match::Unbound))
+    );
+}
+#[test]
+fn feed_resolves_an_expired_sequence_before_the_new_stroke() {
+    let mut keys = Keymap::new(Duration::from_millis(300));
+    keys.bind(None, [Key::Char('g').into()], "single");
+    keys.bind(
+        None,
+        [Key::Char('g').into(), Key::Char('g').into()],
+        "double",
+    );
+    keys.feed(Key::Char('g').into(), &[], Duration::ZERO);
+    assert_eq!(
+        keys.feed(Key::Char('g').into(), &[], Duration::from_millis(300)),
+        Match::Flushed(vec!["single"], Box::new(Match::Pending))
+    );
+}
+#[test]
+fn a_dead_end_delivers_the_longest_exact_prefix_and_replays_the_rest() {
+    let mut keys = Keymap::new(Duration::from_millis(300));
+    keys.bind(None, [Key::Char('g').into()], "g");
+    keys.bind(None, [Key::Char('g').into(); 3], "ggg");
+    keys.bind(None, [Key::Char('x').into()], "x");
+    keys.feed(Key::Char('g').into(), &[], Duration::ZERO);
+    keys.feed(Key::Char('g').into(), &[], Duration::ZERO);
+    assert_eq!(
+        keys.feed(Key::Char('x').into(), &[], Duration::ZERO),
+        Match::Flushed(vec!["g", "g"], Box::new(Match::Command("x")))
+    );
+}
+#[test]
+fn expiry_delivers_the_longest_exact_prefix_and_replays_the_rest() {
+    let mut keys = Keymap::new(Duration::from_millis(300));
+    keys.bind(None, [Key::Char('g').into()], "g");
+    keys.bind(None, [Key::Char('g').into(); 3], "ggg");
+    keys.feed(Key::Char('g').into(), &[], Duration::ZERO);
+    keys.feed(Key::Char('g').into(), &[], Duration::ZERO);
+    let late = Duration::from_millis(300);
+    assert_eq!(keys.expire(late), ["g"]);
+    assert_eq!(keys.deadline(), Some(late + Duration::from_millis(300)));
+    assert_eq!(keys.expire(late + Duration::from_millis(300)), ["g"]);
 }

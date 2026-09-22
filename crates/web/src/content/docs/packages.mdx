@@ -41,7 +41,12 @@ Bindings can be global or scoped to an element ID. Pass focus ancestry in order
 from the focused element to the root. The nearest scope wins; newer bindings win
 within a scope.
 
-Call `expire` with the current monotonic time before feeding a stroke and when
-the pending deadline arrives. It returns an exact command that was waiting for
-a longer sequence. Applications own execution and scheduling. Clear pending
-sequences when focus changes, and remove a scope when its element is destroyed.
+An exact binding that also begins a longer sequence waits for the timeout. Pass
+the current monotonic time to `feed` with each stroke, and call `expire` when the
+pending deadline arrives without one. When the deadline passes or a stroke does
+not continue the sequence, the longest exact binding typed so far runs and the
+strokes after it are replayed. `expire` returns the commands that became final.
+`feed` returns them in `Match::Flushed` with the stroke's own result; execute the
+commands in order, then handle the result. Applications own execution and scheduling.
+Clear pending sequences when focus changes, and remove a scope when its element
+is destroyed.
