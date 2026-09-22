@@ -1,5 +1,8 @@
 //! Retained element ownership, layout, focus, and bubbling input.
-use crate::{elements::Container, Buffer, Element, Event, Key, Layout, MouseKind, Rect, Response};
+use crate::{
+    elements::{Container, Lazy},
+    Buffer, Element, Event, Key, Layout, MouseKind, Rect, Response,
+};
 mod paint;
 use std::any::Any;
 use std::{
@@ -169,6 +172,9 @@ pub struct Tree {
     selection: Option<((u16, u16), (u16, u16))>,
     /// The focus moved and the next frame should scroll it into view.
     reveal_focus: bool,
+    /// A column that lays out one child of a `Lazy` at a time, apart from
+    /// the rest of the layout, which never includes those children.
+    lane: taffy::NodeId,
     frame: Buffer,
 }
 
@@ -185,11 +191,12 @@ impl Tree {
             flex_direction: taffy::FlexDirection::Column,
             ..Layout::default()
         };
-        let lid = layout.new_leaf(style).expect("new root layout");
+        let lid = layout.new_leaf(style.clone()).expect("new root layout");
         let root = nodes.insert(Node::new(Box::new(Container), lid));
         layout
             .set_node_context(lid, Some(root))
             .expect("root exists");
+        let lane = layout.new_leaf(style).expect("new lane layout");
         Self {
             nodes,
             layout,
@@ -204,6 +211,7 @@ impl Tree {
             anchor: None,
             selection: None,
             reveal_focus: false,
+            lane,
             frame: Buffer::new(0, 0),
         }
     }
@@ -335,19 +343,21 @@ impl Tree {
         if let Some(old) = self.nodes[child].parent {
             self.nodes[old].children.retain(|id| *id != child);
             self.restack(old, child);
-            self.layout
-                .remove_child(self.nodes[old].layout, self.nodes[child].layout)?;
+        }
+        // A child of a `Lazy` has no parent in the layout, or the lane.
+        let node = self.nodes[child].layout;
+        if let Some(old) = self.layout.parent(node) {
+            self.layout.remove_child(old, node)?;
         }
         let index = index.min(self.nodes[parent].children.len());
         self.nodes[parent].children.insert(index, child);
         self.nodes[child].parent = Some(parent);
         self.restack(parent, child);
         self.hide(child);
-        self.layout.insert_child_at_index(
-            self.nodes[parent].layout,
-            index,
-            self.nodes[child].layout,
-        )?;
+        if !self.lazy(parent) {
+            self.layout
+                .insert_child_at_index(self.nodes[parent].layout, index, node)?;
+        }
         self.touch();
         Ok(())
     }
@@ -411,7 +421,7 @@ impl Tree {
         Ok(())
     }
     /// Focus a displayed, focusable node, or clear the focus. The next frame
-    /// scrolls the nearest scrolling ancestor to show the node.
+    /// scrolls the nearest scrolling ancestor or `Lazy` to show the node.
     pub fn focus(&mut self, id: Option<Id>) -> Result<(), Error> {
         if let Some(id) = id {
             self.node(id)?;
@@ -434,9 +444,29 @@ impl Tree {
         self.reveal_focus = id.is_some();
         Ok(())
     }
-    /// Ask the nearest ancestor whose layout scrolls to show a node, with the
-    /// node's place in that ancestor's content. Needs a current layout.
+    /// Ask the nearest ancestor whose layout scrolls, or the nearest `Lazy`,
+    /// to show a node, with the node's place in that ancestor's content.
+    /// Needs a current layout.
     fn reveal(&mut self, id: Id) -> Result<(), Error> {
+        // The ancestor, and its child that holds the node.
+        let mut child = id;
+        let ancestor = loop {
+            let Some(parent) = self.nodes[child].parent else {
+                return Ok(());
+            };
+            let overflow = self.layout.style(self.nodes[parent].layout)?.overflow;
+            if self.lazy(parent) || overflow.x == Overflow::Scroll || overflow.y == Overflow::Scroll
+            {
+                break parent;
+            }
+            child = parent;
+        };
+        let lazy = self.lazy(ancestor);
+        if lazy {
+            // The child may never have been laid out at the column's width.
+            let layout = *self.layout.layout(self.nodes[ancestor].layout)?;
+            self.lay(child, paint::content(&layout, (0, 0)).2)?;
+        }
         let layout = self.layout.layout(self.nodes[id].layout)?;
         let size = (
             layout.size.width.clamp(0.0, f32::from(u16::MAX)) as u16,
@@ -444,19 +474,33 @@ impl Tree {
         );
         let (mut x, mut y) = (0.0, 0.0);
         let mut node = id;
-        while let Some(parent) = self.nodes[node].parent {
+        loop {
             let location = self.layout.layout(self.nodes[node].layout)?.location;
             x += location.x;
             y += location.y;
-            let overflow = self.layout.style(self.nodes[parent].layout)?.overflow;
-            if overflow.x == Overflow::Scroll || overflow.y == Overflow::Scroll {
-                let at = (x.max(0.0) as u32, y.max(0.0) as u32);
-                self.nodes[parent].element.reveal(at, size);
-                break;
+            match self.nodes[node].parent {
+                Some(parent) if node != child => node = parent,
+                _ => break,
             }
-            node = parent;
+        }
+        let at = (x.max(0.0) as u32, y.max(0.0) as u32);
+        let ancestor = &mut self.nodes[ancestor];
+        if lazy {
+            let index = ancestor.children.iter().position(|c| *c == child);
+            if let (Some(index), Some(lazy)) = (
+                index,
+                (ancestor.element.as_mut() as &mut dyn Any).downcast_mut::<Lazy>(),
+            ) {
+                lazy.show(index, at.1 as usize, usize::from(size.1));
+            }
+        } else {
+            ancestor.element.reveal(at, size);
         }
         Ok(())
+    }
+    /// Whether a node is a `Lazy`, whose children are laid out only in view.
+    fn lazy(&self, id: Id) -> bool {
+        (self.nodes[id].element.as_ref() as &dyn Any).is::<Lazy>()
     }
     /// Forget where a subtree was painted, so hit testing cannot reach it. An
     /// empty clip implies empty clips below it, which lets this stop early.
