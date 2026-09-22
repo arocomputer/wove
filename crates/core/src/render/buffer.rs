@@ -341,6 +341,31 @@ impl Buffer {
         self.version = 0;
     }
 
+    /// Move the first `rows` rows out into a buffer of their own, which
+    /// shares this one's tables of long graphemes and links.
+    pub(crate) fn split_rows(&mut self, rows: u16) -> Buffer {
+        let rows = rows.min(self.height);
+        let head = Buffer {
+            width: self.width,
+            height: rows,
+            cells: self
+                .cells
+                .drain(..usize::from(rows) * usize::from(self.width))
+                .collect(),
+            long: self.long.clone(),
+            links: self.links.clone(),
+            cursor: None,
+            shape: self.shape,
+            version: 0,
+        };
+        self.height -= rows;
+        self.cursor = self
+            .cursor
+            .and_then(|(x, y)| Some((x, y.checked_sub(rows)?)));
+        self.version = 0;
+        head
+    }
+
     /// Erase the complete grapheme covering an index, including its trailing
     /// cells. Erased cells keep their background, as the fill beneath them would.
     fn erase(&mut self, index: usize) {

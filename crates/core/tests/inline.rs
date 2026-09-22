@@ -34,6 +34,14 @@ impl Vt {
         }
         all
     }
+    /// Change the width as a terminal that does not reflow would: rows are
+    /// cut or padded where they stand.
+    fn set_width(&mut self, width: usize) {
+        self.width = width;
+        for row in &mut self.rows {
+            row.resize(width, ' ');
+        }
+    }
     fn feed(&mut self, bytes: &[u8]) {
         self.bytes.extend_from_slice(bytes);
         let text = String::from_utf8(bytes.to_vec()).unwrap();
@@ -85,20 +93,21 @@ impl Vt {
     }
 }
 
-fn frame(rows: &[&str]) -> Buffer {
-    let mut buffer = Buffer::new(8, rows.len() as u16);
+fn frame(width: usize, rows: &[&str]) -> Buffer {
+    let mut buffer = Buffer::new(width as u16, rows.len() as u16);
     for (y, row) in rows.iter().enumerate() {
-        let area = wove::Rect::new(0, y as u16, 8, 1);
+        let area = wove::Rect::new(0, y as u16, width as u16, 1);
         buffer.write(area, row, Style::default());
     }
     buffer
 }
 
-/// Draw and feed the output to `vt`, returning whether anything was written.
+/// Draw a frame as wide as `vt` and feed the output to it, returning whether
+/// anything was written.
 fn draw(inline: &mut Inline, vt: &mut Vt, rows: &[&str]) -> bool {
     let mut bytes = Vec::new();
     let wrote = inline
-        .draw(&mut bytes, &frame(rows), vt.rows.len() as u16)
+        .draw(&mut bytes, &frame(vt.width, rows), vt.rows.len() as u16)
         .unwrap();
     assert_eq!(wrote, !bytes.is_empty());
     vt.feed(&bytes);
@@ -179,6 +188,46 @@ fn a_resize_repaints_the_visible_tail_without_touching_scrollback() {
     vt.rows.pop();
     draw(&mut inline, &mut vt, &["a", "b"]);
     assert_eq!(vt.screen(), ["a", "b", ""]);
+}
+
+#[test]
+fn committed_rows_still_on_screen_are_repainted_after_a_resize() {
+    let mut vt = Vt::new(8, 6);
+    let mut inline = Inline::new(0, Depth::Rgb);
+    draw(&mut inline, &mut vt, &["a", "b", "c"]);
+    inline.commit(2);
+    draw(&mut inline, &mut vt, &["c", "d"]);
+    assert_eq!(vt.screen(), ["a", "b", "c", "d", "", ""]);
+    vt.rows.pop();
+    draw(&mut inline, &mut vt, &["c", "d", "e"]);
+    assert_eq!(vt.screen(), ["a", "b", "c", "d", "e"]);
+    assert!(vt.scrollback.is_empty());
+}
+
+#[test]
+fn committed_rows_that_scrolled_away_are_left_to_the_scrollback() {
+    let mut vt = Vt::new(8, 4);
+    let mut inline = Inline::new(0, Depth::Rgb);
+    draw(&mut inline, &mut vt, &["a", "b"]);
+    inline.commit(2);
+    draw(&mut inline, &mut vt, &["c", "d", "e"]);
+    assert_eq!(vt.history(), ["a", "b", "c", "d", "e"]);
+    draw(&mut inline, &mut vt, &["c"]);
+    vt.rows.pop();
+    draw(&mut inline, &mut vt, &["c"]);
+    assert_eq!(vt.screen(), ["b", "c", ""]);
+    assert_eq!(vt.scrollback, ["a"]);
+}
+
+#[test]
+fn committed_rows_are_cropped_to_a_narrower_screen() {
+    let mut vt = Vt::new(8, 3);
+    let mut inline = Inline::new(0, Depth::Rgb);
+    draw(&mut inline, &mut vt, &["abcdefgh", "x"]);
+    inline.commit(1);
+    vt.set_width(4);
+    draw(&mut inline, &mut vt, &["x"]);
+    assert_eq!(vt.screen(), ["abcd", "x", ""]);
 }
 
 #[test]

@@ -12,11 +12,15 @@
 //!
 //! `commit` releases finished rows: they stay where they are and later frames
 //! start beneath them, which keeps frames small however long the session runs.
+//! The released rows still on screen are kept until they scroll past the top,
+//! so a repaint after a resize puts them back above the frame.
 //!
 //! Absolute positioning starts with a carriage return, so it never depends on
 //! the terminal's pending-wrap state.
+use super::buffer::Slot;
 use super::pen::{Depth, Shadow};
 use crate::Buffer;
+use std::collections::VecDeque;
 use std::io::{self, Write};
 
 /// Writes inline frames to any byte sink. Does not acquire terminal modes.
@@ -27,6 +31,9 @@ pub struct Inline {
     screen: Option<(u16, u16)>,
     /// Positions are unknown; the next draw repaints every visible row.
     redraw: bool,
+    /// Committed rows still on screen, oldest first, directly above the
+    /// frame: they occupy the screen rows just above `top`.
+    kept: VecDeque<Buffer>,
     /// The last frame drawn, minus any committed rows, and the cursor the
     /// terminal was last told to show.
     shadow: Shadow,
@@ -39,17 +46,17 @@ impl Inline {
             top: i64::from(anchor),
             screen: None,
             redraw: false,
+            kept: VecDeque::new(),
             shadow: Shadow::new(depth),
         }
     }
 
     /// Forget physical positions after a resize, a failed write, or another
-    /// writer. The next draw repaints the frame's tail from the top of the
-    /// screen and erases every visible row beneath it, never the scrollback.
-    /// Committed rows that were still visible are gone; an application that
-    /// wants them back draws them again and commits them again. Until then,
-    /// `commit`, `park`, and `frame_row` answer from where the last frame was
-    /// drawn.
+    /// writer. The next draw repaints from the top of the screen: the
+    /// committed rows that were still on screen, as many as fit above the
+    /// frame, then the frame's tail, and erases every visible row beneath it.
+    /// It never writes to the scrollback. Until then, `commit`, `park`, and
+    /// `frame_row` answer from where the last frame was drawn.
     pub fn invalidate(&mut self) {
         self.redraw = true;
         self.shadow.forget_cursor();
@@ -63,16 +70,37 @@ impl Inline {
         self.shadow.forget_cursor();
     }
 
-    /// Release the first `rows` rows of the last frame. They are never drawn
-    /// again, and the next frame's first row sits directly beneath them.
+    /// Release the first `rows` rows of the last frame. They stay where they
+    /// are, and the next frame's first row sits directly beneath them. They
+    /// are drawn again only by a repaint, while they are still on screen.
     pub fn commit(&mut self, rows: u16) {
         let Some(previous) = &mut self.shadow.previous else {
             return;
         };
         let rows = rows.min(previous.area().height);
-        previous.drop_rows(rows);
+        if rows > 0 {
+            self.kept.push_back(previous.split_rows(rows));
+        }
         self.shadow.seen = 0;
         self.top += i64::from(rows);
+    }
+
+    /// Forget kept rows that have scrolled past the top of the screen: they
+    /// belong to the scrollback now.
+    fn trim(&mut self) {
+        let mut excess = kept_len(&self.kept) - self.top.max(0);
+        while excess > 0 {
+            let Some(oldest) = self.kept.front_mut() else {
+                break;
+            };
+            let height = i64::from(oldest.area().height);
+            if height <= excess {
+                self.kept.pop_front();
+            } else {
+                oldest.drop_rows(excess as u16);
+            }
+            excess -= height;
+        }
     }
 
     /// Draw a frame as wide as the screen and of any height, as one
@@ -130,9 +158,26 @@ impl Inline {
         if redraw || len < old_len && (self.top + len <= 0 || len >= rows) {
             // Positions are unknown, or a shrinking frame that fills the screen
             // keeps its last row at the bottom so every visible row moves.
-            // Either way the tail is placed at the top of the screen, or ending
-            // at its bottom, and every visible row is rewritten.
-            self.top = (rows - len).min(0);
+            // Either way the tail is placed at the top of the screen beneath
+            // the committed rows that fit, or ending at its bottom, and every
+            // visible row is rewritten.
+            self.top = (rows - len).min(kept_len(&self.kept));
+            let width = usize::from(frame.area().width);
+            let skip = kept_len(&self.kept) - self.top.max(0);
+            let visible = self
+                .kept
+                .iter()
+                .flat_map(|kept| (0..kept.area().height).map(move |y| (kept, kept.row(y))));
+            for (screen_row, (kept, row)) in visible.skip(skip as usize).enumerate() {
+                let _ = write!(output, "\r\x1b[{};1H", screen_row + 1);
+                // The terminal has reflowed rows kept from another width, if
+                // it reflows at all; they are cropped or padded, not rewrapped.
+                let row = crop(row, width);
+                pen.row(output, kept, row);
+                if row.len() < width {
+                    output.extend_from_slice(b"\x1b[K");
+                }
+            }
             old = None;
             stale = rows;
         }
@@ -184,6 +229,7 @@ impl Inline {
         });
         self.shadow.finish(pen, frame, previous, cursor);
         self.redraw = false;
+        self.trim();
         &self.shadow.output
     }
 
@@ -246,6 +292,25 @@ impl Inline {
     }
 }
 
+/// How many committed rows are kept.
+fn kept_len(kept: &VecDeque<Buffer>) -> i64 {
+    kept.iter().map(|rows| i64::from(rows.area().height)).sum()
+}
+
+/// A row cut to `width` cells without splitting a wide grapheme.
+fn crop(row: &[Slot], width: usize) -> &[Slot] {
+    if row.len() <= width {
+        return row;
+    }
+    let mut end = width;
+    // A continuation at the edge means the grapheme it continues is cut.
+    while end > 0 && row[end].width == 0 {
+        end -= 1;
+    }
+    let cut = row[width].width == 0;
+    &row[..if cut { end } else { width }]
+}
+
 /// Where to leave the cursor when a session ends: on a one-based screen row,
 /// then on a fresh line beneath it. The default moves nothing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -271,6 +336,15 @@ impl Park {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cropping_never_splits_a_wide_grapheme() {
+        let mut row = Buffer::new(6, 1);
+        row.write(row.area(), "abc漢d", crate::Style::default());
+        assert_eq!(crop(row.row(0), 4).len(), 3);
+        assert_eq!(crop(row.row(0), 5).len(), 5);
+        assert_eq!(crop(row.row(0), 8).len(), 6);
+    }
 
     #[test]
     fn a_forgotten_cursor_is_shown_again_on_an_unchanged_frame() {

@@ -21,8 +21,8 @@ OUT.mkdir(parents=True, exist_ok=True)
 def scenario(name, steps, fullscreen=True):
     """Run an example on a PTY and retain visible frames and terminal bytes.
 
-    An inline example stays on the main screen; its rows must stay in order and
-    it is not resized, because a resize clears the rows it has released.
+    An inline example stays on the main screen; its rows must stay in order,
+    and still be in order after a resize repaints the rows it has released.
     """
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
@@ -114,9 +114,22 @@ def scenario(name, steps, fullscreen=True):
             check_border()
             (OUT / f"{name}-{index}.txt").write_text("\n".join(screen.display) + "\n")
         if not fullscreen:
-            rows = [row.strip() for row in screen.display]
             expected = [step[1] for step in steps]
-            assert [row for row in rows if row in expected] == expected, rows
+
+            def in_order():
+                rows = [row.strip() for row in screen.display]
+                assert [row for row in rows if row in expected] == expected, rows
+
+            in_order()
+            # Keep the width, which pyte does not reflow, and lose the rows:
+            # only the session's repaint can bring them back.
+            before_resize = len(raw)
+            screen.resize(lines=12, columns=80)
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 80, 0, 0))
+            os.kill(process.pid, signal.SIGWINCH)
+            receive(expected[-1], after=before_resize)
+            in_order()
+            (OUT / f"{name}-resized.txt").write_text("\n".join(screen.display) + "\n")
             return finish(fullscreen)
         before_resize = len(raw)
         screen.resize(lines=12, columns=40)

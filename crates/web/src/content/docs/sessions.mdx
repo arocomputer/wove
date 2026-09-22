@@ -160,10 +160,13 @@ elements from the tree. This keeps frames small however long a session runs.
 Exiting parks the cursor below the output even when every row has been committed,
 scrolling a fresh line into view if needed.
 
-A resize repaints the current frame from the top of the screen and erases the
-visible rows beneath it; committed rows that were still visible are gone unless
-the application draws and commits them again. This is deliberate: a committed row belongs to the terminal's scrollback,
-and the session does not keep a second copy of it. The `inline` example shows the
+A resize repaints from the top of the screen: first the committed rows that were
+still on screen, as many as fit above the frame, then the frame, and it erases
+the visible rows beneath. The session keeps committed rows only while they are
+on screen; once one scrolls past the top it belongs to the terminal's scrollback,
+which is never rewritten. After a width change the rows are cropped or padded to
+the new width, not rewrapped, and a terminal that reflows its contents on resize
+may also have rewrapped them into its scrollback. The `inline` example shows the
 whole loop.
 
 ## Restoration
