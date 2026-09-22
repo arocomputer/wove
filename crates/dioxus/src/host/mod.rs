@@ -2,10 +2,11 @@
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 mod attrs;
 use wove::{
-    elements::{Container, Input, Panel, Scroll, Text, Textarea},
+    elements::{Container, Input, Lazy, List, Panel, RichText, Scroll, Table, Text, Textarea},
+    text::Span,
     Id, Layout, Tree,
 };
 
@@ -34,7 +35,10 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 /// The listener names behind `elements::events`, without their `on` prefix.
-const EVENTS: [&str; 4] = ["key", "paste", "mouse", "input"];
+const EVENTS: [&str; 5] = ["key", "paste", "mouse", "input", "select"];
+
+/// The rows of a `list` tag, which its element reads through a provider.
+type Rows = Rc<RefCell<Vec<Vec<Span>>>>;
 
 type Create = fn(&mut Tree) -> Result<Id, Error>;
 type Set = fn(&mut Tree, Id, &str, &AttributeValue) -> Result<(), Error>;
@@ -60,6 +64,8 @@ pub(crate) struct Host {
     /// A node's layout before its first layout attribute, restored when one is removed.
     defaults: HashMap<Id, Layout>,
     listeners: HashMap<(Id, &'static str), ElementId>,
+    /// The rows behind each `list` tag, replaced by its `rows` attribute.
+    lists: HashMap<Id, Rows>,
     registry: Registry,
     error: Option<Error>,
     failed: bool,
@@ -75,6 +81,7 @@ impl Host {
             tags: HashMap::new(),
             defaults: HashMap::new(),
             listeners: HashMap::new(),
+            lists: HashMap::new(),
             registry,
             error: None,
             failed: false,
@@ -160,6 +167,19 @@ impl Host {
                     "input" => self.tree.create(Input::default())?,
                     "textarea" => self.tree.create(Textarea::default())?,
                     "scroll" => self.tree.create(Scroll::default())?,
+                    "lazy" => self.tree.create(Lazy::default())?,
+                    "list" => {
+                        let rows = Rows::default();
+                        let source = rows.clone();
+                        let list = List::new(0, 0, move |index| {
+                            source.borrow().get(index).cloned().unwrap_or_default()
+                        });
+                        let id = self.tree.create(list)?;
+                        self.lists.insert(id, rows);
+                        id
+                    }
+                    "table" => self.tree.create(Table::new(vec![], vec![]))?,
+                    "rich" => self.tree.create(RichText::default())?,
                     tag => (self
                         .registry
                         .entries
@@ -204,6 +224,7 @@ impl Host {
         for node in nodes {
             self.tags.remove(&node);
             self.defaults.remove(&node);
+            self.lists.remove(&node);
             for name in EVENTS {
                 self.listeners.remove(&(node, name));
             }

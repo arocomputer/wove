@@ -32,9 +32,18 @@ let frame = view.frame(80, 24)?;
 # Ok::<(), wove_dioxus::Error>(())
 ```
 
-Tags are `view`, `panel`, `text`, `input`, `textarea`, and `scroll`. Bare RSX strings create
-separate text elements. Use `content` for one measured text block; adjacent strings
-are not merged into rich text.
+Tags are `view`, `panel`, `text`, `input`, `textarea`, `scroll`, `lazy`, `list`,
+`table`, and `rich`. Bare RSX strings create separate text elements, and adjacent
+strings are not merged. Use `content` for one measured text block, and `rich` for
+styled runs in one block.
+
+`lazy` is the core `Lazy` column: its RSX children are ordinary elements, laid out
+only while in view, so a long keyed `for` loop of messages or entries stays cheap.
+Set `follow` to keep the tail in view. There is no `feed` tag, because a `Feed`
+holds text blocks rather than children and would be rebuilt from a list on every
+render; a `lazy` of `text` children covers the same case with keyed updates.
+Register a tag with `Registry` to use a `Feed`, or any other element without a
+tag, directly.
 
 Layout attributes are `width`, `height`, `grow`, `gap`, `padding`, and `direction`.
 Numeric values are nonnegative cell lengths, and direction is `row` or `column`.
@@ -43,8 +52,16 @@ restores the element's own default for that property.
 `text` accepts `content` and `wrap`; `input` and `textarea` accept `value` and `placeholder`.
 For full Taffy layout, pass `wove_dioxus::AttributeValue::any_value(layout)` as
 `layout`. Likewise, `style` accepts an `AttributeValue::any_value(Style)` on text,
-input, textarea, and panel. Use either a complete layout or individual layout attributes
-for a node, to avoid relying on attribute application order.
+input, textarea, panel, and table. Use either a complete layout or individual layout
+attributes for a node, to avoid relying on attribute application order.
+
+Rows, columns, and spans are typed values passed the same way, and removing one
+empties it:
+
+- `list` takes `rows` as a `Vec<Vec<Span>>`, one styled line per row, and is as wide as its widest row.
+- `table` takes `columns` as a `Vec<(String, u16)>` of headers and cell widths, and `rows` as a `Vec<Vec<String>>`.
+- `rich` takes `spans` as a `Vec<Span>`, and `wrap` breaks it at words.
+- `list` and `table` take `selected`, the index of the selected row.
 
 `onkey`, `onpaste`, and `onmouse` receive `dioxus_core::Event<wove::Event>`.
 The data is the portable core event. Other core events, such as focus changes
@@ -67,6 +84,8 @@ preserves that state.
 the value. Set a signal from `event.data.to_string()` and bind that signal to
 `value` to keep component state in sync. It is a notification; cancel editing in
 `onkey` or `onpaste` instead. Cursor movement does not emit `oninput`.
+`onselect` receives `Event<usize>` after navigation or a click changes the selected
+row of a `list` or `table`. Bind the index to `selected` the same way.
 
 Call `frame` to apply pending component updates and render. Call `send` for input;
 paint first when hit testing needs current geometry. Async hosts must drive
