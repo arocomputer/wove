@@ -9,7 +9,7 @@ macro_rules! tags {
         }
     )*};
 }
-tags!(view, panel, text, input, textarea, scroll);
+tags!(view, panel, text, input, textarea, scroll, lazy, list, table, rich);
 mod attrs {
     macro_rules! attrs { ($($attr:ident),*) => {$(pub const $attr: (&str, Option<&str>, bool) = (stringify!($attr),None,false);)*}; }
     attrs!(
@@ -24,13 +24,18 @@ mod attrs {
         content,
         value,
         placeholder,
-        wrap
+        wrap,
+        follow,
+        rows,
+        columns,
+        selected,
+        spans
     );
 }
 // Dioxus RSX resolves tags through both paths.
 #[allow(clippy::module_inception)]
 pub mod elements {
-    pub use super::{input, panel, scroll, text, textarea, view};
+    pub use super::{input, lazy, list, panel, rich, scroll, table, text, textarea, view};
     pub mod completions {
         pub enum CompleteWithBraces {}
     }
@@ -51,6 +56,7 @@ pub mod events {
         (onkey, wove::Event),
         (onpaste, wove::Event),
         (onmouse, wove::Event),
-        (oninput, String)
+        (oninput, String),
+        (onselect, usize)
     );
 }

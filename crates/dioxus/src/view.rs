@@ -70,18 +70,28 @@ impl View {
                 ..Dispatch::default()
             });
         }
-        // Snapshot the value only when a listener would hear that it changed.
+        // Snapshot a value only when a listener would hear that it changed.
         let ancestors = |id| std::iter::successors(id, |id| self.host.tree.parent(*id));
+        let heard = |id, name| ancestors(Some(id)).any(|id| self.host.listener(id, name).is_some());
         let input = ancestors(target)
             .find(|id| self.input_value(*id).is_some())
-            .filter(|id| ancestors(Some(*id)).any(|id| self.host.listener(id, "input").is_some()))
+            .filter(|id| heard(*id, "input"))
             .and_then(|id| self.input_value(id).map(|value| (id, value.to_owned())));
+        let select = ancestors(target)
+            .find(|id| self.selected(*id).is_some())
+            .filter(|id| heard(*id, "select"))
+            .and_then(|id| self.selected(id).map(|index| (id, index)));
         let result = self.host.tree.dispatch(event)?;
         if let Some((id, before)) = input {
             if let Some(value) = self.input_value(id) {
                 if value != before {
                     self.emit(Some(id), "input", Rc::new(value.to_owned()));
                 }
+            }
+        }
+        if let Some((id, before)) = select {
+            if let Some(index) = self.selected(id).filter(|index| *index != before) {
+                self.emit(Some(id), "select", Rc::new(index));
             }
         }
         self.render()?;
@@ -102,6 +112,15 @@ impl View {
                     .map(|area| area.editor.text())
                     .ok()
             })
+    }
+    /// The selected row of a list or table, which share the selection event.
+    fn selected(&self, id: wove::Id) -> Option<usize> {
+        use wove::elements::{List, Table};
+        let tree = &self.host.tree;
+        tree.get::<List>(id)
+            .map(|list| list.selected)
+            .or_else(|_| tree.get::<Table>(id).map(|table| table.selected))
+            .ok()
     }
     fn emit(&self, target: Option<wove::Id>, name: &'static str, data: Rc<dyn Any>) -> bool {
         let mut node = target;

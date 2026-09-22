@@ -1,9 +1,11 @@
 //! Typed RSX attributes and their native element defaults.
 use super::{Error, Host};
 use dioxus_core::AttributeValue;
+use std::any::Any;
 use wove::{
-    elements::{Input, Panel, Text, Textarea},
-    text::clean,
+    elements::{Input, Lazy, List, Panel, RichText, Table, Text, Textarea},
+    render::columns,
+    text::{clean, Span, Wrap},
     Id, Layout, Style,
 };
 
@@ -51,13 +53,51 @@ impl Host {
                 Some("input") => self.tree.update::<Input>(id, |w| w.style = style)?,
                 Some("textarea") => self.tree.update::<Textarea>(id, |w| w.style = style)?,
                 Some("panel") => self.tree.update::<Panel>(id, |w| w.style = style)?,
+                Some("table") => self.tree.update::<Table>(id, |w| w.style = style)?,
                 _ => {
                     return Err(Error::Unsupported(
-                        "style requires text, input, textarea, or panel".into(),
+                        "style requires text, input, textarea, panel, or table".into(),
                     ))
                 }
             }
             return Ok(());
+        }
+        let tag = self.tags.get(&id).map(String::as_str);
+        match (tag, name) {
+            (Some("list"), "rows") => {
+                let rows: Vec<Vec<Span>> = typed(name, value)?;
+                // A list measures as wide as its widest row.
+                let width = rows
+                    .iter()
+                    .map(|row| row.iter().map(|span| columns(&span.text)).sum::<usize>())
+                    .max()
+                    .unwrap_or(0);
+                let count = rows.len();
+                *self.lists[&id].borrow_mut() = rows;
+                self.tree.update::<List>(id, |list| {
+                    list.count = count;
+                    list.width = u16::try_from(width).unwrap_or(u16::MAX);
+                })?;
+                return Ok(());
+            }
+            (Some("table"), "rows") => {
+                let rows = typed(name, value)?;
+                self.tree.update::<Table>(id, |table| table.rows = rows)?;
+                return Ok(());
+            }
+            (Some("table"), "columns") => {
+                let columns = typed(name, value)?;
+                self.tree
+                    .update::<Table>(id, |table| table.columns = columns)?;
+                return Ok(());
+            }
+            (Some("rich"), "spans") => {
+                let spans = typed(name, value)?;
+                self.tree
+                    .update::<RichText>(id, |rich| rich.spans = spans)?;
+                return Ok(());
+            }
+            _ => {}
         }
         let (text, absent) = scalar(name, value)?;
         let textarea = self.tags.get(&id).is_some_and(|tag| tag == "textarea");
@@ -80,14 +120,32 @@ impl Host {
                 .tree
                 .update::<Textarea>(id, |area| area.placeholder = text)?,
             "placeholder" => self.tree.update::<Input>(id, |w| w.placeholder = text)?,
-            "wrap" => {
-                let wrap = if absent {
+            "wrap" | "follow" => {
+                let on = if absent {
                     false
                 } else {
                     text.parse()
                         .map_err(|_| Error::Unsupported(format!("{name}={text:?}")))?
                 };
-                self.tree.update::<Text>(id, |w| w.wrap = wrap)?;
+                match (tag, name) {
+                    (Some("rich"), "wrap") => self.tree.update::<RichText>(id, |w| {
+                        w.wrap = if on { Wrap::Word } else { Wrap::None }
+                    })?,
+                    (_, "wrap") => self.tree.update::<Text>(id, |w| w.wrap = on)?,
+                    _ => self.tree.update::<Lazy>(id, |w| w.follow = on)?,
+                }
+            }
+            "selected" => {
+                let selected = if absent {
+                    0
+                } else {
+                    text.parse()
+                        .map_err(|_| Error::Unsupported(format!("{name}={text:?}")))?
+                };
+                match tag {
+                    Some("table") => self.tree.update::<Table>(id, |w| w.selected = selected)?,
+                    _ => self.tree.update::<List>(id, |w| w.selected = selected)?,
+                }
             }
             _ => return Err(Error::Unsupported(format!("{name}={text:?}"))),
         }
@@ -167,4 +225,19 @@ fn scalar(name: &str, value: &AttributeValue) -> Result<(String, bool), Error> {
         AttributeValue::None => (String::new(), true),
         _ => return Err(Error::Unsupported(name.into())),
     })
+}
+
+/// A value passed with `AttributeValue::any_value`, or the type's default when
+/// the attribute is removed.
+fn typed<T: Any + Clone + Default>(name: &str, value: &AttributeValue) -> Result<T, Error> {
+    let expected = || Error::Unsupported(format!("{name} expects {}", std::any::type_name::<T>()));
+    match value {
+        AttributeValue::Any(value) => value
+            .as_any()
+            .downcast_ref::<T>()
+            .cloned()
+            .ok_or_else(expected),
+        AttributeValue::None => Ok(T::default()),
+        _ => Err(expected()),
+    }
 }
