@@ -15,9 +15,7 @@
 //!
 //! Absolute positioning starts with a carriage return, so it never depends on
 //! the terminal's pending-wrap state.
-use super::pen::{trimmed, Depth, Pen};
-use super::renderer::{BEGIN, END};
-use super::Slot;
+use super::pen::{Depth, Shadow};
 use crate::Buffer;
 use std::io::{self, Write};
 
@@ -25,18 +23,13 @@ use std::io::{self, Write};
 pub struct Inline {
     /// Screen row of frame row zero; negative once the head has scrolled away.
     top: i64,
-    /// The last frame drawn, minus any committed rows.
-    previous: Option<Buffer>,
     /// Screen dimensions at the last draw. A change invalidates every position.
     screen: Option<(u16, u16)>,
-    /// The version of the last frame drawn; zero when unknown.
-    seen: u64,
-    /// The cursor shape the terminal was last told; `None` when unknown.
-    shape: Option<crate::CursorShape>,
-    /// Positions are unknown; the next draw clears the visible screen first.
+    /// Positions are unknown; the next draw repaints every visible row.
     redraw: bool,
-    output: Vec<u8>,
-    depth: Depth,
+    /// The last frame drawn, minus any committed rows, and the cursor the
+    /// terminal was last told to show.
+    shadow: Shadow,
 }
 
 impl Inline {
@@ -44,123 +37,96 @@ impl Inline {
     pub fn new(anchor: u16, depth: Depth) -> Self {
         Self {
             top: i64::from(anchor),
-            previous: None,
             screen: None,
-            seen: 0,
-            shape: None,
             redraw: false,
-            output: Vec::new(),
-            depth,
+            shadow: Shadow::new(depth),
         }
     }
 
     /// Forget physical positions after a resize, a failed write, or another
-    /// writer. The next draw clears the visible screen, never the scrollback,
-    /// and repaints the frame's tail from the top. Committed rows that were
-    /// still visible are gone; an application that wants them back draws them
-    /// again and commits them again.
+    /// writer. The next draw repaints the frame's tail from the top of the
+    /// screen and erases every visible row beneath it, never the scrollback.
+    /// Committed rows that were still visible are gone; an application that
+    /// wants them back draws them again and commits them again. Until then,
+    /// `commit`, `park`, and `frame_row` answer from where the last frame was
+    /// drawn.
     pub fn invalidate(&mut self) {
-        self.previous = None;
         self.redraw = true;
-        self.shape = None;
+        self.shadow.forget_cursor();
+    }
+
+    /// The terminal's cursor may have been hidden or reshaped by another
+    /// writer that left the rows alone, as a full-screen view on the
+    /// alternate screen does. The next draw shows it again.
+    #[cfg_attr(not(feature = "terminal"), allow(dead_code))]
+    pub(crate) fn forget_cursor(&mut self) {
+        self.shadow.forget_cursor();
     }
 
     /// Release the first `rows` rows of the last frame. They are never drawn
     /// again, and the next frame's first row sits directly beneath them.
     pub fn commit(&mut self, rows: u16) {
-        let Some(previous) = &mut self.previous else {
+        let Some(previous) = &mut self.shadow.previous else {
             return;
         };
         let rows = rows.min(previous.area().height);
-        *previous = previous.tail(rows);
-        self.seen = 0;
+        previous.drop_rows(rows);
+        self.shadow.seen = 0;
         self.top += i64::from(rows);
     }
 
     /// Draw a frame as wide as the screen and of any height, as one
-    /// synchronized update. `height` is the screen height in rows.
-    pub fn draw(&mut self, writer: &mut impl Write, frame: &Buffer, height: u16) -> io::Result<()> {
+    /// synchronized update. `height` is the screen height in rows. Returns
+    /// whether anything was written; an unchanged frame writes nothing.
+    pub fn draw(
+        &mut self,
+        writer: &mut impl Write,
+        frame: &Buffer,
+        height: u16,
+    ) -> io::Result<bool> {
         let rows = i64::from(height.max(1));
         let len = i64::from(frame.area().height);
         let screen = Some((frame.area().width, height));
-        if frame.version != 0 && frame.version == self.seen && !self.redraw && self.screen == screen
-        {
-            return Ok(());
+        if self.shadow.drawn(frame) && !self.redraw && self.screen == screen {
+            return Ok(false);
         }
-        self.seen = 0;
         let redraw = self.redraw || self.screen.is_some_and(|old| Some(old) != screen);
         if self.screen.is_none() {
             self.top = self.top.min(rows - 1);
         }
         self.screen = screen;
-        let mut previous = self.previous.take().filter(|_| !redraw);
-        let old_len = previous
-            .as_ref()
-            .map_or(0, |old| i64::from(old.area().height));
-        let same = |old: &Option<Buffer>, index: i64| {
-            old.as_ref()
-                .is_some_and(|old| frame.same_row(old, index as u16))
+        let previous = self.shadow.previous.take();
+        let mut old = previous.as_ref().filter(|_| !redraw);
+        let old_len = old.map_or(0, |old| i64::from(old.area().height));
+        let same = |old: Option<&Buffer>, index: i64| {
+            old.is_some_and(|old| frame.same_row(old, index as u16))
         };
         let reachable = (-self.top).max(0);
-        let mut first_changed =
-            (reachable..len.max(old_len)).find(|&index| !same(&previous, index));
-        let shape = Some(frame.cursor_shape());
-        let cursor_moved = shape != self.shape
-            || previous
-                .as_ref()
-                .is_none_or(|old| old.cursor() != frame.cursor());
-        if first_changed.is_none() && !cursor_moved && !redraw {
-            self.previous = previous;
-            self.seen = frame.version;
-            return Ok(());
+        let first_changed = (reachable..len.max(old_len)).find(|&index| !same(old, index));
+        let cursor_changed = self.shadow.cursor_changed(frame, old);
+        if first_changed.is_none() && !cursor_changed && !redraw {
+            self.shadow.keep(frame, previous);
+            return Ok(false);
         }
         // A failed write leaves positions unknown until a draw completes.
         self.redraw = true;
-
-        let output = &mut self.output;
-        output.clear();
-        output.extend_from_slice(BEGIN);
-        output.extend_from_slice(b"\x1b[?25l");
-        let mut pen = Pen::new(self.depth);
-        // A full row leaves the cursor on its last cell, where erasing to the
-        // end of the line would eat that cell. Full rows need no erase.
-        let mut put = |output: &mut Vec<u8>, cells: &[Slot]| {
-            let used = trimmed(cells);
-            for (x, cell) in used.iter().enumerate().filter(|(_, cell)| cell.width > 0) {
-                pen.cell(output, frame, cell);
-                if !cell.is_ascii() {
-                    // Terminals disagree on cluster widths; say where the next cell is.
-                    let _ = write!(output, "\x1b[{}G", x + usize::from(cell.width) + 1);
-                }
-            }
-            pen.reset(output);
-            if used.len() < cells.len() || cells.is_empty() {
-                output.extend_from_slice(b"\x1b[K");
-            }
-        };
+        let mut pen = self.shadow.begin();
+        let output = &mut self.shadow.output;
 
         // Screen rows that may hold stale content from the last frame.
         let mut stale = self.top + old_len;
-        if !redraw && len < old_len && (self.top + len <= 0 || len >= rows) {
-            // A shrinking frame that fills the screen keeps its last row at the
-            // bottom. Every visible row moves, so all of them are rewritten.
+        if redraw || len < old_len && (self.top + len <= 0 || len >= rows) {
+            // Positions are unknown, or a shrinking frame that fills the screen
+            // keeps its last row at the bottom so every visible row moves.
+            // Either way the tail is placed at the top of the screen, or ending
+            // at its bottom, and every visible row is rewritten.
             self.top = (rows - len).min(0);
-            previous = None;
-            first_changed = Some(-self.top);
+            old = None;
             stale = rows;
         }
         let top = self.top.min(rows - len);
         let scroll = self.top - top;
-        if redraw {
-            output.extend_from_slice(b"\r\x1b[H\x1b[2J");
-            self.top = (rows - len).min(0);
-            for (i, index) in (-self.top..len).enumerate() {
-                if i > 0 {
-                    output.extend_from_slice(b"\r\n");
-                }
-                put(output, frame.row(index as u16));
-            }
-        } else if let Some(first) = first_changed.filter(|first| scroll > 0 && top + first < 0) {
+        if let Some(first) = first_changed.filter(|first| scroll > 0 && top + first < 0) {
             // Flow: print from the first changed row and let the terminal
             // scroll. A row one past the bottom scrolls in with one newline.
             let position = self.top + first;
@@ -173,7 +139,7 @@ impl Inline {
                 if i > 0 {
                     output.extend_from_slice(b"\r\n");
                 }
-                put(output, frame.row(index as u16));
+                pen.row(output, frame, frame.row(index as u16));
             }
             self.top = top;
         } else {
@@ -186,7 +152,7 @@ impl Inline {
             let mut written = None;
             for screen_row in self.top.max(0)..rows.min(stale.max(self.top + len)) {
                 let index = screen_row - self.top;
-                if index < old_len && same(&previous, index) {
+                if index < old_len && same(old, index) {
                     continue;
                 }
                 if written == Some(screen_row - 1) {
@@ -194,42 +160,25 @@ impl Inline {
                 } else {
                     write!(output, "\r\x1b[{};1H", screen_row + 1)?;
                 }
-                put(output, frame.row(index.min(i64::from(u16::MAX)) as u16));
+                let index = index.min(i64::from(u16::MAX)) as u16;
+                pen.row(output, frame, frame.row(index));
                 written = Some(screen_row);
             }
         }
 
-        if shape != self.shape {
-            write!(output, "\x1b[{} q", frame.cursor_shape().code())?;
-        }
-        match frame.cursor().map(|(x, y)| (x, self.top + i64::from(y))) {
-            Some((x, y)) if (0..rows).contains(&y) => {
-                write!(output, "\r\x1b[{};{}H\x1b[?25h", y + 1, x + 1)?
-            }
-            _ => {}
-        }
-        // One write, so nothing else that writes to the terminal can land
-        // inside a frame.
-        output.extend_from_slice(END);
-        // Until the write succeeds, what the terminal was told is unknown.
-        self.shape = None;
-        writer.write_all(output)?;
-        writer.flush()?;
-        self.shape = shape;
+        let cursor = frame.cursor().and_then(|(x, y)| {
+            let y = self.top + i64::from(y);
+            (0..rows).contains(&y).then_some((x, y as u16))
+        });
+        self.shadow.finish(writer, pen, frame, previous, cursor)?;
         self.redraw = false;
-        self.seen = frame.version;
-        match &mut previous {
-            Some(buffer) => buffer.clone_from(frame),
-            None => previous = Some(frame.clone()),
-        }
-        self.previous = previous;
-        Ok(())
+        Ok(true)
     }
 
     /// Park the cursor on a fresh line beneath the last frame, where a shell
     /// prompt or a child program can continue.
     pub fn finish(&mut self, writer: &mut impl Write) -> io::Result<()> {
-        writer.write_all(&self.park())?;
+        self.parking().write(writer)?;
         writer.flush()
     }
 
@@ -237,23 +186,34 @@ impl Inline {
     /// A session keeps them current so that even a crash leaves the frame
     /// intact above whatever is printed next.
     pub fn park(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let _ = self.parking().write(&mut bytes);
+        bytes
+    }
+
+    /// Where `park` puts the cursor, as numbers that are cheap to keep current.
+    pub(crate) fn parking(&self) -> Park {
         let Some((_, rows)) = self.screen else {
             // No frame has moved the launch cursor.
-            return Vec::new();
+            return Park::default();
         };
         let rows = i64::from(rows.max(1));
-        match self.len() {
-            0 if self.top < rows => format!("\r\x1b[{};1H", (self.top + 1).clamp(1, rows)),
+        let (row, newline) = match self.len() {
+            0 if self.top < rows => ((self.top + 1).clamp(1, rows), false),
             // Committing the bottom row leaves the next row just off screen.
-            0 => format!("\r\x1b[{rows};1H\r\n"),
-            len => format!("\r\x1b[{};1H\r\n", (self.top + len).clamp(1, rows)),
+            0 => (rows, true),
+            len => ((self.top + len).clamp(1, rows), true),
+        };
+        Park {
+            row: Some(row as u16),
+            newline,
         }
-        .into_bytes()
     }
 
     /// Rows in the last frame, less any committed.
     fn len(&self) -> i64 {
-        self.previous
+        self.shadow
+            .previous
             .as_ref()
             .map_or(0, |old| i64::from(old.area().height))
     }
@@ -263,5 +223,49 @@ impl Inline {
     pub fn frame_row(&self, screen_row: u16) -> Option<u16> {
         let row = i64::from(screen_row) - self.top;
         (0..self.len()).contains(&row).then_some(row as u16)
+    }
+}
+
+/// Where to leave the cursor when a session ends: on a one-based screen row,
+/// then on a fresh line beneath it. The default moves nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Park {
+    pub row: Option<u16>,
+    pub newline: bool,
+}
+
+impl Park {
+    /// Write the cursor movement. It needs no terminal state, so it is safe
+    /// to send from a panic hook or signal thread.
+    pub fn write(self, output: &mut impl Write) -> io::Result<()> {
+        if let Some(row) = self.row {
+            write!(output, "\r\x1b[{row};1H")?;
+        }
+        if self.newline {
+            output.write_all(b"\r\n")?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_forgotten_cursor_is_shown_again_on_an_unchanged_frame() {
+        let mut frame = Buffer::new(4, 1);
+        frame.cursor = Some((1, 0));
+        frame.shape = crate::CursorShape::Bar;
+        let mut inline = Inline::new(0, Depth::Rgb);
+        inline.draw(&mut Vec::new(), &frame, 3).unwrap();
+        inline.forget_cursor();
+        let mut output = Vec::new();
+        inline.draw(&mut output, &frame, 3).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(
+            output.ends_with("\x1b[6 q\r\x1b[1;2H\x1b[?25h\x1b[?2026l"),
+            "{output:?}"
+        );
     }
 }

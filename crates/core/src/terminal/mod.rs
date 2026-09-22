@@ -1,5 +1,5 @@
 //! Ownership of the local terminal, kept separate from pure drawing.
-use crate::{Buffer, Depth, Inline, Renderer};
+use crate::{render::Park, Buffer, Depth, Inline, Renderer};
 pub use crate::{Options, ScreenMode};
 pub use crossterm::event::EventStream;
 use crossterm::{event, terminal};
@@ -17,7 +17,7 @@ struct Active {
     options: Option<Options>,
     /// Puts the cursor beneath an inline frame, so that what prints next
     /// lands under the frame instead of over it.
-    park: Vec<u8>,
+    park: Park,
 }
 
 /// Whoever takes this, the session, the panic hook, or the signal thread,
@@ -37,7 +37,7 @@ fn rescue() {
     let taken = active().take();
     if let Some(Active { options, park }) = taken {
         let mut output = io::stdout();
-        let _ = output.write_all(&park);
+        let _ = park.write(&mut output);
         if let Some(options) = options {
             let _ = options.leave(&mut output);
         }
@@ -184,8 +184,9 @@ impl Terminal {
         &self.capabilities
     }
 
-    /// Keys typed while the terminal was being probed. Handle them before
-    /// reading input, so typing ahead of a slow start is not lost.
+    /// Keys typed while the terminal was being asked about itself: at startup,
+    /// or when `switch` first enters an inline session. Handle them before
+    /// reading input, so typing ahead of a slow terminal is not lost.
     pub fn typed_ahead(&mut self) -> Vec<crate::Event> {
         std::mem::take(&mut self.typed)
     }
@@ -231,7 +232,7 @@ impl Terminal {
             self.raw = true;
             *active = Some(Active {
                 options: None,
-                park: Vec::new(),
+                park: Park::default(),
             });
         }
         // Raw escape sequences need virtual terminal processing on Windows.
@@ -272,9 +273,12 @@ impl Terminal {
     /// Cleanup for the entered screen and input modes, including cursor parking.
     fn restoration(&self) -> Active {
         let park = match (&self.inline, self.options.screen) {
-            (Some(inline), ScreenMode::Inline) => inline.park(),
-            (_, ScreenMode::Alternate) => Vec::new(),
-            _ => b"\r\n".to_vec(),
+            (Some(inline), ScreenMode::Inline) => inline.parking(),
+            (_, ScreenMode::Alternate) => Park::default(),
+            _ => Park {
+                row: None,
+                newline: true,
+            },
         };
         Active {
             options: Some(self.options),
@@ -347,7 +351,8 @@ impl Terminal {
     /// to a full-screen view and back. The main screen keeps what the inline
     /// session drew while the alternate screen is up. Start inline when the
     /// session will be inline at all: anchoring later has to ask the terminal
-    /// for its cursor, and input that arrives during the wait is lost.
+    /// for its cursor and wait for the reply. Keys typed during that wait go
+    /// to `typed_ahead`.
     pub fn switch(&mut self, screen: ScreenMode) -> io::Result<()> {
         let old = self.options.screen;
         if old == screen {
@@ -378,10 +383,15 @@ impl Terminal {
         self.output.flush()?;
         match (&mut self.inline, screen, old) {
             (None, ScreenMode::Inline, _) => {
-                let cursor = query::cursor(&mut self.output)?;
-                self.anchor(cursor)?;
+                let reply = query::cursor(&mut self.output)?;
+                self.typed.extend(reply.typed);
+                self.anchor(reply.cursor)?;
             }
+            // Full-screen drawing on the main screen covered the frame.
             (Some(inline), ScreenMode::Inline, ScreenMode::Main) => inline.invalidate(),
+            // Leaving the alternate screen restores the main screen's rows
+            // but not the cursor the full-screen view hid or reshaped.
+            (Some(inline), ScreenMode::Inline, ScreenMode::Alternate) => inline.forget_cursor(),
             _ => {}
         }
         self.record();
@@ -401,9 +411,10 @@ impl Terminal {
         }
         match (&mut self.inline, self.options.screen) {
             (Some(inline), ScreenMode::Inline) => {
-                inline.draw(&mut self.output, frame, terminal::size()?.1)?;
-                // The frame may have grown or scrolled; a crash parks beneath it.
-                self.record();
+                if inline.draw(&mut self.output, frame, terminal::size()?.1)? {
+                    // The frame may have grown or scrolled; a crash parks beneath it.
+                    self.record();
+                }
                 Ok(())
             }
             _ => self.renderer.draw(&mut self.output, frame),
@@ -415,6 +426,10 @@ impl Terminal {
     pub fn commit(&mut self, rows: u16) {
         if let Some(inline) = &mut self.inline {
             inline.commit(rows);
+            if self.entered {
+                // Parking moves with the committed rows.
+                self.record();
+            }
         }
     }
 

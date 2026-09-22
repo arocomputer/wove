@@ -1,6 +1,13 @@
-//! Cell output shared by the full-screen and inline renderers.
-use super::buffer::{Buffer, Color, Slot, Style};
-use std::{io::Write, sync::Arc};
+//! Frame output shared by the full-screen and inline renderers.
+use super::buffer::{Buffer, Color, CursorShape, Slot, Style};
+use std::{
+    io::{self, Write},
+    sync::Arc,
+};
+
+/// The synchronized-update markers around a frame.
+const BEGIN: &[u8] = b"\x1b[?2026h";
+const END: &[u8] = b"\x1b[?2026l";
 
 /// How many colors the output accepts. Richer colors are mapped to the nearest
 /// one available; attributes such as bold are always kept.
@@ -152,6 +159,25 @@ impl Pen {
         out.extend_from_slice(buffer.symbol(cell).as_bytes());
     }
 
+    /// Write a whole row from the cursor, which must be at the row's first
+    /// column. Trailing blanks are erased instead of written. A full row
+    /// leaves the cursor on its last cell, where erasing to the end of the
+    /// line would eat that cell, so full rows need no erase.
+    pub fn row(&mut self, out: &mut Vec<u8>, buffer: &Buffer, cells: &[Slot]) {
+        let used = trimmed(cells);
+        for (x, cell) in used.iter().enumerate().filter(|(_, cell)| cell.width > 0) {
+            self.cell(out, buffer, cell);
+            if !cell.is_ascii() {
+                // Terminals disagree on cluster widths; say where the next cell is.
+                let _ = write!(out, "\x1b[{}G", x + usize::from(cell.width) + 1);
+            }
+        }
+        self.reset(out);
+        if used.len() < cells.len() || cells.is_empty() {
+            out.extend_from_slice(b"\x1b[K");
+        }
+    }
+
     /// Close any hyperlink and return to the terminal's default attributes.
     pub fn reset(&mut self, out: &mut Vec<u8>) {
         if self.link.take().is_some() {
@@ -212,10 +238,112 @@ fn hash(text: &str) -> u32 {
 }
 
 /// The cells of a row up to its last non-blank one.
-pub(crate) fn trimmed(row: &[Slot]) -> &[Slot] {
+fn trimmed(row: &[Slot]) -> &[Slot] {
     let end = row
         .iter()
         .rposition(|cell| !cell.is_blank())
         .map_or(0, |i| i + 1);
     &row[..end]
+}
+
+/// What a renderer remembers of the terminal between frames, and the storage
+/// it builds each frame's bytes in. Both renderers write a frame the same way:
+/// `begin`, then their changed cells, then `finish`, or `keep` when nothing
+/// on screen differs from the frame.
+pub(crate) struct Shadow {
+    /// The last frame written. A renderer takes it while comparing and hands
+    /// it back to `finish` or `keep`, which reuse its storage.
+    pub previous: Option<Buffer>,
+    /// The version of the last frame drawn; zero when unknown.
+    pub seen: u64,
+    /// The cursor shape the terminal was last told; `None` when unknown.
+    shape: Option<CursorShape>,
+    pub output: Vec<u8>,
+    depth: Depth,
+}
+
+impl Shadow {
+    pub fn new(depth: Depth) -> Self {
+        Self {
+            previous: None,
+            seen: 0,
+            shape: None,
+            output: Vec::new(),
+            depth,
+        }
+    }
+
+    /// Whether `frame` is the one last written, so drawing it again can be
+    /// skipped without comparing a cell.
+    pub fn drawn(&self, frame: &Buffer) -> bool {
+        frame.version != 0 && frame.version == self.seen
+    }
+
+    /// Whether the terminal's cursor differs from what `frame` wants, given
+    /// the frame it last showed, if known.
+    pub fn cursor_changed(&self, frame: &Buffer, old: Option<&Buffer>) -> bool {
+        Some(frame.cursor_shape()) != self.shape
+            || old.is_none_or(|old| old.cursor() != frame.cursor())
+    }
+
+    /// Something else may have hidden or reshaped the cursor, such as leaving
+    /// the session or the alternate screen. The next frame sends it again.
+    pub fn forget_cursor(&mut self) {
+        self.shape = None;
+        self.seen = 0;
+    }
+
+    /// Start a frame's bytes: a synchronized update, with the cursor hidden
+    /// while cells change beneath it.
+    pub fn begin(&mut self) -> Pen {
+        self.output.clear();
+        self.output.extend_from_slice(BEGIN);
+        self.output.extend_from_slice(b"\x1b[?25l");
+        Pen::new(self.depth)
+    }
+
+    /// Record `frame` as drawn without writing anything.
+    pub fn keep(&mut self, frame: &Buffer, previous: Option<Buffer>) {
+        self.previous = previous;
+        self.seen = frame.version;
+    }
+
+    /// End the frame begun with `begin`: set the cursor shape, show the cursor
+    /// at the zero-based screen `cursor` if there is one, and send the frame
+    /// in one write, so nothing else that writes to the terminal can land
+    /// inside it. On success `frame` becomes the shadow frame, reusing the
+    /// storage of `previous`. On failure what the terminal shows is unknown,
+    /// so the shadow frame and cursor are forgotten.
+    pub fn finish(
+        &mut self,
+        writer: &mut impl Write,
+        mut pen: Pen,
+        frame: &Buffer,
+        mut previous: Option<Buffer>,
+        cursor: Option<(u16, u16)>,
+    ) -> io::Result<()> {
+        let output = &mut self.output;
+        pen.reset(output);
+        let shape = Some(frame.cursor_shape());
+        if shape != self.shape {
+            write!(output, "\x1b[{} q", frame.cursor_shape().code())?;
+        }
+        if let Some((x, y)) = cursor {
+            let (x, y) = (u32::from(x) + 1, u32::from(y) + 1);
+            write!(output, "\r\x1b[{y};{x}H\x1b[?25h")?;
+        }
+        output.extend_from_slice(END);
+        if let Err(error) = writer.write_all(output).and_then(|()| writer.flush()) {
+            self.previous = None;
+            self.forget_cursor();
+            return Err(error);
+        }
+        self.shape = shape;
+        match &mut previous {
+            Some(buffer) => buffer.clone_from(frame),
+            None => previous = Some(frame.clone()),
+        }
+        self.keep(frame, previous);
+        Ok(())
+    }
 }

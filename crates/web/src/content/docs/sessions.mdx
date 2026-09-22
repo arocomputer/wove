@@ -74,6 +74,10 @@ before reading further input. `terminal::run` and `wove_dioxus::run` process
 these events automatically. A terminal that does not report its cursor starts an
 inline session on a cleared screen instead of at the shell prompt.
 
+A session that starts full-screen and later calls `Terminal::switch` to go inline
+asks for the cursor then, ending the wait the same way. Keys typed during that
+wait also come back from `typed_ahead`, so drain it again after the switch.
+
 ## Output ownership
 
 A `Terminal` is `Send`, so an application that renders on another thread moves
@@ -108,9 +112,9 @@ elements from the tree. This keeps frames small however long a session runs.
 Exiting parks the cursor below the output even when every row has been committed,
 scrolling a fresh line into view if needed.
 
-A resize clears the visible screen and repaints the current frame; committed rows
-that were still visible are gone unless the application draws and commits them
-again. This is deliberate: a committed row belongs to the terminal's scrollback,
+A resize repaints the current frame from the top of the screen and erases the
+visible rows beneath it; committed rows that were still visible are gone unless
+the application draws and commits them again. This is deliberate: a committed row belongs to the terminal's scrollback,
 and the session does not keep a second copy of it. The `inline` example shows the
 whole loop.
 
