@@ -1,13 +1,14 @@
 //! Built-in terminal elements. Applications can implement `Element` for their own types.
 mod input;
 mod scroll;
-mod select;
 mod text;
 
-use crate::{render::graphemes, Border, Canvas, Color, Element, Layout, Style};
+use crate::{
+    render::{columns, fit},
+    Border, Button, Canvas, Color, Element, Event, Key, Layout, MouseKind, Response, Style,
+};
 pub use input::Input;
 pub use scroll::Scroll;
-pub use select::Select;
 pub use text::{RichText, Text};
 
 /// The first row to show so that `selected` is within `height` rows: the
@@ -24,6 +25,66 @@ pub(crate) fn window(offset: usize, selected: usize, count: usize, height: usize
         offset
     };
     first.min(count.saturating_sub(height))
+}
+
+/// Move a selection among `count` rows, shown `page` at a time from `offset`,
+/// for arrows, paging, Home, End, the wheel, and a left click on a row.
+/// Clicks on the `header` rows above the first row are ignored. The offset
+/// moves as `window` moves it. Navigation is consumed even at either end.
+pub(crate) fn navigate(
+    event: &Event,
+    selected: &mut usize,
+    offset: &mut usize,
+    count: usize,
+    page: usize,
+    header: u16,
+) -> Response {
+    let first = window(*offset, *selected, count, page);
+    let next = match event {
+        Event::Mouse(mouse) => match mouse.kind {
+            MouseKind::Down(Button::Left) if mouse.y >= header => {
+                first + usize::from(mouse.y - header)
+            }
+            MouseKind::ScrollUp => selected.saturating_sub(1),
+            MouseKind::ScrollDown => selected.saturating_add(1),
+            _ => return Response::IGNORE,
+        },
+        Event::Key(Key::Up, _) => selected.saturating_sub(1),
+        Event::Key(Key::Down, _) => selected.saturating_add(1),
+        Event::Key(Key::PageUp, _) => selected.saturating_sub(page),
+        Event::Key(Key::PageDown, _) => selected.saturating_add(page),
+        Event::Key(Key::Home, _) => 0,
+        Event::Key(Key::End, _) => count.saturating_sub(1),
+        _ => return Response::IGNORE,
+    }
+    .min(count.saturating_sub(1));
+    *offset = window(first, next, count, page);
+    // A new selection changes how the rows look, never their size.
+    if std::mem::replace(selected, next) == next {
+        Response::HANDLED
+    } else {
+        Response::REPAINT
+    }
+}
+
+/// Draw one grapheme that starts `cells` wide at a cell of a line. A tab
+/// draws as the spaces that reach its stop in the line, which drawing it
+/// alone would not.
+pub(crate) fn cluster(
+    canvas: &mut Canvas<'_>,
+    x: i32,
+    y: i32,
+    g: &str,
+    cells: usize,
+    style: Style,
+) {
+    if g == "\t" {
+        for i in 0..cells as i32 {
+            canvas.text(x + i, y, " ", style);
+        }
+    } else {
+        canvas.text(x, y, g, style);
+    }
 }
 
 /// A layout-only container, useful for rows, columns, and grids.
@@ -60,15 +121,10 @@ impl Element for Panel {
         if self.title.is_empty() || room == 0 || canvas.size().1 < 2 {
             return;
         }
-        let mut used = 0;
-        let title: String = graphemes(&self.title)
-            .take_while(|(_, width)| {
-                used += width;
-                used <= room
-            })
-            .map(|(grapheme, _)| grapheme)
-            .collect();
-        canvas.text(2, 0, &format!(" {title} "), self.style);
+        let title = fit(&self.title, room);
+        canvas.text(2, 0, " ", self.style);
+        canvas.text(3, 0, title, self.style);
+        canvas.text(3 + columns(title) as i32, 0, " ", self.style);
     }
 }
 mod textarea;

@@ -50,8 +50,11 @@ hyperlinks.
 ## Input and rendering
 
 `Tree::on` runs before an element's default behavior. `Response::HANDLED` consumes
-the event; otherwise it bubbles through parents. Tab and Shift-Tab move focus
-when no handler consumes the key. Mouse presses focus the nearest focusable
+the event; otherwise it bubbles through parents. A response that changes what is
+shown is `Response::REPAINT`, or `Response::CHANGED` when the change can resize an
+element, which also lays the tree out again. Tab and Shift-Tab move focus
+in child order when no handler consumes the key, and a `Scroll` scrolls to show a
+node focused by a key or by `Tree::focus`. Mouse presses focus the nearest focusable
 ancestor of the hit element. Hit testing uses the last painted frame.
 
 `Input` supports arrows, Shift selection, Home, End, Backspace, Delete, Ctrl-A,

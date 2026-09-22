@@ -486,3 +486,39 @@ fn a_panel_draws_its_border_style_title_and_fill() {
     assert_eq!(lines(frame), ["╭─ A lo ─╮", "│        │", "╰────────╯"]);
     assert_eq!(frame.cell(4, 1).unwrap().style().bg, Color::Indexed(4));
 }
+
+#[test]
+fn tab_scrolls_the_focused_node_into_view_and_back() {
+    let mut screen = testing::Screen::new(10, 3);
+    let scroll = screen
+        .tree
+        .add(screen.tree.root(), Scroll::default())
+        .unwrap();
+    let mut style = screen.tree.layout(scroll).unwrap().clone();
+    style.size.height = length(3.0);
+    screen.tree.set_layout(scroll, style).unwrap();
+    let inputs: Vec<Id> = (0..8)
+        .map(|i| {
+            screen
+                .tree
+                .add(scroll, Input::new(&format!("i{i}")))
+                .unwrap()
+        })
+        .collect();
+    screen.tree.focus(Some(inputs[0])).unwrap();
+    for _ in 0..5 {
+        screen.send(Key::Tab).unwrap();
+    }
+    assert_eq!(screen.tree.focused(), Some(inputs[5]));
+    let frame = screen.frame().unwrap();
+    assert_eq!(frame.lines()[2].trim_end(), "i5");
+    assert_eq!(frame.cursor(), Some((2, 2)));
+    let shift = Modifiers {
+        shift: true,
+        ..Modifiers::default()
+    };
+    for _ in 0..5 {
+        screen.send(Event::Key(Key::Tab, shift)).unwrap();
+    }
+    assert_eq!(screen.frame().unwrap().lines()[0].trim_end(), "i0");
+}

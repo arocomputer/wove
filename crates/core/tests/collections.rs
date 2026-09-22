@@ -146,3 +146,23 @@ fn table_preserves_header_and_clips_wide_cells_before_next_column() {
     assert_eq!(frame.cell(0, 0).unwrap().symbol(), "A");
     assert!(frame.lines()[2].contains("end"));
 }
+
+#[test]
+fn list_and_table_measure_tabs_as_the_cells_they_paint() {
+    let mut screen = Screen::new(9, 3);
+    let list = List::new(1, 9, |_| {
+        vec![
+            Span::new("a\t", Style::default()),
+            Span::new("b", Style::default()),
+        ]
+    });
+    screen.tree.add(screen.tree.root(), list).unwrap();
+    let table = Table::new(
+        vec![("A".into(), 4), ("B".into(), 3)],
+        vec![vec!["ab\tcd".into(), "xyz".into()]],
+    );
+    screen.tree.add(screen.tree.root(), table).unwrap();
+    let lines = screen.frame().unwrap().lines();
+    assert_eq!(lines[0], "a   b    ");
+    assert_eq!(lines[2], "ab   xyz ");
+}

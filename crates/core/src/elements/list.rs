@@ -1,7 +1,6 @@
 //! A fixed-height list that asks its row provider only for visible rows.
-use super::window;
-use crate::{text::Span, Button, Canvas, Element, Event, Key, MouseKind, Response, Style};
-use unicode_width::UnicodeWidthStr;
+use super::{navigate, window};
+use crate::{render::columns, text::Span, Canvas, Element, Event, Response, Style};
 
 /// Rows have one terminal line each and carry their own styles. The application
 /// owns the underlying data; `count` and `row` allow lists larger than terminal
@@ -55,10 +54,8 @@ impl Element for List {
         (0, 0)
     }
     fn paint(&self, canvas: &mut Canvas<'_>) {
-        let height = usize::from(canvas.size().1);
         let selected = self.selected.min(self.count.saturating_sub(1));
-        let offset = window(self.offset, selected, self.count, height);
-        for (y, index) in (offset..self.count).take(height).enumerate() {
+        for (y, index) in (self.offset..self.count).take(self.page).enumerate() {
             let mut x = 0;
             for span in (self.row)(index) {
                 let style = if index == selected {
@@ -70,33 +67,12 @@ impl Element for List {
                     Some(url) => canvas.link(x, y as i32, &span.text, style, url),
                     None => canvas.text(x, y as i32, &span.text, style),
                 }
-                x += span.text.width() as i32;
+                x += columns(&span.text) as i32;
             }
         }
     }
     fn event(&mut self, event: &Event) -> Response {
-        let old = self.selected;
-        let first = window(self.offset, old, self.count, self.page);
-        match event {
-            Event::Mouse(mouse) => match mouse.kind {
-                MouseKind::Down(Button::Left) => self.selected = first + usize::from(mouse.y),
-                MouseKind::ScrollUp => self.selected = self.selected.saturating_sub(1),
-                MouseKind::ScrollDown => self.selected = self.selected.saturating_add(1),
-                _ => return Response::IGNORE,
-            },
-            Event::Key(Key::Up, _) => self.selected = self.selected.saturating_sub(1),
-            Event::Key(Key::Down, _) => self.selected = self.selected.saturating_add(1),
-            Event::Key(Key::PageUp, _) => self.selected = self.selected.saturating_sub(self.page),
-            Event::Key(Key::PageDown, _) => self.selected = self.selected.saturating_add(self.page),
-            Event::Key(Key::Home, _) => self.selected = 0,
-            Event::Key(Key::End, _) => self.selected = self.count.saturating_sub(1),
-            _ => return Response::IGNORE,
-        }
-        self.selected = self.selected.min(self.count.saturating_sub(1));
-        self.offset = window(first, self.selected, self.count, self.page);
-        Response {
-            handled: true,
-            changed: self.selected != old,
-        }
+        let (count, page) = (self.count, self.page);
+        navigate(event, &mut self.selected, &mut self.offset, count, page, 0)
     }
 }

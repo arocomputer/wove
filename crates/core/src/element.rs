@@ -11,7 +11,7 @@ pub trait Element: Any {
     fn measure(&self, _width: Option<u16>) -> (u16, u16) {
         (0, 0)
     }
-    /// Draw the element. Not called while nothing of it is visible.
+    /// Draw the element, after `viewport`. Not called while nothing of it is visible.
     fn paint(&self, _canvas: &mut Canvas<'_>) {}
     /// Handle input. Mouse positions are relative to the element's top-left
     /// cell, as painted in the last frame.
@@ -23,11 +23,17 @@ pub trait Element: Any {
     }
     /// Draw over the element's children, for chrome such as a scrollbar.
     fn overlay(&self, _canvas: &mut Canvas<'_>) {}
-    /// Called while painting a visible element, with its inner size and the
-    /// extent of its children's content. Returns how far the children are
-    /// scrolled. Content may be far taller than a frame, so extents and
-    /// offsets are 32-bit.
+    /// Called just before `paint`, with the element's inner size and the
+    /// extent of its children's content, so an element can settle what it
+    /// shows before drawing it. Returns how far the children are scrolled.
+    /// Content may be far taller than a frame, so extents and offsets are
+    /// 32-bit.
     fn viewport(&mut self, _size: (u16, u16), _content: (u32, u32)) -> (u32, u32) {
         (0, 0)
     }
+    /// Scroll a descendant into view. Called on the nearest ancestor whose
+    /// layout has `overflow: Scroll` when focus moves to a node inside it,
+    /// before the frame is painted, with the node's position in the content
+    /// as if unscrolled and its size. `viewport` follows in the same frame.
+    fn reveal(&mut self, _at: (u32, u32), _size: (u16, u16)) {}
 }

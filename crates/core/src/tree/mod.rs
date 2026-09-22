@@ -8,7 +8,7 @@ use std::{
     ops::{Index, IndexMut},
     sync::atomic::{AtomicU64, Ordering},
 };
-use taffy::{Display, TaffyTree};
+use taffy::{Display, Overflow, TaffyTree};
 
 /// A node identity, unique across trees and never reused.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -106,8 +106,34 @@ struct Node {
     clip: Rect,
     /// Paint order among siblings; higher paints later and is hit first.
     z: i16,
-    /// Some child has a nonzero `z`, so children need sorting to paint.
-    layered: bool,
+    /// The children sorted by `z`, kept only while one of them has a `z`.
+    /// Empty means child order is paint order.
+    order: Vec<Id>,
+}
+impl Node {
+    /// A detached node with no children or handler.
+    fn new(element: Box<dyn Element>, layout: taffy::NodeId) -> Self {
+        Self {
+            element,
+            layout,
+            parent: None,
+            children: vec![],
+            handler: None,
+            origin: (0, 0),
+            size: (0, 0),
+            clip: Rect::default(),
+            z: 0,
+            order: vec![],
+        }
+    }
+    /// The children in paint order.
+    fn layers(&self) -> &[Id] {
+        if self.order.is_empty() {
+            &self.children
+        } else {
+            &self.order
+        }
+    }
 }
 
 /// The original target and the nodes visited before an event was consumed.
@@ -141,6 +167,8 @@ pub struct Tree {
     anchor: Option<(u16, u16)>,
     /// A selection of the painted screen, as two cells in frame coordinates.
     selection: Option<((u16, u16), (u16, u16))>,
+    /// The focus moved and the next frame should scroll it into view.
+    reveal_focus: bool,
     frame: Buffer,
 }
 
@@ -158,18 +186,7 @@ impl Tree {
             ..Layout::default()
         };
         let lid = layout.new_leaf(style).expect("new root layout");
-        let root = nodes.insert(Node {
-            element: Box::new(Container),
-            layout: lid,
-            parent: None,
-            children: vec![],
-            handler: None,
-            origin: (0, 0),
-            size: (0, 0),
-            clip: Rect::default(),
-            z: 0,
-            layered: false,
-        });
+        let root = nodes.insert(Node::new(Box::new(Container), lid));
         layout
             .set_node_context(lid, Some(root))
             .expect("root exists");
@@ -186,6 +203,7 @@ impl Tree {
             selectable: true,
             anchor: None,
             selection: None,
+            reveal_focus: false,
             frame: Buffer::new(0, 0),
         }
     }
@@ -211,16 +229,25 @@ impl Tree {
     pub fn set_z(&mut self, id: Id, z: i16) -> Result<(), Error> {
         self.nodes.get_mut(id).ok_or(Error::MissingNode)?.z = z;
         if let Some(parent) = self.nodes[id].parent {
-            self.nodes[parent].layered = true;
+            self.restack(parent, id);
         }
         self.dirty = true;
         Ok(())
     }
-    /// A node's children in paint order.
-    pub(crate) fn layers(&self, id: Id) -> Vec<Id> {
-        let mut children = self.nodes[id].children.clone();
-        children.sort_by_key(|child| self.nodes[*child].z);
-        children
+    /// Sort a node's children into paint order after `child` joins, leaves,
+    /// or changes its `z`, so painting and hit testing never sort. Children
+    /// without a `z` cost nothing, which keeps appending to a long list linear.
+    fn restack(&mut self, id: Id, child: Id) {
+        let node = &self.nodes[id];
+        if node.order.is_empty() && self.nodes[child].z == 0 {
+            return;
+        }
+        let mut order = Vec::new();
+        if node.children.iter().any(|child| self.nodes[*child].z != 0) {
+            order.clone_from(&node.children);
+            order.sort_by_key(|child| self.nodes[*child].z);
+        }
+        self.nodes[id].order = order;
     }
 
     /// Whether a drag that no node handles selects text on the screen.
@@ -275,18 +302,7 @@ impl Tree {
     /// New nodes are detached. Append or insert them before they can render or focus.
     pub fn create(&mut self, element: impl Element) -> Result<Id, Error> {
         let lid = self.layout.new_leaf(element.layout())?;
-        let id = self.nodes.insert(Node {
-            element: Box::new(element),
-            layout: lid,
-            parent: None,
-            children: vec![],
-            handler: None,
-            origin: (0, 0),
-            size: (0, 0),
-            clip: Rect::default(),
-            z: 0,
-            layered: false,
-        });
+        let id = self.nodes.insert(Node::new(Box::new(element), lid));
         self.layout.set_node_context(lid, Some(id))?;
         Ok(id)
     }
@@ -318,15 +334,14 @@ impl Tree {
         }
         if let Some(old) = self.nodes[child].parent {
             self.nodes[old].children.retain(|id| *id != child);
+            self.restack(old, child);
             self.layout
                 .remove_child(self.nodes[old].layout, self.nodes[child].layout)?;
         }
         let index = index.min(self.nodes[parent].children.len());
         self.nodes[parent].children.insert(index, child);
         self.nodes[child].parent = Some(parent);
-        if self.nodes[child].z != 0 {
-            self.nodes[parent].layered = true;
-        }
+        self.restack(parent, child);
         self.hide(child);
         self.layout.insert_child_at_index(
             self.nodes[parent].layout,
@@ -345,6 +360,7 @@ impl Tree {
         }
         if let Some(parent) = self.nodes[id].parent {
             self.nodes[parent].children.retain(|n| *n != id);
+            self.restack(parent, id);
         }
         self.remove_subtree(id)?;
         self.touch();
@@ -354,8 +370,7 @@ impl Tree {
         if self.focus == Some(id) {
             self.focus(None)?;
         }
-        let children = self.nodes[id].children.clone();
-        for child in children {
+        for child in std::mem::take(&mut self.nodes[id].children) {
             self.remove_subtree(child)?;
         }
         let node = self.nodes.remove(id).ok_or(Error::MissingNode)?;
@@ -395,6 +410,8 @@ impl Tree {
         self.nodes.get_mut(id).ok_or(Error::MissingNode)?.handler = Some(Box::new(handler));
         Ok(())
     }
+    /// Focus a displayed, focusable node, or clear the focus. The next frame
+    /// scrolls the nearest scrolling ancestor to show the node.
     pub fn focus(&mut self, id: Option<Id>) -> Result<(), Error> {
         if let Some(id) = id {
             self.node(id)?;
@@ -414,6 +431,31 @@ impl Tree {
         }
         // Focus changes how nodes paint, not where they are.
         self.dirty = true;
+        self.reveal_focus = id.is_some();
+        Ok(())
+    }
+    /// Ask the nearest ancestor whose layout scrolls to show a node, with the
+    /// node's place in that ancestor's content. Needs a current layout.
+    fn reveal(&mut self, id: Id) -> Result<(), Error> {
+        let layout = self.layout.layout(self.nodes[id].layout)?;
+        let size = (
+            layout.size.width.clamp(0.0, f32::from(u16::MAX)) as u16,
+            layout.size.height.clamp(0.0, f32::from(u16::MAX)) as u16,
+        );
+        let (mut x, mut y) = (0.0, 0.0);
+        let mut node = id;
+        while let Some(parent) = self.nodes[node].parent {
+            let location = self.layout.layout(self.nodes[node].layout)?.location;
+            x += location.x;
+            y += location.y;
+            let overflow = self.layout.style(self.nodes[parent].layout)?.overflow;
+            if overflow.x == Overflow::Scroll || overflow.y == Overflow::Scroll {
+                let at = (x.max(0.0) as u32, y.max(0.0) as u32);
+                self.nodes[parent].element.reveal(at, size);
+                break;
+            }
+            node = parent;
+        }
         Ok(())
     }
     /// Forget where a subtree was painted, so hit testing cannot reach it. An
@@ -449,7 +491,8 @@ impl Tree {
         }
         false
     }
-    /// Displayed nodes beneath a displayed, attached node, in paint order.
+    /// Displayed nodes beneath a displayed, attached node, depth first in
+    /// child order. This is the focus order; `z` changes painting, not focus.
     fn ordered(&self, id: Id, list: &mut Vec<Id>) {
         if !self.displayed(id) {
             return;
@@ -459,6 +502,8 @@ impl Tree {
             self.ordered(*child, list);
         }
     }
+    /// Focus the next focusable node in child order, depth first, or the
+    /// previous one with `reverse`, wrapping at either end.
     pub fn focus_next(&mut self, reverse: bool) -> Result<(), Error> {
         let mut ids = Vec::new();
         self.ordered(self.root, &mut ids);
@@ -498,10 +543,14 @@ impl Tree {
             let default = node.element.event(event);
             response.handled |= default.handled;
             response.changed |= default.changed;
+            response.layout |= default.layout;
         }
-        if response.changed {
+        response.changed |= response.layout;
+        if response.layout {
             self.layout.mark_dirty(node.layout)?;
             self.touch();
+        } else if response.changed {
+            self.dirty = true;
         }
         Ok(response)
     }
@@ -512,16 +561,11 @@ impl Tree {
         if !node.clip.contains(x, y) {
             return None;
         }
-        let found = if node.layered {
-            let layers = self.layers(id);
-            layers.iter().rev().find_map(|child| self.hit(*child, x, y))
-        } else {
-            let children = node.children.iter().rev();
-            children
-                .into_iter()
-                .find_map(|child| self.hit(*child, x, y))
-        };
-        found.or(Some(id))
+        let layers = node.layers().iter().rev();
+        layers
+            .into_iter()
+            .find_map(|child| self.hit(*child, x, y))
+            .or(Some(id))
     }
     /// Resolve the same target used by dispatch: captured drags and releases go
     /// to the press owner, other mouse events hit the last painted frame, and
@@ -586,14 +630,20 @@ impl Tree {
         Ok(Pointer::Target { target, changed })
     }
 
-    pub fn dispatch(&mut self, event: Event) -> Result<Dispatch, Error> {
-        let previous_focus = self.focus;
+    /// Drop the focus from a node that is no longer displayed or focusable.
+    fn drop_stale_focus(&mut self) -> Result<(), Error> {
         if self
             .focus
             .is_some_and(|id| !self.visible(id) || !self.nodes[id].element.focusable())
         {
             self.focus(None)?;
         }
+        Ok(())
+    }
+
+    pub fn dispatch(&mut self, event: Event) -> Result<Dispatch, Error> {
+        let previous_focus = self.focus;
+        self.drop_stale_focus()?;
         let mut target = self.target(&event);
         let mut changed = false;
         if let Event::Mouse(mouse) = &event {
@@ -626,6 +676,9 @@ impl Tree {
             while let Some(id) = ancestor {
                 if self.nodes[id].element.focusable() {
                     self.focus(Some(id))?;
+                    // The node is under the pointer already; scrolling
+                    // to show all of it would move it out from under it.
+                    self.reveal_focus = false;
                     break;
                 }
                 ancestor = self.nodes[id].parent;

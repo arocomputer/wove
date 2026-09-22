@@ -63,7 +63,8 @@ covers exactly what is on screen. Siblings paint in ascending `z` and are hit in
 reverse; a parent sorts its children only once one of them has a `z`.
 
 Layout and paint are invalidated separately. A change that can move a node
-clears the record of the last layout pass; focus, selection, and `z` only
+clears the record of the last layout pass; focus, selection, `z`, and an event
+response that asks only to repaint, such as a cursor move or a scroll, only
 repaint. `Tree::height` answers from that record, so an idle inline loop that
 asks every iteration neither lays out nor repaints, and the frame that follows a
 change reuses the pass `height` ran. `Editor` stores grapheme-aligned byte

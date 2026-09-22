@@ -118,24 +118,41 @@ impl From<Key> for Event {
     }
 }
 
-/// A handler can consume an event without repainting, or repaint and let it bubble.
+/// What handling an event did. `handled` stops it bubbling to parents.
+/// `changed` repaints the frame. `layout` also lays the tree out again, for a
+/// change that can alter an element's size, and implies `changed`. A change of
+/// appearance alone, such as a cursor, a selection, or a scroll offset, should
+/// only repaint: layout visits the whole tree.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Response {
     pub handled: bool,
     pub changed: bool,
+    pub layout: bool,
 }
 
 impl Response {
+    /// Not consumed and nothing changed; the event bubbles.
     pub const IGNORE: Self = Self {
         handled: false,
         changed: false,
+        layout: false,
     };
+    /// Consumed without a visible change.
     pub const HANDLED: Self = Self {
         handled: true,
         changed: false,
+        layout: false,
     };
+    /// Consumed; the element looks different but keeps its size.
+    pub const REPAINT: Self = Self {
+        handled: true,
+        changed: true,
+        layout: false,
+    };
+    /// Consumed; the element's content changed, which may change its size.
     pub const CHANGED: Self = Self {
         handled: true,
         changed: true,
+        layout: true,
     };
 }

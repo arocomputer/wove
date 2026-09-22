@@ -33,7 +33,7 @@ a clipped `Canvas`. Moving an element preserves its state; removing it drops its
 subtree and callbacks.
 
 This is an early release with an unstable API. Current elements are `Container`,
-`Panel`, `Text`, `RichText`, `Input`, `Textarea`, `Select`, `List`, `Table`, and
+`Panel`, `Text`, `RichText`, `Input`, `Textarea`, `List`, `Table`, and
 `Scroll`, plus `Feed` for long text documents. `List` requests only visible rows
 from its provider, `Scroll` paints only the children in view, and `Feed` lays out
 only the blocks in view. `Textarea` scrolls long lines or, with `wrap`, breaks

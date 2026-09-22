@@ -2,7 +2,7 @@
 use crate::{Canvas, Element, Event, Key, Layout, MouseKind, Response, Style};
 
 /// Children scrolled out of view are not painted, so content may be far taller
-/// than the viewport.
+/// than the viewport. A descendant that receives focus is scrolled into view.
 #[derive(Default)]
 pub struct Scroll {
     pub offset: u32,
@@ -12,6 +12,8 @@ pub struct Scroll {
     bar: Option<Style>,
     limit: u32,
     page: u32,
+    /// Content rows to bring into view at the next viewport.
+    reveal: Option<(u32, u32)>,
 }
 
 impl Scroll {
@@ -58,9 +60,27 @@ impl Element for Scroll {
             canvas.text(i32::from(width) - 1, y as i32, mark, style);
         }
     }
+    fn reveal(&mut self, (_, y): (u32, u32), (_, height): (u16, u16)) {
+        self.reveal = Some((y, y.saturating_add(u32::from(height))));
+    }
     fn viewport(&mut self, size: (u16, u16), content: (u32, u32)) -> (u32, u32) {
         self.page = u32::from(size.1);
         self.limit = content.1.saturating_sub(self.page);
+        // Move only as far as showing the rows needs, preferring their top.
+        if let Some((top, bottom)) = self.reveal.take() {
+            let shown = if self.follow { self.limit } else { self.offset };
+            let offset = if top < shown {
+                top
+            } else if bottom > shown.saturating_add(self.page) {
+                (bottom - self.page).min(top)
+            } else {
+                shown
+            };
+            if offset != shown {
+                self.offset = offset;
+                self.follow = offset >= self.limit;
+            }
+        }
         self.offset = if self.follow {
             self.limit
         } else {
@@ -92,9 +112,11 @@ impl Element for Scroll {
             _ => return Response::IGNORE,
         }
         self.follow = self.offset == self.limit;
-        Response {
-            handled: old != self.offset,
-            changed: old != self.offset,
+        // An offset that cannot move lets the event reach an outer scroll.
+        if old == self.offset {
+            Response::IGNORE
+        } else {
+            Response::REPAINT
         }
     }
 }

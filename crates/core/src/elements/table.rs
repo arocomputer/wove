@@ -1,8 +1,6 @@
 //! A table with explicit column widths and a fixed header.
-use super::window;
-use crate::{Button, Canvas, Element, Event, Key, MouseKind, Response, Style};
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
+use super::{navigate, window};
+use crate::{render::fit, Canvas, Element, Event, Response, Style};
 
 /// Column widths are terminal cells. Values are clipped at grapheme boundaries;
 /// headers remain visible while keyboard navigation scrolls the body.
@@ -34,24 +32,16 @@ impl Table {
             ..Self::default()
         }
     }
-    fn row(
+    fn row<'a>(
         &self,
         canvas: &mut Canvas<'_>,
         y: i32,
-        values: impl Iterator<Item = String>,
+        values: impl Iterator<Item = &'a str>,
         style: Style,
     ) {
         let mut x = 0;
         for ((_, width), value) in self.columns.iter().zip(values) {
-            let mut used = 0;
-            let clipped: String = value
-                .graphemes(true)
-                .take_while(|g| {
-                    used += g.width();
-                    used <= usize::from(*width)
-                })
-                .collect();
-            canvas.text(x, y, &clipped, style);
+            canvas.text(x, y, fit(value, usize::from(*width)), style);
             x += i32::from(*width) + 1;
         }
     }
@@ -88,24 +78,22 @@ impl Element for Table {
         self.row(
             canvas,
             0,
-            self.columns.iter().map(|(name, _)| name.clone()),
+            self.columns.iter().map(|(name, _)| name.as_str()),
             self.header,
         );
-        let height = usize::from(canvas.size().1.saturating_sub(1));
         let selected = self.selected.min(self.rows.len().saturating_sub(1));
-        let offset = window(self.offset, selected, self.rows.len(), height);
         for (y, (index, row)) in self
             .rows
             .iter()
             .enumerate()
-            .skip(offset)
-            .take(height)
+            .skip(self.offset)
+            .take(self.page)
             .enumerate()
         {
             self.row(
                 canvas,
                 y as i32 + 1,
-                row.iter().cloned(),
+                row.iter().map(String::as_str),
                 if index == selected {
                     self.highlight
                 } else {
@@ -115,31 +103,8 @@ impl Element for Table {
         }
     }
     fn event(&mut self, event: &Event) -> Response {
-        let old = self.selected;
-        let first = window(self.offset, old, self.rows.len(), self.page);
-        match event {
-            Event::Mouse(mouse) => match mouse.kind {
-                // Row zero is the header.
-                MouseKind::Down(Button::Left) if mouse.y > 0 => {
-                    self.selected = first + usize::from(mouse.y) - 1
-                }
-                MouseKind::ScrollUp => self.selected = self.selected.saturating_sub(1),
-                MouseKind::ScrollDown => self.selected = self.selected.saturating_add(1),
-                _ => return Response::IGNORE,
-            },
-            Event::Key(Key::Up, _) => self.selected = self.selected.saturating_sub(1),
-            Event::Key(Key::Down, _) => self.selected = self.selected.saturating_add(1),
-            Event::Key(Key::PageUp, _) => self.selected = self.selected.saturating_sub(self.page),
-            Event::Key(Key::PageDown, _) => self.selected = self.selected.saturating_add(self.page),
-            Event::Key(Key::Home, _) => self.selected = 0,
-            Event::Key(Key::End, _) => self.selected = self.rows.len().saturating_sub(1),
-            _ => return Response::IGNORE,
-        }
-        self.selected = self.selected.min(self.rows.len().saturating_sub(1));
-        self.offset = window(first, self.selected, self.rows.len(), self.page);
-        Response {
-            handled: true,
-            changed: self.selected != old,
-        }
+        // Row zero is the header.
+        let (count, page) = (self.rows.len(), self.page);
+        navigate(event, &mut self.selected, &mut self.offset, count, page, 1)
     }
 }

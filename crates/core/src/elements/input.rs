@@ -1,10 +1,11 @@
 //! Single-line editing with selection and a horizontally scrolling cursor.
+use super::cluster;
 use crate::{
-    text::{command, Command, Editor},
+    render::{cell_width, columns},
+    text::{clean, command, Command, Editor},
     Canvas, CursorShape, Element, Event, Layout, Response, Style,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Default)]
 pub struct Input {
@@ -20,21 +21,24 @@ pub struct Input {
 }
 
 impl Input {
+    /// An input holding `value`, with tabs expanded and other controls removed.
     pub fn new(value: &str) -> Self {
         Self {
-            editor: Editor::new(
-                value
-                    .chars()
-                    .filter(|c| !c.is_control())
-                    .collect::<String>(),
-            ),
+            editor: Editor::new(clean(value, false)),
             ..Self::default()
         }
     }
-    /// The cells a grapheme takes as displayed.
-    fn cells(&self, grapheme: &str) -> usize {
-        self.mask
-            .map_or(grapheme.width(), |mask| mask.width().unwrap_or(1))
+    /// The cells a grapheme takes as displayed, starting `column` cells in.
+    fn cells(&self, grapheme: &str, column: usize) -> usize {
+        match self.mask {
+            Some(mask) => columns(mask.encode_utf8(&mut [0; 4])),
+            None => cell_width(grapheme, column),
+        }
+    }
+    /// The cells `text` takes as displayed from the start of the value.
+    fn width(&self, text: &str) -> usize {
+        text.graphemes(true)
+            .fold(0, |used, g| used + self.cells(g, used))
     }
 }
 
@@ -55,54 +59,59 @@ impl Element for Input {
     fn measure(&self, _: Option<u16>) -> (u16, u16) {
         // One cell more than the text, for the cursor after its last grapheme.
         // Without it an input sized to its content scrolls its first cell away.
-        let text: usize = self
-            .editor
-            .text()
-            .graphemes(true)
-            .map(|g| self.cells(g))
-            .sum();
+        let text = self.width(self.editor.text());
         ((text + 1).min(u16::MAX as usize) as u16, 1)
+    }
+    /// Scroll just far enough to keep the cursor in view.
+    fn viewport(&mut self, size: (u16, u16), _: (u32, u32)) -> (u32, u32) {
+        let width = usize::from(size.0).max(1);
+        let value = self.editor.text();
+        let cursor_col = self.width(&value[..self.editor.cursor()]);
+        let desired = cursor_col.saturating_sub(width - 1);
+        let mut left = 0;
+        for g in value.graphemes(true) {
+            if left >= desired {
+                break;
+            }
+            left += self.cells(g, left);
+        }
+        self.editor.set_view(0, left);
+        (0, 0)
     }
     fn paint(&self, canvas: &mut Canvas<'_>) {
         let width = usize::from(canvas.size().0);
-        if width == 0 {
-            return;
-        }
         let value = self.editor.text();
         if value.is_empty() && !canvas.focused() {
             canvas.text(0, 0, &self.placeholder, self.style);
             return;
         }
-        let cursor_col: usize = value[..self.editor.cursor()]
-            .graphemes(true)
-            .map(|g| self.cells(g))
-            .sum();
-        let desired = cursor_col.saturating_sub(width - 1);
-        let mut start_col = 0;
-        let mut start = 0;
-        for (i, g) in value.grapheme_indices(true) {
-            if start_col >= desired {
-                break;
-            }
-            start_col += self.cells(g);
-            start = i + g.len();
-        }
-        self.editor.set_view(0, start_col);
-        let selection = self.editor.selection();
+        // `viewport` scrolled to a grapheme boundary that keeps the cursor in view.
+        let (_, left) = self.editor.view();
+        let (cursor, selection) = (self.editor.cursor(), self.editor.selection());
         let mut mask = [0; 4];
-        let mut x = 0;
-        for (i, g) in value[start..].grapheme_indices(true) {
-            let style = Style {
-                reverse: self.style.reverse
-                    || (canvas.focused() && selection.contains(&(start + i))),
-                ..self.style
-            };
-            let shown = self.mask.map_or(g, |c| &*c.encode_utf8(&mut mask));
-            canvas.text(x, 0, shown, style);
-            x += self.cells(g) as i32;
+        let mut cursor_x = None;
+        let mut col = 0;
+        for (i, g) in value.grapheme_indices(true) {
+            if i == cursor {
+                cursor_x = Some(col - left);
+            }
+            let cells = self.cells(g, col);
+            if col >= left {
+                if col - left >= width {
+                    break;
+                }
+                let style = Style {
+                    reverse: self.style.reverse || (canvas.focused() && selection.contains(&i)),
+                    ..self.style
+                };
+                let shown = self.mask.map_or(g, |c| &*c.encode_utf8(&mut mask));
+                cluster(canvas, (col - left) as i32, 0, shown, cells, style);
+            }
+            col += cells;
         }
         if canvas.focused() {
-            canvas.cursor(cursor_col.saturating_sub(start_col) as i32, 0);
+            let x = cursor_x.unwrap_or(col.saturating_sub(left));
+            canvas.cursor(x as i32, 0);
             canvas.cursor_shape(self.cursor);
         }
     }
@@ -118,14 +127,11 @@ impl Element for Input {
                 .graphemes(true)
                 .take(limit.saturating_sub(kept))
                 .collect();
-            let changed = !room.is_empty() || !editor.selection().is_empty();
-            if changed {
-                editor.insert(&room);
+            if room.is_empty() && editor.selection().is_empty() {
+                return Response::HANDLED;
             }
-            return Response {
-                handled: true,
-                changed,
-            };
+            editor.insert(&room);
+            return Response::CHANGED;
         }
         crate::text::edit(&mut self.editor, event, false)
     }

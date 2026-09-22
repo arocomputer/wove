@@ -14,18 +14,19 @@ impl Tree {
         if !self.dirty {
             return Ok(&self.frame);
         }
-        if self
-            .focus
-            .is_some_and(|id| !self.visible(id) || !self.nodes[id].element.focusable())
-        {
-            self.focus(None)?;
-        }
+        self.drop_stale_focus()?;
         // An inline frame at its natural height was laid out by `height`, and a
         // repaint alone, after a focus change for example, moved nothing.
         let natural = self.fresh == Some((width, None)) && self.natural == Some((width, height));
         if !natural && self.fresh != Some((width, Some(height))) {
             self.compute(width, Some(height))?;
             self.fresh = Some((width, Some(height)));
+        }
+        // Revealing needs the layout just computed, and precedes the paint.
+        if std::mem::take(&mut self.reveal_focus) {
+            if let Some(id) = self.focus {
+                self.reveal(id)?;
+            }
         }
         let mut frame = std::mem::replace(&mut self.frame, Buffer::new(0, 0));
         if frame.area().width != width || frame.area().height != height {
@@ -148,17 +149,6 @@ impl Tree {
             self.hide(id);
             return Ok(());
         }
-        let node = &mut self.nodes[id];
-        node.origin = origin;
-        node.size = size;
-        node.clip = bounds;
-        node.element.paint(&mut Canvas {
-            buffer,
-            origin,
-            size,
-            clip: bounds,
-            focused: self.focus == Some(id),
-        });
         let inset = (layout.border.left as i32, layout.border.top as i32);
         let inner_extent = (
             (layout.size.width - layout.border.left - layout.border.right).max(0.0) as u32,
@@ -177,17 +167,25 @@ impl Tree {
             layout.scrollable_overflow_rect.right.max(0.0) as u32,
             layout.scrollable_overflow_rect.bottom.max(0.0) as u32,
         );
+        // The viewport comes first, so an element paints the view it just chose.
+        let node = &mut self.nodes[id];
+        node.origin = origin;
+        node.size = size;
+        node.clip = bounds;
         let offset = node.element.viewport(inner_size, content);
+        node.element.paint(&mut Canvas {
+            buffer,
+            origin,
+            size,
+            clip: bounds,
+            focused: self.focus == Some(id),
+        });
         let offset = (
             i32::try_from(offset.0).unwrap_or(i32::MAX),
             i32::try_from(offset.1).unwrap_or(i32::MAX),
         );
-        let layers = self.nodes[id].layered.then(|| self.layers(id));
         for index in 0..self.nodes[id].children.len() {
-            let child = match &layers {
-                Some(layers) => layers[index],
-                None => self.nodes[id].children[index],
-            };
+            let child = self.nodes[id].layers()[index];
             self.paint(
                 child,
                 (

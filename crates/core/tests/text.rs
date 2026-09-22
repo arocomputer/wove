@@ -488,3 +488,72 @@ fn shifted_alt_word_bindings_extend_the_selection() {
         );
     }
 }
+
+#[test]
+fn a_textarea_measures_a_tab_as_the_cells_it_paints() {
+    use wove::{elements::Textarea, testing::Screen};
+    let mut screen = Screen::new(8, 1);
+    let mut area = Textarea::default();
+    area.editor.set("a\tb");
+    let id = screen.tree.add(screen.tree.root(), area).unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    let frame = screen.frame().unwrap();
+    assert_eq!(frame.lines(), ["a   b   "]);
+    assert_eq!(frame.cursor(), Some((5, 0)));
+}
+
+#[test]
+fn an_edit_command_that_changes_nothing_asks_for_no_repaint() {
+    use wove::{elements::Input, testing::Screen, Event, Key, Modifiers};
+    let mut screen = Screen::new(8, 1);
+    let id = screen
+        .tree
+        .add(screen.tree.root(), Input::default())
+        .unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    let left = screen.send(Key::Left).unwrap();
+    assert!(left.handled && !left.changed);
+    let ctrl = Modifiers {
+        ctrl: true,
+        ..Modifiers::default()
+    };
+    let undo = screen.send(Event::Key(Key::Char('z'), ctrl)).unwrap();
+    assert!(!undo.changed);
+    assert!(screen.send(Key::Char('a')).unwrap().changed);
+}
+
+#[test]
+fn moving_the_cursor_repaints_without_measuring_again() {
+    use std::{cell::Cell, rc::Rc};
+    use wove::{elements::Input, testing::Screen, Canvas, Element, Event, Key, Response};
+    // An input that counts how often layout measures it.
+    struct Counted(Input, Rc<Cell<usize>>);
+    impl Element for Counted {
+        fn measure(&self, width: Option<u16>) -> (u16, u16) {
+            self.1.set(self.1.get() + 1);
+            self.0.measure(width)
+        }
+        fn paint(&self, canvas: &mut Canvas<'_>) {
+            self.0.paint(canvas)
+        }
+        fn event(&mut self, event: &Event) -> Response {
+            self.0.event(event)
+        }
+        fn focusable(&self) -> bool {
+            true
+        }
+    }
+    let measured = Rc::new(Cell::new(0));
+    let mut screen = Screen::new(8, 1);
+    let input = Counted(Input::new("ab"), measured.clone());
+    let id = screen.tree.add(screen.tree.root(), input).unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    screen.frame().unwrap();
+    let before = measured.get();
+    assert!(screen.send(Key::Left).unwrap().changed);
+    assert_eq!(screen.frame().unwrap().cursor(), Some((1, 0)));
+    assert_eq!(measured.get(), before);
+    screen.send(Key::Char('x')).unwrap();
+    screen.frame().unwrap();
+    assert!(measured.get() > before);
+}
