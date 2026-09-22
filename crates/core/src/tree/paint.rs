@@ -1,8 +1,16 @@
 //! Layout measurement and clipped painting of the retained tree.
-use super::{Error, Id, Tree};
-use crate::{Buffer, Canvas, Rect};
-use std::sync::atomic::{AtomicU64, Ordering};
-use taffy::{AvailableSpace, Dimension, Display, Size};
+use super::{Error, Id, Nodes, Tree};
+use crate::{
+    elements::{Container, Lazy},
+    Buffer, Canvas, Rect,
+};
+use std::{
+    any::Any,
+    sync::atomic::{AtomicU64, Ordering},
+};
+use taffy::{
+    AvailableSpace, Dimension, Display, LayoutInput, LayoutOutput, Size, TraversePartialTree,
+};
 
 impl Tree {
     /// Compute layout and paint only when state or dimensions changed. Callers
@@ -91,29 +99,78 @@ impl Tree {
                     AvailableSpace::Definite(f32::from(h))
                 }),
             },
-            |inputs, _, context, style| {
-                taffy::compute_leaf_layout(
-                    inputs,
-                    style,
-                    |_, _| 0.0,
-                    |known, available| {
-                        let width = known.width.or(match available.width {
-                            AvailableSpace::Definite(w) => Some(w),
-                            AvailableSpace::MinContent => Some(1.0),
-                            _ => None,
-                        });
-                        let (w, h) = context.and_then(|id| nodes.get(*id)).map_or((0, 0), |n| {
-                            n.element.measure(width.map(|n| n.max(0.0) as u16))
-                        });
-                        Size {
-                            width: known.width.unwrap_or(f32::from(w)),
-                            height: known.height.unwrap_or(f32::from(h)),
-                        }
-                    },
-                )
-            },
+            |inputs, _, context, style| leaf(nodes, inputs, context, style),
         )?;
         Ok(())
+    }
+
+    /// Lay out a child of a `Lazy` on its own, as the only child of a column
+    /// `width` cells wide, and return the rows it takes with its margins.
+    /// Taffy keeps the result until something in the child changes, so asking
+    /// again about an unchanged child costs little.
+    pub(super) fn lay(&mut self, child: Id, width: u16) -> Result<usize, Error> {
+        let (lane, node) = (self.lane, self.nodes[child].layout);
+        let columns = Dimension::length(f32::from(width));
+        if self.layout.style(lane)?.size.width != columns {
+            let mut style = self.layout.style(lane)?.clone();
+            style.size.width = columns;
+            self.layout.set_style(lane, style)?;
+        }
+        if self.layout.child_count(lane) != 1 || self.layout.child_at_index(lane, 0)? != node {
+            self.layout.set_children(lane, &[node])?;
+        }
+        let nodes = &self.nodes;
+        self.layout.compute_layout_with_measure(
+            lane,
+            Size {
+                width: AvailableSpace::Definite(f32::from(width)),
+                height: AvailableSpace::MaxContent,
+            },
+            |inputs, _, context, style| leaf(nodes, inputs, context, style),
+        )?;
+        Ok(self.layout.layout(lane)?.size.height.max(0.0) as usize)
+    }
+
+    /// Paint the children of a `Lazy` that are in view, stacked from the top
+    /// of its content box, and forget where the others were painted.
+    fn paint_lazy(
+        &mut self,
+        id: Id,
+        layout: &taffy::Layout,
+        origin: (i32, i32),
+        clip: Rect,
+        buffer: &mut Buffer,
+    ) -> Result<(), Error> {
+        let (x, y, width, height) = content(layout, origin);
+        // Both are put back before returning; painting a child needs neither.
+        let children = std::mem::take(&mut self.nodes[id].children);
+        let mut element = std::mem::replace(&mut self.nodes[id].element, Box::new(Container));
+        let mut failed = None;
+        let (first, skipped) = (element.as_mut() as &mut dyn Any)
+            .downcast_mut::<Lazy>()
+            .expect("a lazy node")
+            .settle(height, &children, &mut |index| {
+                self.lay(children[index], width).unwrap_or_else(|error| {
+                    failed = Some(error);
+                    0
+                })
+            });
+        let mut painted = failed.map_or(Ok(()), Err);
+        let mut top = i64::from(y) - skipped as i64;
+        for (index, child) in children.iter().enumerate() {
+            if painted.is_err() || index < first || top >= i64::from(y) + i64::from(height) {
+                self.hide(*child);
+                continue;
+            }
+            painted = self.lay(*child, width).and_then(|rows| {
+                let at = top.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+                top += rows as i64;
+                self.paint(*child, (x, at), clip, buffer)
+            });
+        }
+        self.nodes[id].children = children;
+        self.nodes[id].element = element;
+        painted
     }
 
     fn paint(
@@ -184,17 +241,21 @@ impl Tree {
             i32::try_from(offset.0).unwrap_or(i32::MAX),
             i32::try_from(offset.1).unwrap_or(i32::MAX),
         );
-        for index in 0..self.nodes[id].children.len() {
-            let child = self.nodes[id].layers()[index];
-            self.paint(
-                child,
-                (
-                    origin.0.saturating_sub(offset.0),
-                    origin.1.saturating_sub(offset.1),
-                ),
-                inner,
-                buffer,
-            )?;
+        if self.lazy(id) {
+            self.paint_lazy(id, &layout, origin, inner, buffer)?;
+        } else {
+            for index in 0..self.nodes[id].children.len() {
+                let child = self.nodes[id].layers()[index];
+                self.paint(
+                    child,
+                    (
+                        origin.0.saturating_sub(offset.0),
+                        origin.1.saturating_sub(offset.1),
+                    ),
+                    inner,
+                    buffer,
+                )?;
+            }
         }
         self.nodes[id].element.overlay(&mut Canvas {
             buffer,
@@ -220,5 +281,49 @@ fn clip_signed(origin: (i32, i32), size: (u32, u32), clip: Rect) -> Rect {
         top.clamp(0, i64::from(u16::MAX)) as u16,
         (right - left).clamp(0, i64::from(u16::MAX)) as u16,
         (bottom - top).clamp(0, i64::from(u16::MAX)) as u16,
+    )
+}
+
+/// Lay out a leaf by measuring its element, which has cells, not pixels.
+fn leaf(
+    nodes: &Nodes,
+    inputs: LayoutInput,
+    context: Option<&mut Id>,
+    style: &taffy::Style,
+) -> LayoutOutput {
+    taffy::compute_leaf_layout(
+        inputs,
+        style,
+        |_, _| 0.0,
+        |known, available| {
+            let width = known.width.or(match available.width {
+                AvailableSpace::Definite(w) => Some(w),
+                AvailableSpace::MinContent => Some(1.0),
+                _ => None,
+            });
+            let (w, h) = context.and_then(|id| nodes.get(*id)).map_or((0, 0), |n| {
+                n.element.measure(width.map(|n| n.max(0.0) as u16))
+            });
+            Size {
+                width: known.width.unwrap_or(f32::from(w)),
+                height: known.height.unwrap_or(f32::from(h)),
+            }
+        },
+    )
+}
+
+/// A node's content box, inside its border and padding: where it is, in
+/// frame coordinates from its `origin`, and its size.
+pub(super) fn content(layout: &taffy::Layout, origin: (i32, i32)) -> (i32, i32, u16, u16) {
+    let cells = |n: f32| n.clamp(0.0, f32::from(u16::MAX)) as u16;
+    (
+        origin
+            .0
+            .saturating_add((layout.border.left + layout.padding.left) as i32),
+        origin
+            .1
+            .saturating_add((layout.border.top + layout.padding.top) as i32),
+        cells(layout.content_box_width()),
+        cells(layout.content_box_height()),
     )
 }

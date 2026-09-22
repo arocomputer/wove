@@ -1,9 +1,13 @@
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::BTreeSet,
+    rc::Rc,
+};
 use wove::{
-    elements::{Feed, List, Table},
+    elements::{Feed, Lazy, List, Panel, Table, Text},
     testing::Screen,
     text::{Span, Wrap},
-    Key, Style,
+    Canvas, Element, Id, Key, Style,
 };
 
 fn block(text: &str) -> Vec<Span> {
@@ -165,4 +169,164 @@ fn list_and_table_measure_tabs_as_the_cells_they_paint() {
     let lines = screen.frame().unwrap().lines();
     assert_eq!(lines[0], "a   b    ");
     assert_eq!(lines[2], "ab   xyz ");
+}
+
+/// A row of a lazy column that records when it is measured.
+struct Row {
+    index: usize,
+    measured: Rc<RefCell<BTreeSet<usize>>>,
+}
+impl Element for Row {
+    fn measure(&self, width: Option<u16>) -> (u16, u16) {
+        self.measured.borrow_mut().insert(self.index);
+        (width.unwrap_or(0), 1)
+    }
+    fn paint(&self, canvas: &mut Canvas<'_>) {
+        canvas.text(0, 0, &format!("r{}", self.index), Style::default());
+    }
+    fn focusable(&self) -> bool {
+        true
+    }
+}
+
+/// A lazy column of `count` rows, with the ids of the column and its rows.
+fn rows(
+    screen: &mut Screen,
+    lazy: Lazy,
+    count: usize,
+) -> (Id, Vec<Id>, Rc<RefCell<BTreeSet<usize>>>) {
+    let measured = Rc::new(RefCell::new(BTreeSet::new()));
+    let id = screen.tree.add(screen.tree.root(), lazy).unwrap();
+    let rows = (0..count)
+        .map(|index| {
+            let measured = measured.clone();
+            screen.tree.add(id, Row { index, measured }).unwrap()
+        })
+        .collect();
+    (id, rows, measured)
+}
+
+#[test]
+fn a_lazy_column_lays_out_only_the_children_in_view() {
+    let mut screen = Screen::new(6, 3);
+    let (id, _, measured) = rows(&mut screen, Lazy::default(), 10_000);
+    screen.tree.focus(Some(id)).unwrap();
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r0    ", "r1    ", "r2    "]
+    );
+    assert!(
+        measured.borrow().len() < 10,
+        "{:?}",
+        measured.borrow().len()
+    );
+    screen.send(Key::PageDown).unwrap();
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r3    ", "r4    ", "r5    "]
+    );
+    screen.send(Key::End).unwrap();
+    screen.send(Key::Up).unwrap();
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r9996 ", "r9997 ", "r9998 "]
+    );
+    // The first rows, the rows around the tail, and nothing in between.
+    let measured = measured.borrow();
+    assert!(measured.len() < 20, "{measured:?}");
+    assert!(!measured.contains(&5000));
+}
+
+#[test]
+fn a_lazy_column_follows_its_tail_until_scrolled_and_holds_its_place() {
+    let mut screen = Screen::new(6, 3);
+    let mut lazy = Lazy::default();
+    lazy.follow = true;
+    let (id, _, measured) = rows(&mut screen, lazy, 100);
+    screen.tree.focus(Some(id)).unwrap();
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r97   ", "r98   ", "r99   "]
+    );
+    let add = |screen: &mut Screen, index| {
+        let measured = measured.clone();
+        screen.tree.add(id, Row { index, measured }).unwrap();
+    };
+    add(&mut screen, 100);
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r98   ", "r99   ", "r100  "]
+    );
+    screen.send(Key::Up).unwrap();
+    add(&mut screen, 101);
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r97   ", "r98   ", "r99   "]
+    );
+    assert!(!screen.tree.get::<Lazy>(id).unwrap().follow);
+    screen.send(Key::End).unwrap();
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r99   ", "r100  ", "r101  "]
+    );
+    assert!(screen.tree.get::<Lazy>(id).unwrap().follow);
+}
+
+#[test]
+fn a_lazy_column_reveals_focus_and_takes_clicks_only_where_it_painted() {
+    let mut screen = Screen::new(6, 3);
+    let (_, ids, _) = rows(&mut screen, Lazy::default(), 100);
+    screen.tree.focus(Some(ids[50])).unwrap();
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r48   ", "r49   ", "r50   "]
+    );
+    assert_eq!(screen.tree.bounds(ids[50]).unwrap().y, 2);
+    assert_eq!(screen.tree.bounds(ids[0]).unwrap().height, 0);
+    screen.send(Key::Tab).unwrap();
+    assert_eq!(screen.tree.focused(), Some(ids[51]));
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r49   ", "r50   ", "r51   "]
+    );
+    assert_eq!(screen.click(0, 0).unwrap().target, Some(ids[49]));
+}
+
+#[test]
+fn a_lazy_column_measures_a_child_again_when_its_subtree_changes() {
+    let mut screen = Screen::new(8, 4);
+    let mut lazy = Lazy::default();
+    lazy.follow = true;
+    let id = screen.tree.add(screen.tree.root(), lazy).unwrap();
+    let mut texts = vec![];
+    for label in ["one", "two"] {
+        let panel = screen.tree.add(id, Panel::default()).unwrap();
+        texts.push(screen.tree.add(panel, Text::new(label)).unwrap());
+    }
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["└──────┘", "┌──────┐", "│two   │", "└──────┘"],
+    );
+    screen
+        .tree
+        .update::<Text>(texts[1], |text| text.content = "two\nlines".into())
+        .unwrap();
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["┌──────┐", "│two   │", "│lines │", "└──────┘"],
+    );
+}
+
+#[test]
+fn a_child_moves_between_a_lazy_column_and_an_ordinary_parent() {
+    let mut screen = Screen::new(6, 2);
+    let (id, ids, _) = rows(&mut screen, Lazy::default(), 3);
+    screen.frame().unwrap();
+    let root = screen.tree.root();
+    screen.tree.insert(root, ids[0], 0).unwrap();
+    assert_eq!(screen.frame().unwrap().lines(), ["r0    ", "r1    "]);
+    screen.tree.append(id, ids[0]).unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    screen.send(Key::End).unwrap();
+    assert_eq!(screen.frame().unwrap().lines(), ["r2    ", "r0    "]);
 }

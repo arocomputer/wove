@@ -33,7 +33,8 @@ pub trait Element: Any {
     }
     /// Scroll a descendant into view. Called on the nearest ancestor whose
     /// layout has `overflow: Scroll` when focus moves to a node inside it,
-    /// before the frame is painted, with the node's position in the content
-    /// as if unscrolled and its size. `viewport` follows in the same frame.
+    /// unless a `Lazy` is nearer, before the frame is painted, with the node's
+    /// position in the content as if unscrolled and its size. `viewport`
+    /// follows in the same frame.
     fn reveal(&mut self, _at: (u32, u32), _size: (u16, u16)) {}
 }

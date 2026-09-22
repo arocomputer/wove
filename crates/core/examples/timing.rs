@@ -1,7 +1,7 @@
 //! Local frame timings. No pass/fail thresholds.
 use std::{hint::black_box, time::Instant};
 use wove::{
-    elements::{Feed, Scroll, Text},
+    elements::{Feed, Lazy, Scroll, Text},
     text::{Span, Wrap},
     Renderer, Style, Tree,
 };
@@ -103,6 +103,36 @@ fn main() {
     });
     println!("10,000 blocks, first frame:     {first:.3} ms");
     println!("10,000 blocks, streaming frame: {streaming:.3} ms");
+
+    // The same elements in a lazy column, which lays out only those in view.
+    let mut tree = Tree::new();
+    let lazy = tree.add(tree.root(), Lazy::default()).unwrap();
+    tree.update::<Lazy>(lazy, |l| l.follow = true).unwrap();
+    let mut last = lazy;
+    for i in 0..10_000 {
+        let block = Text {
+            wrap: true,
+            ..Text::new(format!("Block {i}: {}", "lorem ipsum dolor ".repeat(12)))
+        };
+        last = tree.add(lazy, block).unwrap();
+    }
+    let mut renderer = Renderer::default();
+    sink.clear();
+    let first = time(1, |_| {
+        renderer
+            .draw(&mut sink, tree.frame(100, 30).unwrap())
+            .unwrap();
+    });
+    let streaming = time(200, |_| {
+        tree.update::<Text>(last, |w| w.content.push_str("more words "))
+            .unwrap();
+        sink.clear();
+        renderer
+            .draw(&mut sink, tree.frame(100, 30).unwrap())
+            .unwrap();
+    });
+    println!("10,000 block lazy, first frame:     {first:.3} ms");
+    println!("10,000 block lazy, streaming frame: {streaming:.3} ms");
 
     // The same session in a feed, which lays out only the blocks in view.
     let block = |text: String| vec![Span::new(text, Style::default())];

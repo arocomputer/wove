@@ -67,6 +67,56 @@ pub(crate) fn navigate(
     }
 }
 
+/// Where a full view of `height` rows that ends at the last of `count` blocks
+/// starts, as a block and a row within it. Positions in a column of blocks of
+/// varying height take this form, because `rows`, which measures a block, is
+/// only asked about the blocks a walk passes.
+pub(crate) fn tail(
+    count: usize,
+    height: usize,
+    rows: &mut dyn FnMut(usize) -> usize,
+) -> (usize, usize) {
+    let mut total = 0;
+    for index in (0..count).rev() {
+        total += rows(index);
+        if total >= height {
+            return (index, total - height);
+        }
+    }
+    (0, 0)
+}
+
+/// Move a position in a column of `count` blocks by `by` rows. Moving up stops
+/// at the first row; moving down stops in the last block, possibly beyond its
+/// rows, so callers hold the result at the `tail`.
+pub(crate) fn step(
+    (mut block, mut row): (usize, usize),
+    by: isize,
+    count: usize,
+    rows: &mut dyn FnMut(usize) -> usize,
+) -> (usize, usize) {
+    if by < 0 {
+        let mut left = by.unsigned_abs();
+        while left > row && block > 0 {
+            left -= row;
+            block -= 1;
+            row = rows(block);
+        }
+        (block, row.saturating_sub(left))
+    } else {
+        row += by.unsigned_abs();
+        while block + 1 < count {
+            let extent = rows(block);
+            if row < extent {
+                break;
+            }
+            row -= extent;
+            block += 1;
+        }
+        (block, row)
+    }
+}
+
 /// Draw one grapheme that starts `cells` wide at a cell of a line. A tab
 /// draws as the spaces that reach its stop in the line, which drawing it
 /// alone would not.
@@ -135,3 +185,5 @@ mod table;
 pub use feed::Feed;
 pub use list::List;
 pub use table::Table;
+mod lazy;
+pub use lazy::Lazy;

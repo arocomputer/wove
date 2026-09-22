@@ -97,14 +97,9 @@ impl Feed {
 
     /// Where a full viewport ending at the tail starts.
     fn tail(&self, (width, height): (u16, u16)) -> (usize, usize) {
-        let mut rows = 0;
-        for index in (0..self.blocks.len()).rev() {
-            rows += self.extent(index, width);
-            if rows >= usize::from(height) {
-                return (index, rows - usize::from(height));
-            }
-        }
-        (0, 0)
+        super::tail(self.blocks.len(), usize::from(height), &mut |index| {
+            self.extent(index, width)
+        })
     }
 
     /// The first visible position: the anchor, unless the tail already fits below it.
@@ -119,25 +114,12 @@ impl Feed {
     }
 
     fn scroll(&mut self, rows: isize) {
-        let (mut block, mut row) = self.start(self.view);
         let width = self.view.0;
-        if rows < 0 {
-            let mut left = rows.unsigned_abs();
-            while left > row && block > 0 {
-                left -= row + 1;
-                block -= 1;
-                row = self.extent(block, width).saturating_sub(1);
-            }
-            row = row.saturating_sub(left);
-        } else {
-            // Moving down never passes the tail, so stop at the last block.
-            row += rows.unsigned_abs();
-            while block + 1 < self.blocks.len() && row >= self.extent(block, width) {
-                row -= self.extent(block, width);
-                block += 1;
-            }
-        }
-        self.anchor((block, row));
+        let start = self.start(self.view);
+        let top = super::step(start, rows, self.blocks.len(), &mut |index| {
+            self.extent(index, width)
+        });
+        self.anchor(top);
     }
 
     /// Hold the view at a position, or follow the tail once it is reached.

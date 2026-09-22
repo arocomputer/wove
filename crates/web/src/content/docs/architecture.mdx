@@ -20,8 +20,12 @@ borders, and applies viewport offsets. Children never draw outside their parent,
 so a node with nothing visible ends the walk: content scrolled out of view is
 not painted, and its recorded bounds are cleared so it cannot take a click.
 Scroll extents and offsets are 32-bit, so content may be far taller than a
-frame. Layout still visits every node, which is why a long text document belongs
-in a `Feed`: one leaf that lays out only the blocks in view. Paint order follows child order, and
+frame. Layout still visits every node in a `Scroll`, which is why a long text
+document belongs in a `Feed`: one leaf that lays out only the blocks in view. A
+`Lazy` does the same for element subtrees. Its children are not part of the
+main layout; the paint pass asks the `Lazy` which children are in view and lays
+out each of those alone, at the column's width, in a separate layout node,
+where Taffy's cache keeps it until the child changes. Paint order follows child order, and
 pointer hit testing descends the painted bounds in reverse order, skipping any
 subtree that misses the cell.
 
