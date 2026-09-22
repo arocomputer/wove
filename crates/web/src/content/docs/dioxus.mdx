@@ -60,7 +60,7 @@ a prevented release still ends capture.
 
 A `value` update replaces input text only when it differs from the stored text.
 Values are stored as a paste would be: tabs become spaces and control characters
-are removed, and `input` drops newlines. The native element owns cursor and undo
+are removed, and `input` joins lines with a space. The native element owns cursor and undo
 state; binding the edited value back, or any value that stores the same text,
 preserves that state.
 `oninput` receives `Event<String>` after a native edit, paste, undo, or redo changes

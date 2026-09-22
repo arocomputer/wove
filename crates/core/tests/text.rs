@@ -557,3 +557,19 @@ fn moving_the_cursor_repaints_without_measuring_again() {
     screen.frame().unwrap();
     assert!(measured.get() > before);
 }
+
+#[test]
+fn single_line_paste_joins_lines_with_a_space() {
+    use wove::{elements::Input, testing::Screen, Event};
+    let mut screen = Screen::new(10, 1);
+    let id = screen
+        .tree
+        .add(screen.tree.root(), Input::default())
+        .unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    screen.send(Event::Paste("foo\r\nbar".into())).unwrap();
+    assert_eq!(
+        screen.tree.get::<Input>(id).unwrap().editor.text(),
+        "foo bar"
+    );
+}

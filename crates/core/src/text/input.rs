@@ -89,14 +89,20 @@ pub(crate) fn edit(editor: &mut Editor, event: &Event, multiline: bool) -> Respo
 
 /// Normalize text before an editor stores it, as pasting does: newlines become
 /// `\n`, tabs expand to spaces, and terminal controls are removed. Only
-/// `multiline` text keeps its newlines. Adapters that set an editor's text
-/// compare against this form to tell whether the value actually changed.
+/// `multiline` text keeps its newlines; single-line text joins its lines with a
+/// space. Adapters that set an editor's text compare against this form to tell
+/// whether the value actually changed.
 pub fn clean(value: &str, multiline: bool) -> String {
     value
         .replace("\r\n", "\n")
         .replace('\r', "\n")
         .replace('\t', &" ".repeat(crate::render::TAB))
         .chars()
-        .filter(|c| !c.is_control() || (multiline && *c == '\n'))
+        .filter_map(|c| match c {
+            '\n' if multiline => Some(c),
+            '\n' => Some(' '),
+            c if c.is_control() => None,
+            c => Some(c),
+        })
         .collect()
 }
