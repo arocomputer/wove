@@ -31,13 +31,25 @@ impl Renderer {
 
     /// Emit changed cells as one synchronized update, in a single write, so
     /// nothing else that writes to the terminal can land inside a frame.
-    /// Rows the renderer has no record of are written whole, with trailing
-    /// blanks erased. A failed write invalidates the shadow frame, so the
-    /// next call repaints everything instead of losing changes.
+    /// A failed write invalidates the shadow frame, so the next call repaints
+    /// everything instead of losing changes.
     pub fn draw(&mut self, writer: &mut impl Write, frame: &Buffer) -> io::Result<()> {
+        self.render(frame);
+        self.shadow.send(writer).inspect_err(|_| self.invalidate())
+    }
+
+    /// The bytes that bring the terminal from the last frame to `frame`, as
+    /// one synchronized update; empty when nothing differs. Rows the renderer
+    /// has no record of are written whole, with trailing blanks erased.
+    ///
+    /// The renderer assumes the bytes arrive. Send them in one write, and call
+    /// `invalidate` if it fails; `draw` does both. The slice is reused by the
+    /// next call, so a transport that writes later copies it first.
+    pub fn render(&mut self, frame: &Buffer) -> &[u8] {
         let shadow = &mut self.shadow;
         if shadow.drawn(frame) {
-            return Ok(());
+            shadow.output.clear();
+            return &shadow.output;
         }
         let previous = shadow.previous.take();
         let old = previous.as_ref().filter(|old| old.area() == frame.area());
@@ -48,7 +60,7 @@ impl Renderer {
         let mut next_position = None;
         for y in 0..frame.area().height {
             let Some(old) = old else {
-                write!(output, "\x1b[{};1H", y + 1)?;
+                let _ = write!(output, "\x1b[{};1H", y + 1);
                 pen.row(output, frame, frame.row(y));
                 continue;
             };
@@ -62,7 +74,7 @@ impl Renderer {
                 }
                 let x = x as u16;
                 if next_position != Some((x, y)) {
-                    write!(output, "\x1b[{};{}H", y + 1, x + 1)?;
+                    let _ = write!(output, "\x1b[{};{}H", y + 1, x + 1);
                 }
                 pen.cell(output, frame, cell);
                 // Terminals disagree on the width of emoji and other clusters,
@@ -77,8 +89,16 @@ impl Renderer {
         if output.len() == empty && !cursor_changed {
             // The shadow frame is only copied when something was written.
             shadow.keep(frame, previous);
-            return Ok(());
+        } else {
+            shadow.finish(pen, frame, previous, frame.cursor());
         }
-        shadow.finish(writer, pen, frame, previous, frame.cursor())
+        &shadow.output
+    }
+
+    /// Whether `frame` is the one last rendered, so `render` would return no
+    /// bytes without comparing a cell.
+    #[cfg_attr(not(feature = "terminal"), allow(dead_code))]
+    pub(crate) fn current(&self, frame: &Buffer) -> bool {
+        self.shadow.drawn(frame)
     }
 }

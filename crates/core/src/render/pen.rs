@@ -254,9 +254,10 @@ fn trimmed(row: &[Slot]) -> &[Slot] {
 }
 
 /// What a renderer remembers of the terminal between frames, and the storage
-/// it builds each frame's bytes in. Both renderers write a frame the same way:
+/// it builds each frame's bytes in. Both renderers build a frame the same way:
 /// `begin`, then their changed cells, then `finish`, or `keep` when nothing
-/// on screen differs from the frame.
+/// on screen differs from the frame. Either way `output` then holds the bytes
+/// to send, empty when there are none.
 pub(crate) struct Shadow {
     /// The last frame written. A renderer takes it while comparing and hands
     /// it back to `finish` or `keep`, which reuse its storage.
@@ -309,48 +310,52 @@ impl Shadow {
         Pen::new(self.depth)
     }
 
-    /// Record `frame` as drawn without writing anything.
+    /// Record `frame` as drawn with nothing to send.
     pub fn keep(&mut self, frame: &Buffer, previous: Option<Buffer>) {
+        self.output.clear();
         self.previous = previous;
         self.seen = frame.version;
     }
 
-    /// End the frame begun with `begin`: set the cursor shape, show the cursor
-    /// at the zero-based screen `cursor` if there is one, and send the frame
-    /// in one write, so nothing else that writes to the terminal can land
-    /// inside it. On success `frame` becomes the shadow frame, reusing the
-    /// storage of `previous`. On failure what the terminal shows is unknown,
-    /// so the shadow frame and cursor are forgotten.
+    /// End the frame begun with `begin`: set the cursor shape and show the
+    /// cursor at the zero-based screen `cursor` if there is one. `frame`
+    /// becomes the shadow frame, reusing the storage of `previous`, as though
+    /// the bytes in `output` reached the terminal; a caller whose write fails
+    /// invalidates the renderer.
     pub fn finish(
         &mut self,
-        writer: &mut impl Write,
         mut pen: Pen,
         frame: &Buffer,
         mut previous: Option<Buffer>,
         cursor: Option<(u16, u16)>,
-    ) -> io::Result<()> {
+    ) {
         let output = &mut self.output;
         pen.reset(output);
         let shape = Some(frame.cursor_shape());
         if shape != self.shape {
-            write!(output, "\x1b[{} q", frame.cursor_shape().code())?;
+            let _ = write!(output, "\x1b[{} q", frame.cursor_shape().code());
         }
         if let Some((x, y)) = cursor {
             let (x, y) = (u32::from(x) + 1, u32::from(y) + 1);
-            write!(output, "\r\x1b[{y};{x}H\x1b[?25h")?;
+            let _ = write!(output, "\r\x1b[{y};{x}H\x1b[?25h");
         }
         output.extend_from_slice(END);
-        if let Err(error) = writer.write_all(output).and_then(|()| writer.flush()) {
-            self.previous = None;
-            self.forget_cursor();
-            return Err(error);
-        }
         self.shape = shape;
         match &mut previous {
             Some(buffer) => buffer.clone_from(frame),
             None => previous = Some(frame.clone()),
         }
-        self.keep(frame, previous);
-        Ok(())
+        self.previous = previous;
+        self.seen = frame.version;
+    }
+
+    /// Send a frame's bytes in one write, so nothing else that writes to the
+    /// terminal can land inside it.
+    pub fn send(&self, writer: &mut impl Write) -> io::Result<()> {
+        if self.output.is_empty() {
+            return Ok(());
+        }
+        writer.write_all(&self.output)?;
+        writer.flush()
     }
 }

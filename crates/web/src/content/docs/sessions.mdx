@@ -102,12 +102,38 @@ wait also come back from `typed_ahead`, so drain it again after the switch.
 
 ## Output ownership
 
-A `Terminal` is `Send`, so an application that renders on another thread moves
-the whole session there and hands it cloned frames; a frame is an owned `Buffer`
-and can cross the thread boundary. Input, session state, and output are one
-value, so `draw`, `commit`, and `copy` all run on the thread that owns it. The
-usual shape is a rendering thread that receives frames and commands over a
-channel while the rest of the application builds them.
+`Terminal::draw` writes the frame before it returns, which is right for a local
+terminal. When the terminal can be slow, over SSH, inside tmux, or with a very
+large frame, call `Terminal::detach` once after starting the session. Frames are
+then written by a thread the session owns, and `draw` hands the frame over and
+returns at once, so a blocked write never stalls input handling.
+
+```rust
+let mut terminal = Terminal::new()?;
+terminal.detach()?;
+// The loop is unchanged: draw after every event, as often as you like.
+terminal.draw(tree.frame(width, height)?)?;
+```
+
+A detached writer that falls behind does not build a backlog. While it writes
+one frame, each newer `draw` replaces the frame waiting behind it, and the next
+write takes the terminal straight from what it shows to the newest frame. The
+skipped frames were never on screen, so nothing is lost. `commit` keeps its
+place between the frames drawn before and after it, so the rows it releases are
+on screen before they are committed. A failed write repaints the next frame in
+full and is reported by the next `draw`.
+
+`Terminal::flush` waits until every frame handed over is on the terminal and
+reports a failed write; call it before printing around the session.
+`switch`, `suspend`, and dropping the session flush first. Title, bell,
+progress, and clipboard requests are written directly, between frames.
+
+`Renderer::render` and `Inline::render` return a frame's bytes without writing
+them, for a transport that owns its own output. They assume the bytes arrive:
+send them in one write, and call `invalidate` if it fails. The SSH runtime works
+this way. It renders only when the previous frame has been sent, so while the
+peer is slow, events keep updating the application and only its latest state
+is drawn.
 
 ## Inline sessions
 
@@ -145,7 +171,8 @@ whole loop.
 A panic restores the terminal before its message prints, so the message is
 readable. So does a fatal signal such as hangup or terminate, including while the
 startup probe is waiting for replies. An inline session parks the cursor beneath
-its frame first, so what prints next lands under it. Set `Options::signals` to
+its frame first, so what prints next lands under it. A detached writer drops
+the frames still queued instead of drawing them over the restored shell. Set `Options::signals` to
 false when the application handles signals itself.
 
 `Terminal::stop` suspends the process as Ctrl-Z does in a shell, which raw mode

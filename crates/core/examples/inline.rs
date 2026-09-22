@@ -45,6 +45,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mouse: false,
         ..Options::default()
     })?;
+    // Frames and commits go out from a thread of their own, in order, so a
+    // slow terminal never delays typing.
+    terminal.detach()?;
     let header = "Wove inline · Enter commits a line · Esc quits";
     commit(&mut terminal, &mut tree, input, header)?;
     // Keys typed while the session was starting come first.

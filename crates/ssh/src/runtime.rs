@@ -68,12 +68,18 @@ impl Inbox {
     }
 }
 
-/// Send bytes as the peer's channel window allows. Each chunk that waits longer
-/// than `STALL` for window space fails the write, so a peer that stops reading
-/// cannot hold the application indefinitely.
-async fn write(output: Arc<ChannelWriteHalf<Msg>>, bytes: Vec<u8>) -> Result<(), Error> {
-    for chunk in bytes.chunks(CHUNK) {
-        tokio::time::timeout(STALL, output.data_bytes(chunk.to_vec()))
+/// Owned pieces of `bytes`, each covered by one stall deadline. This is the
+/// only copy: the channel takes each piece without copying it again.
+fn chunks(bytes: &[u8]) -> Vec<Vec<u8>> {
+    bytes.chunks(CHUNK).map(<[u8]>::to_vec).collect()
+}
+
+/// Send chunks as the peer's channel window allows. Each chunk that waits
+/// longer than `STALL` for window space fails the write, so a peer that stops
+/// reading cannot hold the application indefinitely.
+async fn write(output: Arc<ChannelWriteHalf<Msg>>, chunks: Vec<Vec<u8>>) -> Result<(), Error> {
+    for chunk in chunks {
+        tokio::time::timeout(STALL, output.data_bytes(chunk))
             .await
             .map_err(|_| "SSH output stalled")?
             .map_err(|_| "SSH channel closed")?;
@@ -112,15 +118,23 @@ pub(crate) fn run(factory: Factory, peer: Peer, input: Arc<Inbox>, output: Chann
         let depth = Depth::from_env(|name| (name == "TERM").then(|| term.clone()));
         let mut renderer = Renderer::with_depth(depth);
         let mut decoder = Decoder::default();
-        let mut bytes = Vec::new();
-        modes.enter(&mut bytes)?;
+        // The modes go out with the first frame.
+        let mut first = Vec::new();
+        modes.enter(&mut first)?;
         let mut dirty = true;
         loop {
             if dirty && writing.is_none() {
-                renderer.draw(&mut bytes, app.frame(width, height)?)?;
+                // The renderer assumes its bytes arrive; a failed write ends
+                // the session, so there is no later frame to invalidate.
+                let bytes = renderer.render(app.frame(width, height)?);
                 dirty = false;
+                let bytes = if first.is_empty() {
+                    chunks(bytes)
+                } else {
+                    first.extend_from_slice(bytes);
+                    chunks(&mem::take(&mut first))
+                };
                 if !bytes.is_empty() {
-                    let bytes = mem::take(&mut bytes);
                     writing = Some(runtime.spawn(write(output.clone(), bytes)));
                 }
             }
@@ -175,7 +189,7 @@ pub(crate) fn run(factory: Factory, peer: Peer, input: Arc<Inbox>, output: Chann
         }
         let mut bytes = Vec::new();
         modes.leave(&mut bytes)?;
-        write(output.clone(), bytes).await?;
+        write(output.clone(), chunks(&bytes)).await?;
         Ok::<(), Error>(())
     });
     let _ = runtime.block_on(async {
