@@ -67,6 +67,25 @@ fn unmatched_continuation_flushes_the_deferred_command_before_the_retry() {
         Match::Flushed(vec!["single"], Box::new(Match::Unbound))
     );
 }
+
+#[test]
+fn changing_focus_discards_an_expired_command_from_the_previous_scope() {
+    let mut tree = Tree::new();
+    let old = tree.add(tree.root(), Input::default()).unwrap();
+    let new = tree.add(tree.root(), Input::default()).unwrap();
+    let mut keys = Keymap::new(Duration::from_millis(300));
+    keys.bind(Some(old), [Key::Char('g').into()], "old");
+    keys.bind(Some(old), [Key::Char('g').into(); 2], "old double");
+    keys.bind(Some(new), [Key::Char('x').into()], "new");
+    assert_eq!(
+        keys.feed(Key::Char('g').into(), &[old], Duration::ZERO),
+        Match::Pending
+    );
+    assert_eq!(
+        keys.feed(Key::Char('x').into(), &[new], Duration::from_millis(300)),
+        Match::Command("new")
+    );
+}
 #[test]
 fn feed_resolves_an_expired_sequence_before_the_new_stroke() {
     let mut keys = Keymap::new(Duration::from_millis(300));

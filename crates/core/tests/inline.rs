@@ -231,6 +231,18 @@ fn committed_rows_are_cropped_to_a_narrower_screen() {
 }
 
 #[test]
+fn committing_rows_already_in_scrollback_does_not_restore_them_on_resize() {
+    let mut vt = Vt::new(8, 3);
+    let mut inline = Inline::new(0, Depth::Rgb);
+    draw(&mut inline, &mut vt, &["a", "b", "c", "d", "e"]);
+    inline.commit(3);
+    vt.rows.resize(5, vec![' '; vt.width]);
+    draw(&mut inline, &mut vt, &["d", "e"]);
+    assert_eq!(vt.scrollback, ["a", "b"]);
+    assert_eq!(vt.screen(), ["c", "d", "e", "", ""]);
+}
+
+#[test]
 fn an_invalidated_frame_still_parks_commits_and_maps_rows_until_redrawn() {
     let mut vt = Vt::new(8, 4);
     vt.feed(b"$ app\r\n");

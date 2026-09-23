@@ -4,3 +4,5 @@ __pycache__/
 /crates/web/node_modules/
 /crates/web/dist/
 /crates/web/.astro/
+config.bat
+node_modules
