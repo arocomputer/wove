@@ -142,7 +142,8 @@ calls cannot silently use a partially applied update.
 Events reach the nearest registered Dioxus listener and bubble through Dioxus
 parents before core element behavior. `prevent_default` cancels native behavior;
 `stop_propagation` stops Dioxus parents while allowing native editing. An
-`oninput` notification carries the new value after an edit. The host
+`oninput` notification carries the new value after an edit, and `onselect` the
+new row after a list or table selection moves. The host
 owns scheduling and can await `View::wait_for_work` alongside terminal input.
 The async runner waits for terminal input and component work concurrently.
 

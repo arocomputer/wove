@@ -319,3 +319,70 @@ fn registered_tags_take_layout_attributes_and_restore_their_own_default() {
     view.send(Key::Char('w').into()).unwrap();
     assert_eq!(width(&view), length(7.0));
 }
+
+#[test]
+fn a_lazy_tag_takes_ordinary_children_and_paints_only_those_in_view() {
+    fn app() -> Element {
+        rsx! {lazy {follow:true,
+            for i in 0..1000 { text {key:"{i}",content:"line {i}"} }
+        }}
+    }
+    let mut view = View::new(VirtualDom::new(app)).unwrap();
+    let lines = view.frame(12, 3).unwrap().lines();
+    assert_eq!(lines, ["line 997    ", "line 998    ", "line 999    "]);
+    let lazy = view.tree().children(view.tree().root()).unwrap()[0];
+    let first = view.tree().children(lazy).unwrap()[0];
+    assert_eq!(view.tree().bounds(first).unwrap().height, 0);
+}
+
+#[test]
+fn list_rows_follow_a_signal_and_selection_notifies_the_component() {
+    use wove::text::Span;
+    fn app() -> Element {
+        let mut selected = use_signal(|| 0usize);
+        let rows: Vec<Vec<Span>> = ["alpha", "beta", "gamma"]
+            .iter()
+            .map(|name| vec![Span::new(*name, wove::Style::default())])
+            .collect();
+        rsx! {view {direction:"column",
+            list {height:2,rows:AttributeValue::any_value(rows),selected:selected(),
+                onselect:move |event| selected.set(*event.data)}
+            text {content:"Selected {selected}"}
+        }}
+    }
+    let mut view = View::new(VirtualDom::new(app)).unwrap();
+    view.focus_next(false).unwrap();
+    view.send(Key::Down.into()).unwrap();
+    view.send(Key::Down.into()).unwrap();
+    let lines = view.frame(10, 3).unwrap().lines();
+    assert_eq!(lines, ["beta      ", "gamma     ", "Selected 2"]);
+}
+
+#[test]
+fn table_and_rich_tags_draw_typed_rows_and_spans() {
+    use wove::{text::Span, Style};
+    fn app() -> Element {
+        let columns: Vec<(String, u16)> = vec![("Name".into(), 5), ("Size".into(), 4)];
+        let rows = vec![vec!["a.rs".to_string(), "12".to_string()]];
+        let bold = Style {
+            bold: true,
+            ..Style::default()
+        };
+        let spans = vec![
+            Span::new("plain ", Style::default()),
+            Span::new("bold", bold),
+        ];
+        rsx! {view {direction:"column",
+            table {columns:AttributeValue::any_value(columns),rows:AttributeValue::any_value(rows)}
+            rich {spans:AttributeValue::any_value(spans)}
+        }}
+    }
+    let mut view = View::new(VirtualDom::new(app)).unwrap();
+    let frame = view.frame(12, 3).unwrap();
+    assert_eq!(
+        frame.lines(),
+        ["Name  Size  ", "a.rs  12    ", "plain bold  "]
+    );
+    assert!(frame.cell(6, 2).unwrap().style().bold);
+    assert!(!frame.cell(0, 2).unwrap().style().bold);
+}
