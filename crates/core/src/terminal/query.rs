@@ -48,17 +48,21 @@ pub fn probe(_: &mut impl Write) -> io::Result<Probe> {
     })
 }
 
-/// Zero-based `(column, row)` of the cursor, for anchoring an inline session
-/// after startup. Input that arrives during the wait is lost, so prefer
-/// starting inline.
+/// Ask only where the cursor is, for anchoring an inline session after
+/// startup. Like `probe`, the wait ends at the device-attributes reply, so a
+/// key whose encoding looks like a position report cannot end it early, and
+/// keys typed meanwhile are returned.
 #[cfg(unix)]
-pub fn cursor(output: &mut impl Write) -> io::Result<Option<(u16, u16)>> {
-    let reply = ask(output, b"\x1b[6n", |reply| reply.ends_with(b"R"))?;
-    Ok(parse(&reply).cursor)
+pub fn cursor(output: &mut impl Write) -> io::Result<Probe> {
+    let reply = ask(output, b"\x1b[6n\x1b[c", attributes_end)?;
+    Ok(parse(&reply))
 }
 #[cfg(not(unix))]
-pub fn cursor(_: &mut impl Write) -> io::Result<Option<(u16, u16)>> {
-    Ok(crossterm::cursor::position().ok())
+pub fn cursor(_: &mut impl Write) -> io::Result<Probe> {
+    Ok(Probe {
+        cursor: crossterm::cursor::position().ok(),
+        ..Probe::default()
+    })
 }
 
 /// Whether the reply ends with a device-attributes report, `ESC [ ? … c`.

@@ -142,10 +142,15 @@ fn text_keeps_the_background_beneath_it_until_a_style_resets_it() {
 fn the_cursor_is_placed_again_after_a_cluster_terminals_measure_differently() {
     let mut frame = Buffer::new(8, 1);
     frame.write(frame.area(), "ab👍cd", Style::default());
-    let output = drawn(&mut Renderer::default(), &frame);
+    let mut renderer = Renderer::default();
+    let output = drawn(&mut renderer, &frame);
     // ASCII runs on; after the emoji the next cell's column is stated outright,
     // so a terminal that thinks the emoji is one cell wide cannot drift.
-    assert!(output.contains("ab👍\x1b[1;5Hc"), "{output:?}");
+    assert!(output.contains("ab👍\x1b[5Gc"), "{output:?}");
+    // The same holds when only changed cells are written.
+    frame.write(Rect::new(2, 0, 3, 1), "🎉C", Style::default());
+    let output = drawn(&mut renderer, &frame);
+    assert!(output.contains("🎉\x1b[1;5HC"), "{output:?}");
 }
 
 #[test]
@@ -200,4 +205,17 @@ fn a_frame_the_renderer_already_drew_is_skipped_until_the_tree_changes() {
     }
     assert_eq!(a, b);
     assert_eq!(a.cell(0, 0).unwrap().symbol(), "👨‍👩‍👧‍👦");
+}
+
+#[test]
+fn a_frame_without_a_shadow_erases_trailing_blanks_and_hides_the_cursor_while_painting() {
+    let mut frame = Buffer::new(8, 2);
+    frame.write(frame.area(), "hi", Style::default());
+    let output = drawn(&mut Renderer::default(), &frame);
+    assert!(output.starts_with("\x1b[?2026h\x1b[?25l"), "{output:?}");
+    assert!(output.contains("hi\x1b[K"), "{output:?}");
+    assert!(
+        !output.contains("  "),
+        "blank cells are written: {output:?}"
+    );
 }
