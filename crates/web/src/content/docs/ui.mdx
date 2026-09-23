@@ -8,57 +8,37 @@ arrange it, style it, and respond to input.
 
 ## The tree
 
-A `Tree` holds every element in your app. You get an `Id` for each one, and the
-tree owns its state.
+A `Tree` holds every element in your app and owns its state. Adding an element
+returns an `Id`, which you use for everything else:
 
 ```rust
 let mut tree = Tree::new();
 let list = tree.add(tree.root(), Container)?;
 let item = tree.add(list, Text::new("First"))?;
-```
-
-### Add and create
-
-`add` creates an element and attaches it under a parent. `create` makes one
-without a parent. Attach it later with `append` or `insert`:
-
-```rust
-let item = tree.create(Text::new("Later"))?;
-tree.insert(list, item, 0)?;
-```
-
-### Read and update
-
-`get` borrows an element by type. `update` changes it and tells the tree to lay
-out and paint again:
-
-```rust
 tree.update::<Text>(item, |text| text.content = "Updated".into())?;
-let content = &tree.get::<Text>(item)?.content;
 ```
 
-Asking for the wrong type returns `Error::WrongType`.
+| Method | What it does |
+| --- | --- |
+| `add(parent, element)` | Create an element under a parent. |
+| `create(element)` | Create an element with no parent yet. |
+| `append`, `insert` | Attach an element, or move one. It keeps its state. |
+| `get::<T>(id)` | Borrow an element as its type. |
+| `update::<T>(id, f)` | Change an element. The tree lays out and paints again. |
+| `remove(id)` | Drop an element, its children, and their handlers. |
 
-### Move and remove
-
-`append` and `insert` also move an element that is already attached. The
-element keeps its state, so a moved input keeps its text, cursor, and undo
-history.
-
-`remove` drops the element, its children, and their event handlers. An `Id`
-is never reused, and it only works with the tree that made it.
-
-### Draw a frame
+A moved input keeps its text, cursor, and undo history. An `Id` is never
+reused, and it only works with the tree that made it.
 
 `tree.frame(width, height)` lays out the tree and returns a `Buffer` of cells.
-If nothing changed since the last call, it returns the same frame without doing
-any work. `terminal::run` calls it for you. You call it yourself when you write
-your own loop or test without a terminal.
+If nothing changed, it returns the last frame without doing any work.
+`terminal::run` calls it for you.
 
 ## Layout
 
 Wove uses [Taffy](https://github.com/DioxusLabs/taffy) for flexbox and grid
-layout. Every length is a number of terminal cells.
+layout. Every length is a number of terminal cells. The root fills the frame
+and stacks its children in a column.
 
 ```rust
 use wove::{elements::{Container, Text}, layout::*, Layout, Tree};
@@ -76,10 +56,6 @@ tree.add(row, Text::new("Right"))?;
 
 `wove::Layout` is Taffy's `Style`. `wove::layout` re-exports Taffy's helpers,
 such as `length`, `percent`, `Size`, and `FlexDirection`.
-
-### The root
-
-The root fills the frame and stacks its children in a column.
 
 ### Keep an element's defaults
 

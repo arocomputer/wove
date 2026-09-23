@@ -38,14 +38,7 @@ while the session was starting. `terminal::run` does this for you.
 
 ## Choose a screen
 
-```rust
-use wove::{Options, ScreenMode};
-
-let terminal = Terminal::with_options(Options {
-    screen: ScreenMode::Inline,
-    ..Options::default()
-})?;
-```
+Pass `Options` to `Terminal::with_options` to pick a `ScreenMode`:
 
 | Screen | What it does |
 | --- | --- |
@@ -111,6 +104,12 @@ An inline session draws on the main screen, starting at the shell's cursor.
 Finished rows stay in the terminal's own scrollback, the way a chat or a build
 log would. Only the rows still changing are redrawn.
 
+<Frame name="inline-1" command="cargo run -p wove --example inline" />
+
+The [`inline`](https://github.com/arocomputer/wove/blob/main/crates/core/examples/inline.rs)
+example above shows the whole loop, with a worker thread that answers each
+line. Start an inline session and draw the tree at its natural height:
+
 ```rust
 use wove::{terminal::Terminal, Options, ScreenMode};
 
@@ -158,11 +157,3 @@ keep the terminal's own selection and scrolling.
 A resize redraws from the top of the screen: first the committed rows still
 visible, then the frame. Rows already in scrollback are never rewritten. After
 a width change, rows are cropped or padded, not rewrapped.
-
-### Example
-
-The [`inline`](https://github.com/arocomputer/wove/blob/main/crates/core/examples/inline.rs)
-example shows the whole loop. A worker thread answers each line, and the
-answers stay in the terminal's scrollback:
-
-<Frame name="inline-1" command="cargo run -p wove --example inline" />

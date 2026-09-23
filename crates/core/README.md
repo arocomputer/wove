@@ -36,7 +36,3 @@ Only `terminal` is on by default. Each of these works on its own:
 
 Turn off default features to render without a terminal, for tests or custom
 transports.
-
-## License
-
-MIT
