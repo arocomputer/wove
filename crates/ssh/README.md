@@ -11,7 +11,9 @@ ssh -p 2222 -i ~/.ssh/id_ed25519 guest@localhost
 ```
 
 The example listens on loopback and accepts only the public key supplied on the
-command line. Ctrl-C exits a client; Ctrl-C in the server stops all connections.
+command line. Ctrl-C exits a client, because `Tree` finishes its session on
+Ctrl-C; a custom `App` receives Ctrl-C as an ordinary key. Ctrl-C in the server
+stops all connections.
 The host key file is private. Keep it outside the repository.
 
 See the [SSH guide](https://github.com/arocomputer/wove/blob/main/crates/web/src/content/docs/ssh.mdx)

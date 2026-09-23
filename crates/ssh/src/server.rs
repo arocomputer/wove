@@ -1,34 +1,40 @@
-use crate::runtime::{run, Message};
+use crate::runtime::{run, Inbox};
 use crate::{Error, PrivateKey, PublicKey};
 use russh::{
     server::{self, Auth, Msg, Session},
-    Channel, ChannelId,
+    Channel, ChannelId, ChannelWriteHalf,
 };
 use std::{
     future::Future,
+    io,
     net::{Shutdown, SocketAddr, TcpStream},
     sync::Arc,
     time::Duration,
 };
-use tokio::{
-    net::TcpListener,
-    sync::{mpsc, watch},
-    task::JoinSet,
-};
-use wove::{Buffer, Event, Tree};
+use tokio::{net::TcpListener, sync::watch, task::JoinSet};
+use wove::{Buffer, Event, Key, Modifiers, Tree};
 
 /// A remote application owns its state on one worker thread. It need not be Send.
 pub trait App {
     /// Render the current application into a frame of the requested dimensions.
     fn frame(&mut self, width: u16, height: u16) -> Result<&Buffer, Error>;
+    /// Handle one event, including Ctrl-C, which the transport does not reserve.
     /// Return false to finish the SSH session after this event.
     fn event(&mut self, event: Event) -> Result<bool, Error>;
 }
+/// A tree dispatches every event to its focused node, except Ctrl-C, which
+/// finishes the session.
 impl App for Tree {
     fn frame(&mut self, width: u16, height: u16) -> Result<&Buffer, Error> {
         Ok(Tree::frame(self, width, height)?)
     }
     fn event(&mut self, event: Event) -> Result<bool, Error> {
+        if matches!(
+            event,
+            Event::Key(Key::Char('c'), Modifiers { ctrl: true, .. })
+        ) {
+            return Ok(false);
+        }
         self.dispatch(event)?;
         Ok(true)
     }
@@ -56,6 +62,9 @@ pub struct Server {
     factory: Factory,
     /// Maximum simultaneous SSH connections, including pending authentication.
     pub connections: usize,
+    /// Close a connection after this long without traffic in either direction;
+    /// `None` keeps idle connections open. Defaults to five minutes.
+    pub inactivity: Option<Duration>,
 }
 impl Server {
     /// Use a persistent host key, a public-key policy, and one app factory per peer.
@@ -69,10 +78,13 @@ impl Server {
             authorize: Arc::new(authorize),
             factory: Arc::new(move |peer| Ok(Box::new(factory(peer)?))),
             connections: 32,
+            inactivity: Some(Duration::from_secs(300)),
         }
     }
     /// Serve an already-bound listener until shutdown. Each connection permits one
     /// interactive channel; closing the server cancels connections and their workers.
+    /// A failed accept, such as when file descriptors run out, pauses accepting
+    /// briefly instead of ending the server.
     pub async fn serve(
         self,
         listener: TcpListener,
@@ -80,7 +92,7 @@ impl Server {
     ) -> Result<(), Error> {
         let config = Arc::new(server::Config {
             keys: vec![self.key],
-            inactivity_timeout: Some(Duration::from_secs(300)),
+            inactivity_timeout: self.inactivity,
             auth_rejection_time: Duration::from_millis(250),
             ..Default::default()
         });
@@ -92,11 +104,14 @@ impl Server {
                 _=&mut shutdown=>break,
                 Some(_)=tasks.join_next(),if !tasks.is_empty()=>{},
                 incoming=listener.accept(),if tasks.len()<self.connections.max(1)=>{
-                    let (stream,address)=incoming?;
-                    let stream = stream.into_std()?;
-                    let socket = Socket(stream.try_clone()?);
-                    let stream = tokio::net::TcpStream::from_std(stream)?;
-                    let client=Client{authorize:self.authorize.clone(),factory:self.factory.clone(),address,identity:None,channel:None,pty:None,input:None};
+                    let Ok((stream, socket, address)) = incoming.and_then(|(stream, address)| {
+                        let (stream, socket) = supervise(stream)?;
+                        Ok((stream, socket, address))
+                    }) else {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    };
+                    let client=Client{authorize:self.authorize.clone(),factory:self.factory.clone(),address,identity:None,channel:None,output:None,pty:None,input:None};
                     let config=config.clone();
                     let mut stopping = stop.subscribe();
                     tasks.spawn(async move {
@@ -133,8 +148,18 @@ struct Client {
     address: SocketAddr,
     identity: Option<(String, PublicKey)>,
     channel: Option<ChannelId>,
+    /// The window-aware write half, handed to the application at shell start.
+    output: Option<ChannelWriteHalf<Msg>>,
     pty: Option<(String, u16, u16)>,
-    input: Option<mpsc::Sender<Message>>,
+    input: Option<Arc<Inbox>>,
+}
+impl Drop for Client {
+    /// A connection that ends without closing its channel still ends its app.
+    fn drop(&mut self) {
+        if let Some(input) = self.input.take() {
+            input.close();
+        }
+    }
 }
 
 /// Reject oversized or empty grids before allocating frame storage.
@@ -163,6 +188,10 @@ impl server::Handler for Client {
     ) -> Result<(), Error> {
         if self.channel.is_none() && self.identity.is_some() {
             self.channel = Some(channel.id());
+            // Input arrives through the handler callbacks. Dropping the read half
+            // keeps russh from waiting on a queue that nothing drains.
+            let (_, output) = channel.split();
+            self.output = Some(output);
             reply.accept().await;
         } else {
             reply
@@ -229,6 +258,7 @@ impl server::Handler for Client {
             || self.input.is_some()
             || self.pty.is_none()
             || self.identity.is_none()
+            || self.output.is_none()
         {
             session.channel_failure(channel)?;
             return Ok(());
@@ -243,12 +273,12 @@ impl server::Handler for Client {
             width,
             height,
         };
-        let (sender, receiver) = mpsc::channel(16);
-        self.input = Some(sender);
+        let input = Arc::new(Inbox::default());
+        self.input = Some(input.clone());
+        let output = self.output.take().unwrap();
         let factory = self.factory.clone();
-        let handle = session.handle();
         session.channel_success(channel)?;
-        tokio::task::spawn_blocking(move || run(factory, peer, receiver, handle, channel));
+        tokio::task::spawn_blocking(move || run(factory, peer, input, output));
         Ok(())
     }
     async fn data(
@@ -258,13 +288,8 @@ impl server::Handler for Client {
         _: &mut Session,
     ) -> Result<(), Error> {
         if self.channel == Some(channel) {
-            if data.len() > 65536 {
-                return Err("SSH input packet exceeds limit".into());
-            }
             if let Some(input) = &self.input {
-                input
-                    .try_send(Message::Data(data.to_vec()))
-                    .map_err(|_| "application closed")?;
+                input.data(data)?;
             }
         }
         Ok(())
@@ -282,9 +307,7 @@ impl server::Handler for Client {
             let (width, height) =
                 dimensions(width, height).ok_or("invalid SSH terminal dimensions")?;
             if let Some(input) = &self.input {
-                input
-                    .try_send(Message::Resize(width, height))
-                    .map_err(|_| "application closed")?;
+                input.resize(width, height);
             } else if let Some(pty) = &mut self.pty {
                 pty.1 = width;
                 pty.2 = height;
@@ -298,17 +321,29 @@ impl server::Handler for Client {
         session: &mut Session,
     ) -> Result<(), Error> {
         if self.channel == Some(channel) {
-            self.input.take();
+            if let Some(input) = self.input.take() {
+                input.close();
+            }
             session.close(channel)?;
         }
         Ok(())
     }
     async fn channel_close(&mut self, channel: ChannelId, _: &mut Session) -> Result<(), Error> {
         if self.channel == Some(channel) {
-            self.input.take();
+            if let Some(input) = self.input.take() {
+                input.close();
+            }
         }
         Ok(())
     }
+}
+
+/// Split an accepted stream into the one russh drives and a duplicate that
+/// shuts the socket down when the connection task ends.
+fn supervise(stream: tokio::net::TcpStream) -> io::Result<(tokio::net::TcpStream, Socket)> {
+    let stream = stream.into_std()?;
+    let socket = Socket(stream.try_clone()?);
+    Ok((tokio::net::TcpStream::from_std(stream)?, socket))
 }
 
 /// Close the transport even when its supervising future is dropped or cancelled.
