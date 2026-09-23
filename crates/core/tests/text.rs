@@ -577,3 +577,32 @@ fn single_line_paste_joins_lines_with_a_space() {
         "foo bar"
     );
 }
+
+#[test]
+fn a_focused_empty_input_shows_its_placeholder_until_typing() {
+    use wove::{
+        elements::{Input, Textarea},
+        testing::Screen,
+        Key,
+    };
+    let mut screen = Screen::new(12, 2);
+    let input = Input {
+        placeholder: "Type a line".into(),
+        ..Input::default()
+    };
+    let id = screen.tree.add(screen.tree.root(), input).unwrap();
+    let area = Textarea {
+        placeholder: "Notes".into(),
+        ..Textarea::default()
+    };
+    let area = screen.tree.add(screen.tree.root(), area).unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    let frame = screen.frame().unwrap();
+    assert_eq!(frame.lines(), ["Type a line ", "Notes       "]);
+    assert_eq!(frame.cursor(), Some((0, 0)));
+    screen.tree.focus(Some(area)).unwrap();
+    assert_eq!(screen.frame().unwrap().cursor(), Some((0, 1)));
+    screen.tree.focus(Some(id)).unwrap();
+    screen.send(Key::Char('a')).unwrap();
+    assert_eq!(screen.frame().unwrap().lines()[0], "a           ");
+}

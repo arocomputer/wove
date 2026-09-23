@@ -3,4 +3,5 @@ one
 echo: one
 two
 echo: two
+Type a line
 @cursor 0,5

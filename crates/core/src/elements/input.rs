@@ -11,6 +11,7 @@ use unicode_segmentation::UnicodeSegmentation;
 pub struct Input {
     pub editor: Editor,
     pub style: Style,
+    /// Shown while the value is empty, with the cursor at its start when focused.
     pub placeholder: String,
     /// Shown in place of every grapheme, for secrets. Clicks are ignored while
     /// set, because cell positions no longer say anything about the text.
@@ -81,9 +82,8 @@ impl Element for Input {
     fn paint(&self, canvas: &mut Canvas<'_>) {
         let width = usize::from(canvas.size().0);
         let value = self.editor.text();
-        if value.is_empty() && !canvas.focused() {
+        if value.is_empty() {
             canvas.text(0, 0, &self.placeholder, self.style);
-            return;
         }
         // `viewport` scrolled to a grapheme boundary that keeps the cursor in view.
         let (_, left) = self.editor.view();

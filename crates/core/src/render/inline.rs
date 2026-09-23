@@ -83,6 +83,7 @@ impl Inline {
         }
         self.shadow.seen = 0;
         self.top += i64::from(rows);
+        self.trim();
     }
 
     /// Forget kept rows that have scrolled past the top of the screen: they

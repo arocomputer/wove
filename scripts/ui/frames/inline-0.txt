@@ -1,4 +1,5 @@
 Wove inline · Enter commits a line · Esc quits
 one
 echo: one
+Type a line
 @cursor 0,3

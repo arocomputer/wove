@@ -1,5 +1,5 @@
 Wove · element gallery
-
+Filter elements
 Text              ┌────────────────────┐
 Input             │Text                │
 List              │                    │
