@@ -1,10 +1,11 @@
 //! Multiline editing with a cursor-following viewport and optional soft wrapping.
+use super::cluster;
 use crate::{
+    render::{cell_width, columns},
     text::{clean, edit, Editor},
     Canvas, Element, Event, Response, Style,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 /// A multiline editor. The viewport follows the cursor. With `wrap`, lines
 /// break at words to fit the width and `Up` and `Down` move through the
@@ -41,46 +42,67 @@ impl Element for Textarea {
             rows.min(u16::MAX as usize) as u16,
         )
     }
-    fn viewport(&mut self, size: (u16, u16), _: (u32, u32)) -> (u32, u32) {
-        self.editor.width = self.width(size.0);
+    /// Wrap to the width and scroll just far enough to keep the cursor in view.
+    fn viewport(&mut self, (width, height): (u16, u16), _: (u32, u32)) -> (u32, u32) {
+        self.editor.width = self.width(width);
+        let rows = self.editor.rows();
+        let cursor = self.editor.cursor();
+        let row = Editor::row_of(&rows, cursor);
+        let col = columns(&self.editor.text()[rows[row].start..cursor]);
+        let top = row.saturating_sub(usize::from(height.max(1)) - 1);
+        let left = if self.wrap {
+            0
+        } else {
+            col.saturating_sub(usize::from(width.max(1)) - 1)
+        };
+        self.editor.set_view(top, left);
         (0, 0)
     }
     fn paint(&self, canvas: &mut Canvas<'_>) {
         let (width, height) = canvas.size();
-        if width == 0 || height == 0 {
-            return;
-        }
         let value = self.editor.text();
         if value.is_empty() && !canvas.focused() {
             canvas.text(0, 0, &self.placeholder, self.style);
             return;
         }
-        let rows = self.editor.rows_at(self.width(width));
+        let rows = self.editor.rows();
+        let (top, left) = self.editor.view();
         let cursor = self.editor.cursor();
         let row = Editor::row_of(&rows, cursor);
-        let col = value[rows[row].start..cursor].width();
-        let top = row.saturating_sub(usize::from(height) - 1);
-        let left = if self.wrap {
-            0
-        } else {
-            col.saturating_sub(usize::from(width) - 1)
-        };
-        self.editor.set_view(top, left);
+        let col = columns(&value[rows[row].start..cursor]);
         let selection = self.editor.selection();
         let focused = canvas.focused();
         let selected = |at: usize| focused && selection.contains(&at);
+        let atoms = self.editor.atoms();
+        let right = left + usize::from(width);
         for (y, range) in rows.iter().enumerate().skip(top).take(usize::from(height)) {
+            // Atoms are ordered and disjoint, so one pass over the row finds them.
+            let mut atom = atoms.partition_point(|a| a.range.end <= range.start);
             let mut x = 0;
             for (i, g) in value[range.clone()].grapheme_indices(true) {
+                if x >= right {
+                    break;
+                }
                 let at = range.start + i;
-                let atom = self.editor.atoms().iter().any(|a| a.range.contains(&at));
-                let base = if atom { self.atom } else { self.style };
+                while atoms.get(atom).is_some_and(|a| a.range.end <= at) {
+                    atom += 1;
+                }
+                let inside = atoms.get(atom).is_some_and(|a| a.range.contains(&at));
+                let base = if inside { self.atom } else { self.style };
                 let style = Style {
                     reverse: base.reverse || selected(at),
                     ..base
                 };
-                canvas.text(x as i32 - left as i32, (y - top) as i32, g, style);
-                x += g.width();
+                let cells = cell_width(g, x);
+                cluster(
+                    canvas,
+                    x as i32 - left as i32,
+                    (y - top) as i32,
+                    g,
+                    cells,
+                    style,
+                );
+                x += cells;
             }
             // A selected line break shows as one reversed cell.
             if value[range.end..].starts_with('\n') && selected(range.end) {

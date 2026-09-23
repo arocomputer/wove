@@ -20,13 +20,18 @@ struct Block {
 /// put while new blocks arrive beneath. Positions are a block and a row within
 /// it rather than a row count, because the rows above the view are never
 /// measured. Use a `Scroll` of elements instead when the content is not text.
+///
+/// A feed has no height of its own, since measuring one would lay out every
+/// block. It grows into the space its parent gives it, so in a frame of
+/// natural height, such as an inline session, give it a height in its layout.
 pub struct Feed {
     blocks: Vec<Block>,
     /// Blank rows between blocks.
     gap: u16,
     /// The first visible row as a block and a row within it. `None` follows the tail.
     top: Option<(usize, usize)>,
-    /// The size of the last painted viewport, which scrolling is measured against.
+    /// The size of the viewport, set before each paint, which painting and
+    /// scrolling are both measured against.
     view: (u16, u16),
 }
 
@@ -160,7 +165,7 @@ impl Element for Feed {
         (0, 0)
     }
     fn paint(&self, canvas: &mut Canvas<'_>) {
-        let view = canvas.size();
+        let view = self.view;
         let (first, skipped) = self.start(view);
         let mut y = -(skipped as i32);
         for index in first..self.blocks.len() {
@@ -192,10 +197,10 @@ impl Element for Feed {
             Event::Mouse(mouse) if mouse.kind == MouseKind::ScrollDown => self.scroll(1),
             _ => return Response::IGNORE,
         }
-        let moved = self.start(self.view) != before;
-        Response {
-            handled: moved,
-            changed: moved,
+        if self.start(self.view) == before {
+            Response::IGNORE
+        } else {
+            Response::REPAINT
         }
     }
 }

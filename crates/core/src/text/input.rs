@@ -57,7 +57,9 @@ pub fn command(event: &Event, multiline: bool) -> Option<Command> {
 }
 
 /// Apply an event under the default bindings. A left click places the cursor
-/// and a drag extends the selection from it.
+/// and a drag extends the selection from it. The response repaints when only
+/// the cursor or selection moved, lays out again after an edit of the text,
+/// and consumes a key that changed nothing.
 pub(crate) fn edit(editor: &mut Editor, event: &Event, multiline: bool) -> Response {
     if let Event::Mouse(mouse) = event {
         let extend = match mouse.kind {
@@ -67,17 +69,21 @@ pub(crate) fn edit(editor: &mut Editor, event: &Event, multiline: bool) -> Respo
         };
         let before = (editor.cursor(), editor.selection());
         editor.seek(editor.position_at(mouse.x, mouse.y), extend);
-        return Response {
-            handled: true,
-            changed: before != (editor.cursor(), editor.selection()),
+        return if before == (editor.cursor(), editor.selection()) {
+            Response::HANDLED
+        } else {
+            Response::REPAINT
         };
     }
-    match command(event, multiline) {
-        Some(command) => {
-            editor.apply(command);
-            Response::CHANGED
-        }
-        None => Response::IGNORE,
+    let Some(command) = command(event, multiline) else {
+        return Response::IGNORE;
+    };
+    // Only an edit of the text can change the element's size.
+    let edit = !matches!(command, Command::Move(..) | Command::SelectAll);
+    match editor.apply(command) {
+        false => Response::HANDLED,
+        true if edit => Response::CHANGED,
+        true => Response::REPAINT,
     }
 }
 

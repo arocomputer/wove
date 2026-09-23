@@ -1,6 +1,6 @@
 //! Shared grapheme layout for plain and styled text.
 use crate::{
-    render::{cluster_width, clusters, TAB},
+    render::{cell_width, clusters, TAB},
     Canvas, Style,
 };
 use std::{cell::RefCell, ops::Range, sync::Arc};
@@ -73,16 +73,6 @@ pub fn wrap(line: &str, width: usize, wrap: Wrap) -> Vec<Range<usize>> {
     }
     rows.push(start..line.len());
     rows
-}
-
-/// Columns a grapheme occupies when it starts at `column`. Tabs reach the next
-/// stop; control characters and zero-width clusters take none and are not drawn.
-fn cell_width(g: &str, column: usize) -> usize {
-    if g == "\t" {
-        TAB - column % TAB
-    } else {
-        cluster_width(g)
-    }
 }
 
 struct Run {
