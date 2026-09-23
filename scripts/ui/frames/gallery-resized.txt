@@ -1,0 +1,13 @@
+Wove · element gallery
+
+Text              ┌────────────────────┐
+Input             │Text                │
+List              │                    │
+Scroll            │Unicode text measure│
+Panel             │d and painted with t│
+                  │he same wrapping rul│
+                  │es.                 │
+                  │                    │
+                  └────────────────────┘
+Tab focus · arrows select / scroll · Esc
+@cursor 0,1

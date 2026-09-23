@@ -124,6 +124,37 @@ assert_eq!(screen.frame()?.cell(0, 0).unwrap().symbol(), "界");
 Headless tests use the same layout, elements, clipping, and input routing as a
 terminal session. Real PTY checks run through `./x ui` on Unix.
 
+To pin a whole frame, compare its snapshot. `testing::snapshot` writes each row
+without trailing blanks, drops blank rows at the bottom, and ends with the
+cursor position or `@cursor none`. Styles are left out; check them with
+`Buffer::cell`. `testing::assert_frame` panics with the first differing rows:
+
+```rust
+use wove::{testing::{assert_frame, Screen}, elements::Input, Key};
+
+let mut screen = Screen::new(20, 3);
+let input = screen.tree.add(screen.tree.root(), Input::new("hello"))?;
+screen.tree.focus(Some(input))?;
+screen.send(Key::Char('!'))?;
+assert_frame(screen.frame()?, "hello!\n@cursor 6,0\n");
+# Ok::<(), wove::Error>(())
+```
+
+```text
+frames differ at line 1
+-   1 |hello?
+-   2 |@cursor 6,0
+-   3 |
++   1 |hello!
++   2 |@cursor 6,0
++   3 |
+```
+
+`testing::diff` returns that report, or `None` for equal snapshots, when a test
+compares against a file of its own. `./x ui` writes its terminal frames to
+`artifacts/ui/` in the same format and compares them with the goldens in
+`scripts/ui/frames/`.
+
 ## Multiline and styled text
 
 `Textarea` edits multiple lines with vertical cursor movement and a scrolling

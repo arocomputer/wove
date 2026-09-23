@@ -285,7 +285,11 @@ fn an_atom_is_stepped_over_and_removed_whole_and_undo_brings_it_back() {
 
 #[test]
 fn a_wrapping_textarea_breaks_at_words_and_moves_through_display_rows() {
-    use wove::{elements::Textarea, testing::Screen, Key};
+    use wove::{
+        elements::Textarea,
+        testing::{assert_frame, Screen},
+        Key,
+    };
     let mut screen = Screen::new(6, 4);
     let area = Textarea {
         wrap: true,
@@ -293,13 +297,12 @@ fn a_wrapping_textarea_breaks_at_words_and_moves_through_display_rows() {
     };
     let id = screen.tree.add(screen.tree.root(), area).unwrap();
     screen.tree.focus(Some(id)).unwrap();
-    let frame = screen.frame().unwrap();
-    assert_eq!(frame.lines()[..3], ["hello ", "wide  ", "world "]);
-    assert_eq!(frame.cursor(), Some((5, 2)));
+    let rows = "hello\nwide\nworld\n";
+    assert_frame(screen.frame().unwrap(), &format!("{rows}@cursor 5,2\n"));
     screen.send(Key::Up).unwrap();
-    assert_eq!(screen.frame().unwrap().cursor(), Some((4, 1)));
+    assert_frame(screen.frame().unwrap(), &format!("{rows}@cursor 4,1\n"));
     screen.send(Key::Up).unwrap();
-    assert_eq!(screen.frame().unwrap().cursor(), Some((5, 0)));
+    assert_frame(screen.frame().unwrap(), &format!("{rows}@cursor 5,0\n"));
 }
 
 #[test]
@@ -491,15 +494,16 @@ fn shifted_alt_word_bindings_extend_the_selection() {
 
 #[test]
 fn a_textarea_measures_a_tab_as_the_cells_it_paints() {
-    use wove::{elements::Textarea, testing::Screen};
+    use wove::{
+        elements::Textarea,
+        testing::{assert_frame, Screen},
+    };
     let mut screen = Screen::new(8, 1);
     let mut area = Textarea::default();
     area.editor.set("a\tb");
     let id = screen.tree.add(screen.tree.root(), area).unwrap();
     screen.tree.focus(Some(id)).unwrap();
-    let frame = screen.frame().unwrap();
-    assert_eq!(frame.lines(), ["a   b   "]);
-    assert_eq!(frame.cursor(), Some((5, 0)));
+    assert_frame(screen.frame().unwrap(), "a   b\n@cursor 5,0\n");
 }
 
 #[test]

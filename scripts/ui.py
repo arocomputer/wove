@@ -1,4 +1,5 @@
 """Exercise input, resize, and terminal restoration through real Unix PTYs."""
+import difflib
 import errno
 import fcntl
 import os
@@ -16,6 +17,43 @@ import pyte
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "artifacts/ui"
 OUT.mkdir(parents=True, exist_ok=True)
+FRAMES = ROOT / "scripts/ui/frames"
+
+
+def snapshot(screen):
+    """Format a screen like `wove::testing::snapshot`: rows without trailing
+    blanks, no blank rows at the bottom, then the cursor when it is shown.
+
+    pyte, like a Wove buffer, keeps an empty string in a wide cell's second
+    column, so a wide grapheme appears once in both formats.
+    """
+    rows = [row.rstrip() for row in screen.display]
+    while rows and not rows[-1]:
+        rows.pop()
+    cursor = "none" if screen.cursor.hidden else f"{screen.cursor.x},{screen.cursor.y}"
+    return "".join(f"{row}\n" for row in rows) + f"@cursor {cursor}\n"
+
+
+def golden(frame):
+    """The committed snapshot a named frame must match, or None before one exists."""
+    path = FRAMES / f"{frame}.txt"
+    return path.read_text() if path.exists() else None
+
+
+def keep(frame, screen):
+    """Write a frame's snapshot to the artifacts and fail with a diff unless it
+    matches its golden. Copy the artifact into scripts/ui/frames to accept it.
+    """
+    actual = snapshot(screen)
+    (OUT / f"{frame}.txt").write_text(actual)
+    expected = golden(frame) or ""
+    if actual != expected:
+        golden_path = FRAMES / f"{frame}.txt"
+        report = "".join(difflib.unified_diff(
+            expected.splitlines(keepends=True), actual.splitlines(keepends=True),
+            str(golden_path.relative_to(ROOT)), f"artifacts/ui/{frame}.txt"))
+        raise AssertionError(f"{frame}: frame differs from its golden; copy the "
+                             f"artifact over it if the change is intended\n{report}")
 
 
 def scenario(name, steps, fullscreen=True):
@@ -49,13 +87,17 @@ def scenario(name, steps, fullscreen=True):
         stream.feed(chunk)
         return bool(chunk)
 
-    def receive(expected, after=0):
+    def receive(expected, after=0, frame=None):
         """Drain output until a complete frame begun at or after `after` shows `expected`.
 
         A frame is complete once the last synchronized-update end follows the last
-        begin, so checks and snapshots never observe a half-painted screen.
+        begin, so checks and snapshots never observe a half-painted screen. With a
+        `frame` name, the screen must also settle on that frame's golden, so an
+        intermediate state that already shows `expected` is not mistaken for it.
         """
         nonlocal cursor_answered, attributes_answered
+        wanted = golden(frame) if frame else None
+        shown = False
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             if select.select([master], [], [], 0.05)[0]:
@@ -75,10 +117,13 @@ def scenario(name, steps, fullscreen=True):
                     os.write(master, reply)
             begin = raw.rfind(b"\x1b[?2026h")
             complete = begin >= after and raw.rfind(b"\x1b[?2026l") > begin
-            if complete and expected in "\n".join(screen.display):
+            shown = expected in "\n".join(screen.display)
+            if complete and shown and (frame is None or snapshot(screen) == wanted):
                 return
             if process.poll() is not None:
                 break
+        if frame and shown:
+            keep(frame, screen)
         raise AssertionError(f"{name}: missing {expected!r}\n" + "\n".join(screen.display))
 
     def finish(fullscreen):
@@ -108,11 +153,14 @@ def scenario(name, steps, fullscreen=True):
     try:
         receive("Wove")
         for index, (keys, expected) in enumerate(steps):
+            # The first step is typed ahead during the probe; later steps wait
+            # for a frame begun after their keys, not one already on screen.
+            after = len(raw)
             if index > 0:
                 os.write(master, keys)
-            receive(expected)
+            receive(expected, after=after if index > 0 else 0, frame=f"{name}-{index}")
             check_border()
-            (OUT / f"{name}-{index}.txt").write_text("\n".join(screen.display) + "\n")
+            keep(f"{name}-{index}", screen)
         if not fullscreen:
             expected = [step[1] for step in steps]
 
@@ -138,10 +186,12 @@ def scenario(name, steps, fullscreen=True):
         # Observe a complete frame painted after the resize before sending a key.
         receive("Wove", after=before_resize)
         # An additional key produces an observable update after the resize.
+        after_key = len(raw)
         os.write(master, b"+" if name == "counter" else b"x" if name == "editor" else b"\x01\x7f")
-        receive("Count: 3" if name == "counter" else "bytes" if name == "editor" else "Text")
+        receive("Count: 3" if name == "counter" else "bytes" if name == "editor" else "Text",
+                after=after_key, frame=f"{name}-resized")
         check_border()
-        (OUT / f"{name}-resized.txt").write_text("\n".join(screen.display) + "\n")
+        keep(f"{name}-resized", screen)
         finish(fullscreen)
     finally:
         if process.poll() is None:
