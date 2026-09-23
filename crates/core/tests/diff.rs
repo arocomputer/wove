@@ -17,7 +17,7 @@ fn diff_separates_unterminated_replacement_lines_and_preserves_styles() {
             .iter()
             .map(|s| s.text.as_str())
             .collect::<String>(),
-        "-old\n+new\n"
+        "-old\n+new"
     );
     assert_eq!(result.spans[0].style, red);
     assert_eq!(result.spans[1].style, green);

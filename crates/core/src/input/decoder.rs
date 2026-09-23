@@ -20,29 +20,40 @@ pub struct Decoder {
 
 impl Decoder {
     /// The input so far is a whole key on its own and also the start of a
-    /// longer report: Escape, or Alt with `[` or `O`. Callers wait briefly for
-    /// more bytes, then call `flush_escape`.
+    /// longer report: Escape, Alt with `[` or `O`, or any of those after
+    /// another Escape, which some terminals send for Alt with a report.
+    /// Callers wait briefly for more bytes, then call `flush_escape`.
     pub fn escape_pending(&self) -> bool {
-        !self.paste && matches!(self.pending.as_slice(), b"\x1b" | b"\x1b[" | b"\x1bO")
+        !self.paste
+            && matches!(
+                self.pending.as_slice(),
+                b"\x1b" | b"\x1b[" | b"\x1bO" | b"\x1b\x1b" | b"\x1b\x1b[" | b"\x1b\x1bO"
+            )
     }
 
-    /// Resolve the waiting bytes as the key they are on their own.
+    /// Resolve the waiting bytes as the keys they are on their own: two
+    /// Escapes are Alt+Escape, and an Escape before Alt with `[` or `O` is a
+    /// separate key.
     pub fn flush_escape(&mut self) -> Vec<Event> {
         if !self.escape_pending() {
             return Vec::new();
         }
-        let event = match self.pending.get(1) {
-            Some(byte) => {
-                let alt = Modifiers {
-                    alt: true,
-                    ..Modifiers::default()
-                };
-                Event::key(Key::Char(char::from(*byte)), alt)
-            }
-            None => Key::Escape.into(),
+        let alt = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+        let events = match self.pending[..] {
+            [_] => vec![Key::Escape.into()],
+            [_, 0x1b] => vec![Event::key(Key::Escape, alt)],
+            [_, byte] => vec![Event::key(Key::Char(char::from(byte)), alt)],
+            [.., byte] => vec![
+                Key::Escape.into(),
+                Event::key(Key::Char(char::from(byte)), alt),
+            ],
+            [] => Vec::new(),
         };
         self.pending.clear();
-        vec![event]
+        events
     }
 
     pub fn push(&mut self, bytes: &[u8]) -> Vec<Event> {
@@ -75,17 +86,50 @@ impl Decoder {
                 self.paste = true;
                 continue;
             }
-            if self.pending.starts_with(b"\x1b[") || self.pending.starts_with(b"\x1bO") {
+            // Escape never occurs inside a report or a character, so it begins
+            // the next input, except that a second Escape may introduce Alt.
+            if byte == 0x1b && self.pending.len() > 1 {
+                let before = &self.pending[..self.pending.len() - 1];
+                if before == b"\x1b\x1b" {
+                    events.push(Event::key(
+                        Key::Escape,
+                        Modifiers {
+                            alt: true,
+                            ..Modifiers::default()
+                        },
+                    ));
+                }
+                if before != b"\x1b" {
+                    self.pending.clear();
+                    self.pending.push(byte);
+                }
+                continue;
+            }
+            // Escape before a report adds Alt to it.
+            let alt = usize::from(self.pending.starts_with(b"\x1b\x1b"));
+            let report = &self.pending[alt..];
+            if report.starts_with(b"\x1b[") || report.starts_with(b"\x1bO") {
+                // The Linux console's F1 to F5 have a second `[` before the final byte.
+                let bracket = report == b"\x1b[[";
                 if self.pending.len() > SEQUENCE_LIMIT {
                     self.pending.clear();
-                } else if self.pending.len() > 2 && (0x40..=0x7e).contains(&byte) {
-                    events.extend(sequence(&self.pending));
+                } else if report.len() > 2 && (0x40..=0x7e).contains(&byte) && !bracket {
+                    let mut event = sequence(report);
+                    if let Some(Event::Key(_, modifiers)) = &mut event {
+                        modifiers.alt |= alt == 1;
+                    }
+                    events.extend(event);
                     self.pending.clear();
                 }
                 continue;
             }
-            if self.pending == b"\x1b" {
+            if self.pending == b"\x1b\x1b" {
                 continue;
+            }
+            if alt == 1 {
+                // Escape followed by an Alt key.
+                events.push(Key::Escape.into());
+                self.pending.remove(0);
             }
             let alt = self.pending[0] == 0x1b;
             let text = match std::str::from_utf8(&self.pending[usize::from(alt)..]) {
@@ -141,6 +185,9 @@ fn sequence(bytes: &[u8]) -> Option<Event> {
     let body = std::str::from_utf8(&bytes[2..bytes.len() - 1]).ok()?;
     if let Some(body) = body.strip_prefix('<') {
         return mouse(body, end);
+    }
+    if body == "[" {
+        return matches!(end, b'A'..=b'E').then(|| Key::Function(end - b'A' + 1).into());
     }
     // Empty sub-parameters stay absent; only modifier fields default to 1.
     let fields: Vec<Vec<Option<u32>>> = body
@@ -361,6 +408,32 @@ mod tests {
         assert_eq!(decoder.push(b"a"), [Key::Char('a').into()]);
         // Bytes that do follow in time still make the report they belong to.
         assert_eq!(decoder.push(b"\x1b[A"), [Key::Up.into()]);
+    }
+
+    #[test]
+    fn an_escape_before_a_report_is_alt_and_nothing_leaks_as_typing() {
+        let alt = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+        let mut decoder = Decoder::default();
+        // rxvt and macOS send Alt+Up as Escape before the report.
+        assert_eq!(decoder.push(b"\x1b\x1b[A"), [Event::key(Key::Up, alt)]);
+        assert_eq!(decoder.push(b"\x1b\x1bOB"), [Event::key(Key::Down, alt)]);
+        // Escape then Alt+x, and Alt+Escape once nothing follows.
+        assert_eq!(
+            decoder.push(b"\x1b\x1bx"),
+            [Key::Escape.into(), Event::key(Key::Char('x'), alt)]
+        );
+        assert!(decoder.push(b"\x1b\x1b").is_empty());
+        assert_eq!(decoder.flush_escape(), [Event::key(Key::Escape, alt)]);
+        // An escape inside a report abandons it and starts the next one.
+        assert_eq!(decoder.push(b"\x1b[1;\x1b[B"), [Key::Down.into()]);
+        // The Linux console reports F1 to F5 with a second bracket.
+        assert_eq!(
+            decoder.push(b"\x1b[[A\x1b[[E"),
+            [Key::Function(1).into(), Key::Function(5).into()]
+        );
     }
 
     #[test]

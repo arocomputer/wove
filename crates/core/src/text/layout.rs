@@ -105,13 +105,29 @@ pub struct TextLayout {
 }
 impl TextLayout {
     pub fn new(spans: &[Span], width: Option<u16>, mode: Wrap) -> Self {
-        let content: String = spans.iter().map(|s| s.text.as_str()).collect();
+        Self::from_parts(
+            spans
+                .iter()
+                .map(|s| (s.text.as_str(), s.style, s.link.as_ref())),
+            width,
+            mode,
+        )
+    }
+    /// Lay out borrowed runs directly, so an element's own text is copied
+    /// once into the layout rather than first into owned spans.
+    pub(crate) fn from_parts<'a>(
+        parts: impl Iterator<Item = Part<'a>>,
+        width: Option<u16>,
+        mode: Wrap,
+    ) -> Self {
         let limit = width.map_or(usize::MAX, usize::from);
+        let mut content = String::new();
+        let mut styles = Vec::new();
         let mut ends = Vec::new();
-        let mut end = 0;
-        for span in spans {
-            end += span.text.len();
-            ends.push(end);
+        for (text, style, link) in parts {
+            content.push_str(text);
+            styles.push((style, link.cloned()));
+            ends.push(content.len());
         }
         let mut rows = Vec::new();
         let mut widest = 0;
@@ -154,7 +170,7 @@ impl TextLayout {
             base += raw.len() + 1;
         }
         Self {
-            styles: spans.iter().map(|s| (s.style, s.link.clone())).collect(),
+            styles,
             ends,
             content,
             rows,
@@ -205,12 +221,8 @@ impl TextLayout {
                     .styles
                     .get(run.span)
                     .map_or((Style::default(), None), |(s, l)| (*s, l.as_ref()));
-                let spaces;
                 let text = match run.tab {
-                    Some(n) => {
-                        spaces = " ".repeat(n);
-                        spaces.as_str()
-                    }
+                    Some(n) => &SPACES[..n],
                     None => &self.content[run.range.clone()],
                 };
                 match link {
@@ -221,6 +233,10 @@ impl TextLayout {
         }
     }
 }
+
+/// Blanks that paint a tab, which is never wider than a tab stop.
+const SPACES: &str = "        ";
+const _: () = assert!(SPACES.len() >= TAB);
 
 /// One styled run as an element holds it: text, style, and link.
 pub(crate) type Part<'a> = (&'a str, Style, Option<&'a Arc<str>>);
@@ -246,20 +262,11 @@ impl Cache {
             {
                 read(layout)
             }
-            _ => {
-                let spans: Vec<Span> = parts
-                    .map(|(text, style, link)| Span {
-                        text: text.to_owned(),
-                        style,
-                        link: link.cloned(),
-                    })
-                    .collect();
-                read(
-                    &slot
-                        .insert((width, wrap, TextLayout::new(&spans, width, wrap)))
-                        .2,
-                )
-            }
+            _ => read(
+                &slot
+                    .insert((width, wrap, TextLayout::from_parts(parts, width, wrap)))
+                    .2,
+            ),
         }
     }
 }
