@@ -1,0 +1,57 @@
+---
+title: Keymap
+description: Scoped key bindings and multi-key sequences.
+---
+
+`wove-keymap` maps keys and key sequences to your own commands.
+
+```toml
+[dependencies]
+wove-keymap = { git = "https://github.com/arocomputer/wove" }
+```
+
+```rust
+use std::time::Duration;
+use wove::Key;
+use wove_keymap::{Keymap, Match};
+
+#[derive(Clone)]
+enum Command { Save, Top }
+
+let mut keys = Keymap::new(Duration::from_millis(300));
+keys.bind(None, [Key::Char('s').into()], Command::Save);
+keys.bind(None, [Key::Char('g').into(), Key::Char('g').into()], Command::Top);
+
+match keys.feed(Key::Char('g').into(), &scopes, now) {
+    Match::Command(command) => run(command),
+    Match::Pending => {} // Wait for the next key.
+    Match::Unbound => {} // Let the tree handle it.
+    Match::Flushed(commands, result) => { /* see below */ }
+}
+```
+
+The keymap only matches keys. You run the commands and supply the time.
+
+## Scopes
+
+Pass `None` to `bind` for a global binding, or `Some(id)` to bind to a node.
+When you feed a key, pass the focused node and its ancestors, nearest first.
+The nearest scope wins. Within a scope, the newest binding wins.
+
+Call `remove(id)` when a scoped node is removed, and `clear()` when focus
+changes without a key press.
+
+## Sequences and timeouts
+
+If `g` and `g g` are both bound, pressing `g` waits. Another `g` runs `g g`.
+Anything else, or the timeout, runs `g`.
+
+`deadline()` returns when the wait ends. Use it as your loop's poll timeout,
+and call `expire(now)` when it passes without a key. It returns the commands
+that became final.
+
+`feed` can also finalize earlier commands, when a key breaks a waiting
+sequence. It returns them as `Match::Flushed(commands, result)`. Run the
+commands in order, then handle `result`.
+
+Pass a monotonic time, such as the elapsed time since your app started.

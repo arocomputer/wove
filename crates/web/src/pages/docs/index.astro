@@ -1,5 +1,20 @@
 ---
 import Docs from "../../layouts/Docs.astro";
+import { Code } from "astro:components";
+
+// The quickstart's app, cut to its shape.
+const example = `use wove::{elements::{Input, Text}, terminal, Key, Tree};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut tree = Tree::new();
+    tree.add(tree.root(), Text::new("Your name?"))?;
+    let input = tree.add(tree.root(), Input::default())?;
+    tree.focus(Some(input))?;
+
+    // Draw the tree and route input until Escape.
+    terminal::run(&mut tree, |_, event, _| *event != Key::Escape.into())?;
+    Ok(())
+}`;
 ---
 
 <Docs
@@ -7,37 +22,51 @@ import Docs from "../../layouts/Docs.astro";
   description="A Rust library for building terminal user interfaces."
 >
   <p>
-    Wove lays out a tree of elements in terminal cells, handles keyboard and
-    mouse input, and renders changes to the screen.
+    Wove is a Rust library for building terminal user interfaces. You build a
+    tree of elements, lay it out with flexbox or grid, and Wove draws it and
+    routes keyboard and mouse input.
   </p>
 
-  <h2 id="choose-how-to-build">Choose how to build</h2>
+  <Code
+    code={example}
+    lang="rust"
+    themes={{ light: "github-light", dark: "github-dark" }}
+    wrap
+  />
+
+  <p>
+    That's a complete app: a label and a text field with cursor movement,
+    selection, and undo. The <a href="/docs/quickstart/">quickstart</a> builds
+    it step by step.
+  </p>
+
+  <h2 id="start">Start</h2>
   <ul class="overview-links">
     <li>
-      <a href="/docs/start/">Rust core</a> for direct control of elements,
-      layout, and events.
+      <a href="/docs/quickstart/">Quickstart</a> builds a small app in Rust.
     </li>
     <li>
-      <a href="/docs/dioxus/">Dioxus</a> for reactive components and signals.
+      <a href="/docs/dioxus/">Dioxus</a> builds the same kind of app with
+      components and signals.
     </li>
   </ul>
 
   <h2 id="guides">Guides</h2>
   <ul class="overview-links">
     <li>
-      <a href="/docs/elements/">Elements and text</a> covers layout, editing,
-      lists, and tables.
+      <a href="/docs/ui/">Building a UI</a> covers the tree, layout, styling,
+      and input.
     </li>
     <li>
-      <a href="/docs/ssh/">SSH</a> serves an interface to remote clients.
+      <a href="/docs/elements/">Elements</a> covers text, inputs, lists,
+      tables, scrolling, and custom elements.
     </li>
     <li>
-      <a href="/docs/packages/">Formatting and keymaps</a> covers optional
-      features and key bindings.
+      <a href="/docs/running/">Running your app</a> covers the terminal loop
+      and inline mode.
     </li>
     <li>
-      <a href="/docs/architecture/">Architecture</a> explains ownership and
-      crate boundaries.
+      <a href="/docs/testing/">Testing</a> runs your app without a terminal.
     </li>
   </ul>
 </Docs>

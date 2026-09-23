@@ -51,6 +51,9 @@ class ChangeTests(unittest.TestCase):
         self.assertEqual(affected(["scripts/ui.py"]), {"core-ui", "dioxus-ui", "quality"})
         self.assertEqual(affected(["crates/examples/src/editor.rs"]), {"core-ui", "quality", "quality-rust"})
 
+    def test_frame_goldens_also_rebuild_the_website_that_shows_them(self):
+        self.assertEqual(affected(["scripts/ui/frames/gallery-0.txt"]), {"core-ui", "dioxus-ui", "quality", "website"})
+
     def test_workflows_and_shared_ci_do_not_skip_their_checks(self):
         self.assertEqual(affected([".github/workflows/ssh.yml"]), {"ssh", "quality", "quality-rust"})
         self.assertEqual(affected(["scripts/ci/changes.py"]), AREAS)

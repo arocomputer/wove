@@ -1,0 +1,55 @@
+---
+title: Testing
+description: Test rendering and input without a terminal.
+---
+
+`testing::Screen` runs a tree headless. It uses the same layout, painting, and
+input routing as a real terminal.
+
+```rust
+use wove::{elements::Input, testing::Screen, Key};
+
+let mut screen = Screen::new(20, 3);
+let input = screen.tree.add(screen.tree.root(), Input::default())?;
+screen.tree.focus(Some(input))?;
+screen.send(Key::Char('界'))?;
+
+let cell = screen.frame()?.cell(0, 0).unwrap();
+assert_eq!(cell.symbol(), "界");
+```
+
+`send` dispatches an event. `click` and `drag` send mouse input at a cell.
+`resize` changes the screen size.
+
+## Compare whole frames
+
+`testing::assert_frame` compares a frame with a text snapshot:
+
+```rust
+use wove::testing::{assert_frame, Screen};
+
+screen.send(Key::Char('!'))?;
+assert_frame(screen.frame()?, "hello!\n@cursor 6,0\n");
+```
+
+A snapshot is one line per row, without trailing spaces or blank rows at the
+bottom. The last line is the cursor position, or `@cursor none`. Styles are not
+included. Check those with `Buffer::cell`.
+
+When frames differ, the panic shows the first rows that differ:
+
+```text
+frames differ at line 1
+-   1 |hello?
+-   2 |@cursor 6,0
++   1 |hello!
++   2 |@cursor 6,0
+```
+
+Use `testing::snapshot` to get the text, or `testing::diff` to compare against
+a file of your own.
+
+## Time
+
+`testing::Clock` is a clock you advance by hand. Pass `clock.now()` wherever
+your app reads the time, such as to a keymap or an animation.

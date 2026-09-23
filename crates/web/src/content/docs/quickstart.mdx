@@ -1,0 +1,72 @@
+---
+title: Quickstart
+description: Build and run a small interactive Wove app.
+---
+
+Build an app that asks for your name and greets you. It covers the tree,
+elements, focus, and the event loop.
+
+## Create a project
+
+You need Rust 1.98 or newer. Wove is not on crates.io yet, so add it from Git:
+
+```sh
+cargo new hello-wove && cd hello-wove
+cargo add wove --git https://github.com/arocomputer/wove
+```
+
+## Write the app
+
+Replace `src/main.rs`:
+
+```rust
+use wove::{elements::{Input, Text}, terminal, Key, Tree};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut tree = Tree::new();
+    let greeting = tree.add(tree.root(), Text::new("Your name?"))?;
+    let input = tree.add(tree.root(), Input::default())?;
+    tree.focus(Some(input))?;
+
+    terminal::run(&mut tree, |tree, event, _| {
+        if *event == Key::Enter.into() {
+            let name = tree.get::<Input>(input).unwrap();
+            let line = format!("Hello, {}!", name.editor.text());
+            tree.update::<Text>(greeting, |text| text.content = line)
+                .unwrap();
+        }
+        *event != Key::Escape.into()
+    })?;
+    Ok(())
+}
+```
+
+Run it:
+
+```sh
+cargo run
+```
+
+Type a name and press Enter. Press Escape to quit.
+
+## What just happened
+
+`Tree::new` creates an empty tree. Its root fills the terminal and stacks
+children in a column.
+
+`tree.add` attaches an element and returns its `Id`. You use that `Id` to read
+the element with `get`, change it with `update`, or remove it.
+
+`tree.focus` sends keys to the input. The input handles typing, selection with
+Shift and the arrows, and undo with Ctrl+Z on its own.
+
+`terminal::run` takes over the terminal, draws the tree, and calls your closure
+after each event. Return `false` to quit. Wove binds no quit key, so if you never
+return `false`, the app never exits.
+
+## Next steps
+
+- [Building a UI](/docs/ui/) covers the tree, layout, styling, and input.
+- [Elements](/docs/elements/) lists what's built in.
+- [Running your app](/docs/running/) writes your own loop and draws inline.
+- [Dioxus](/docs/dioxus/) builds the same app with components and signals.

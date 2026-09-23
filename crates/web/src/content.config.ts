@@ -8,7 +8,6 @@ export const collections = {
     schema: z.object({
       title: z.string(),
       description: z.string(),
-      order: z.number(),
     }),
   }),
 };

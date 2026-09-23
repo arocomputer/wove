@@ -1,0 +1,77 @@
+---
+// A reviewed terminal frame from the PTY suite, shown as the example's screen.
+// `name` is a file in scripts/ui/frames/ without `.txt`; `command` runs the
+// example. The goldens hold text and the cursor, not styles, and `./x ui`
+// keeps them current, so a rendering change updates the docs in the same PR.
+interface Props {
+  name: string;
+  command: string;
+}
+const { name, command } = Astro.props;
+const frames = import.meta.glob<string>("../../../../scripts/ui/frames/*.txt", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+const source = frames[`../../../../scripts/ui/frames/${name}.txt`];
+if (source === undefined) throw new Error(`no frame golden named ${name}`);
+
+const lines = source.replace(/\n$/, "").split("\n");
+const [, x, y] = lines.pop()!.match(/^@cursor (?:(\d+),(\d+)|none)$/) ?? [];
+const cursor = x === undefined ? undefined : { x: Number(x), y: Number(y) };
+
+// Terminals give East Asian wide characters and emoji two cells.
+const wide =
+  /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|\p{Extended_Pictographic}/u;
+const graphemes = new Intl.Segmenter();
+
+// Each row is plain text runs and pinned cells. The site font covers Latin-1
+// only, so anything else, such as box drawing, is pinned to its cell width to
+// keep the grid whatever font draws it. The cursor cell is pinned as well.
+type Piece = { text: string; cells?: number; cursor?: boolean; box?: string };
+
+// The borders Wove draws, as the thickness of the line leaving the cell's
+// center to the left, right, top, and bottom. CSS draws them so they join
+// across cells; double lines are drawn heavy.
+const boxes: Record<string, number[]> = {};
+for (const [chars, t] of [["┌┐└┘─│", 1], ["╭╮╰╯", 1], ["╔╗╚╝═║", 2], ["┏┓┗┛━┃", 2]] as const) {
+  const shapes = [[0, 1, 0, 1], [1, 0, 0, 1], [0, 1, 1, 0], [1, 0, 1, 0], [1, 1, 0, 0], [0, 0, 1, 1]];
+  [...chars].forEach((c, i) => (boxes[c] = shapes[i].map((on) => on * t)));
+}
+const rows = lines.map((line, row) => {
+  const pieces: Piece[] = [];
+  let column = 0;
+  const cell = (text: string, cells: number, isCursor: boolean) => {
+    const last = pieces.at(-1);
+    if (!isCursor && text.codePointAt(0)! <= 0xff && last && last.cells === undefined) {
+      last.text += text;
+    } else if (!isCursor && text.codePointAt(0)! <= 0xff) {
+      pieces.push({ text });
+    } else {
+      const box = boxes[text]?.map((w, i) => `--${"lrud"[i]}: ${w}px`).join("; ");
+      pieces.push({ text, cells, cursor: isCursor, box });
+    }
+    column += cells;
+  };
+  for (const { segment } of graphemes.segment(line)) {
+    cell(segment, wide.test(segment) ? 2 : 1, cursor?.y === row && cursor.x === column);
+  }
+  while (cursor?.y === row && column <= cursor.x) cell(" ", 1, column === cursor.x);
+  return { pieces, columns: column };
+});
+const columns = Math.max(...rows.map((row) => row.columns));
+---
+
+<figure class="frame" style={`--columns: ${columns}`}>
+  <pre aria-label={`Terminal screen of ${command}`}>{rows.map(({ pieces }) => (
+    <span>{pieces.map((piece) =>
+      piece.cells === undefined ? piece.text : (
+        <span
+          class:list={["frame-cell", { "frame-cursor": piece.cursor, "frame-box": piece.box }]}
+          style={`--cells: ${piece.cells}; ${piece.box ?? ""}`}
+        >{piece.text}</span>
+      ),
+    )}{"\n"}</span>
+  ))}</pre>
+  <figcaption><code>{command}</code></figcaption>
+</figure>

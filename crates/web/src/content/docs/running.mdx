@@ -1,0 +1,168 @@
+---
+title: Running your app
+description: Own the terminal, write your own loop, and draw inline.
+---
+
+import Frame from "../../components/Frame.astro";
+
+A `Terminal` owns the terminal while your app runs. It turns on raw mode, draws
+frames, and restores everything when the session ends, even after a panic.
+
+`terminal::run` covers simple apps. Write your own loop when you need timers,
+background work, or a different screen.
+
+## Write a loop
+
+```rust
+use wove::terminal::{self, Terminal};
+
+let mut terminal = Terminal::new()?;
+loop {
+    let (width, height) = terminal.size()?;
+    terminal.draw(tree.frame(width, height)?)?;
+    if let Some(event) = terminal::read()? {
+        if event == Key::Escape.into() {
+            break;
+        }
+        tree.dispatch(event)?;
+    }
+}
+```
+
+`read` waits for the next event. `poll` waits with a timeout and returns
+whether input arrived. Drawing on every pass is free when nothing changed,
+because an unchanged frame is skipped before any cell is compared.
+
+Handle `terminal.typed_ahead()` before you read. It returns keys the user typed
+while the session was starting. `terminal::run` does this for you.
+
+## Choose a screen
+
+```rust
+use wove::{Options, ScreenMode};
+
+let terminal = Terminal::with_options(Options {
+    screen: ScreenMode::Inline,
+    ..Options::default()
+})?;
+```
+
+| Screen | What it does |
+| --- | --- |
+| `Alternate` | A full-screen buffer. The shell comes back on exit. Default. |
+| `Main` | Draws over the main screen. |
+| `Inline` | Grows down from the prompt. See [Inline mode](/docs/running/#inline-mode). |
+
+`Terminal::switch` changes the screen while running.
+
+`Options` also turns input modes on and off: `mouse`, `motion`, `paste`,
+`focus`, and `keyboard` for kitty key reports. Turn `mouse` off to give text
+selection back to the terminal.
+
+## Wake the loop from another thread
+
+A `Waker` ends a wait early, so work from another thread shows up without a key
+press:
+
+```rust
+let waker = terminal::waker()?;
+let (send, work) = std::sync::mpsc::channel();
+std::thread::spawn(move || {
+    for line in fetch_lines() {
+        let _ = send.send(line);
+        waker.wake();
+    }
+});
+```
+
+A wake makes `poll` return `true` and `read` return `Ok(None)`. Take the new
+work and draw. A `Waker` is `Send` and `Copy`, so give one to every producer.
+
+## Slow terminals
+
+Over SSH, in tmux, or with very large frames, a write can block. Call
+`terminal.detach()` once after creating the session. Frames then go out from a
+thread the session owns, `draw` returns at once, and a slow terminal only ever
+receives the newest frame. Call `terminal.flush()` to wait until everything is
+on screen.
+
+## Title, bell, and clipboard
+
+- `title` names the window or tab.
+- `bell` rings the bell.
+- `progress` shows a progress indicator in terminals that support it.
+- `copy` puts text on the clipboard, over SSH and inside tmux too.
+
+The session puts back the title and clears progress when it ends.
+
+## Restoring the terminal
+
+A panic restores the terminal before its message prints. So does a fatal signal
+such as hangup or terminate. Set `Options::signals` to `false` if your app
+handles signals itself.
+
+If you print around a live session, call `terminal.invalidate()` afterwards.
+`suspend` and `resume` hand the terminal to a child program. `stop` suspends
+the process the way Ctrl+Z does in a shell.
+
+## Inline mode
+
+An inline session draws on the main screen, starting at the shell's cursor.
+Finished rows stay in the terminal's own scrollback, the way a chat or a build
+log would. Only the rows still changing are redrawn.
+
+```rust
+use wove::{terminal::Terminal, Options, ScreenMode};
+
+let mut terminal = Terminal::with_options(Options {
+    screen: ScreenMode::Inline,
+    mouse: false,
+    ..Options::default()
+})?;
+
+let (width, _) = terminal.size()?;
+let height = tree.height(width)?;
+terminal.draw(tree.frame(width, height)?)?;
+```
+
+An inline frame can be any height. `Tree::height` returns the height the
+content needs at a given width. When a frame grows past the bottom of the
+screen, its top scrolls into the terminal's scrollback.
+
+### Commit finished rows
+
+`terminal.commit(rows)` releases rows at the top of the last frame. They stay
+on screen, and the next frame starts beneath them. Remove their elements from
+the tree afterwards:
+
+```rust
+let line = tree.create(Text::new("done"))?;
+tree.insert(tree.root(), line, 0)?;
+let height = tree.height(width)?;
+terminal.draw(tree.frame(width, height)?)?;
+terminal.commit(1);
+tree.remove(line)?;
+```
+
+This keeps frames small however long the session runs.
+
+### Mouse input
+
+An inline frame moves as the screen scrolls, so a mouse row is not a frame row.
+Pass each event through `terminal.to_frame(event)` before dispatching it. It
+returns `None` for clicks outside the frame. Or leave `mouse` off, as above, to
+keep the terminal's own selection and scrolling.
+
+### Resizing
+
+A resize redraws from the top of the screen: first the committed rows still
+visible, then the frame. Rows already in scrollback are never rewritten. After
+a width change, rows are cropped or padded, not rewrapped.
+
+### Example
+
+The [`inline`](https://github.com/arocomputer/wove/blob/main/crates/core/examples/inline.rs)
+example shows the whole loop. A worker thread answers each line, and the
+answers stay in the terminal's scrollback:
+
+<Frame name="inline-1" command="cargo run -p wove --example inline" />

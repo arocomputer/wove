@@ -1,9 +1,28 @@
-# Dioxus
+# wove-dioxus
 
-Dioxus components for Wove terminal user interfaces. This optional adapter maps
-RSX elements and component updates onto Wove's persistent element tree.
+Write [Wove](https://wovetui.com) terminal apps with Dioxus components and
+signals.
 
-See the [guide](https://github.com/arocomputer/wove/blob/main/crates/web/src/content/docs/dioxus.mdx)
-and run `cargo run -p wove-dioxus --example counter` from the workspace.
+```rust
+fn app() -> Element {
+    let mut name = use_signal(String::new);
+    rsx! {
+        view { direction: "column",
+            input {
+                value: "{name}",
+                oninput: move |event| name.set(event.data.to_string()),
+            }
+            text { content: "Hello, {name}!" }
+        }
+    }
+}
+```
 
-The API is experimental. Applications own their event loop and executor.
+Try the example:
+
+```sh
+cargo run -p wove-dioxus --example counter
+```
+
+See the [Dioxus guide](https://wovetui.com/docs/dioxus/) for setup,
+tags, and events.
