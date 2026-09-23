@@ -109,17 +109,17 @@ impl<C: Clone> Keymap<C> {
         }
         flushed
     }
-    /// Feed a stroke, first resolving an expired sequence. Pass scopes from the
-    /// focused element to root; call `clear` when focus changes without a
-    /// subsequent key event. When a stroke does not continue the pending
-    /// sequence, its longest exact binding runs and the later strokes are
-    /// replayed; without one, the stroke is retried alone.
+    /// Feed a stroke, clearing a sequence from another focus before resolving
+    /// an expired one. Pass scopes from the focused element to root; call
+    /// `clear` when focus changes without a subsequent key event. When a stroke
+    /// does not continue the sequence, its longest exact binding runs and the
+    /// later strokes are replayed; without one, the stroke is retried alone.
     pub fn feed(&mut self, stroke: Stroke, scopes: &[Id], now: Duration) -> Match<C> {
-        let mut flushed = self.expire(now);
         if self.scopes != scopes {
             self.clear();
             self.scopes = scopes.to_vec();
         }
+        let mut flushed = self.expire(now);
         let result = self.step(stroke, scopes, now, &mut flushed);
         if flushed.is_empty() {
             result
