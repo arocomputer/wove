@@ -81,9 +81,11 @@ pub(crate) fn edit(editor: &mut Editor, event: &Event, multiline: bool) -> Respo
     }
 }
 
-/// Normalize pasted newlines, expand tabs, and remove terminal controls before
-/// storing input.
-pub(crate) fn clean(value: &str, multiline: bool) -> String {
+/// Normalize text before an editor stores it, as pasting does: newlines become
+/// `\n`, tabs expand to spaces, and terminal controls are removed. Only
+/// `multiline` text keeps its newlines. Adapters that set an editor's text
+/// compare against this form to tell whether the value actually changed.
+pub fn clean(value: &str, multiline: bool) -> String {
     value
         .replace("\r\n", "\n")
         .replace('\r', "\n")

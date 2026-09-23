@@ -2,8 +2,8 @@
 mod editor;
 pub use editor::{Atom, Command, Editor, Motion};
 mod input;
-pub use input::command;
-pub(crate) use input::{clean, edit};
+pub(crate) use input::edit;
+pub use input::{clean, command};
 mod layout;
 #[doc(hidden)]
 pub use layout::Cache;
