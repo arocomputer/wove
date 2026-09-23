@@ -8,8 +8,11 @@ use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, Once};
 
+mod output;
 mod query;
+use output::{Output, Screen};
 pub use query::Capabilities;
+use std::sync::Arc;
 
 static OWNED: AtomicBool = AtomicBool::new(false);
 /// What to undo if the process ends without dropping the session.
@@ -137,14 +140,15 @@ fn watch_signals() {}
 /// may exist; callers must not change terminal modes behind it.
 ///
 /// A session is `Send`. An application whose terminal can be slow, over SSH
-/// or inside a multiplexer, can draw from a thread of its own and hand it
-/// cloned frames, so a blocked write never stalls input handling.
+/// or inside a multiplexer, calls `detach` so that frames are written from a
+/// thread of their own and a blocked write never stalls input handling.
 pub struct Terminal {
-    output: io::Stdout,
+    stdout: io::Stdout,
     options: Options,
     depth: Depth,
-    renderer: Renderer,
-    inline: Option<Inline>,
+    /// What the terminal shows, shared with the writer once detached.
+    output: Arc<Output>,
+    writer: Option<std::thread::JoinHandle<()>>,
     capabilities: Capabilities,
     /// Where the cursor was when the session started, until an inline frame
     /// is anchored there.
@@ -192,11 +196,15 @@ impl Terminal {
         }
         let depth = Depth::detect();
         let mut session = Self {
-            output: io::stdout(),
+            stdout: io::stdout(),
             options,
             depth,
-            renderer: Renderer::with_depth(depth),
-            inline: None,
+            output: Arc::new(Output::new(Screen {
+                renderer: Renderer::with_depth(depth),
+                inline: None,
+                mode: options.screen,
+            })),
+            writer: None,
             capabilities: Capabilities::default(),
             start: None,
             typed: Vec::new(),
@@ -236,7 +244,8 @@ impl Terminal {
     /// Resume before drawing again. This permits an application to run a child
     /// UI. An inline session first parks the cursor beneath its last frame.
     pub fn suspend(&mut self) -> io::Result<()> {
-        let mut result = Ok(());
+        // Frames already handed to the writer go out before the modes do.
+        let mut result = self.output.flush();
         // Whoever holds the modes undoes them; a panic hook may have already.
         // Keep rescue from observing a half-restored session.
         let mut active = active();
@@ -246,16 +255,19 @@ impl Terminal {
                 .options
                 .is_some_and(|options| options.screen == ScreenMode::Inline)
             {
-                if let Some(inline) = &mut self.inline {
-                    result = inline.finish(&mut self.output);
-                }
+                let stdout = &mut self.stdout;
+                let finished = self.output.with(|screen| match &mut screen.inline {
+                    Some(inline) => inline.finish(stdout),
+                    None => Ok(()),
+                });
+                result = result.and(finished);
             }
             // The live frame parks the cursor, not the recorded one.
             let state = Active {
                 park: Park::default(),
                 ..state
             };
-            result = result.and(state.leave(&mut self.output));
+            result = result.and(state.leave(&mut self.stdout));
         }
         self.entered = false;
         if self.raw {
@@ -290,7 +302,7 @@ impl Terminal {
         let _ = crossterm::ansi_support::supports_ansi();
         if !self.probed {
             self.probed = true;
-            let probe = query::probe(&mut self.output)?;
+            let probe = query::probe(&mut self.stdout)?;
             self.capabilities = probe.capabilities;
             self.start = probe.cursor;
             self.typed = probe.typed;
@@ -298,21 +310,20 @@ impl Terminal {
             self.options.keyboard &= self.capabilities.keyboard;
         }
         self.entered = true;
-        self.renderer.invalidate();
-        match &mut self.inline {
-            // Whatever ran during the suspension may have written anywhere.
-            Some(inline) => inline.invalidate(),
-            None if self.options.screen == ScreenMode::Inline => {
-                let cursor = self.start.take();
-                self.anchor(cursor)?;
-            }
-            None => {}
+        // Whatever ran during the suspension may have written anywhere.
+        let anchored = self.output.with(|screen| {
+            screen.invalidate();
+            screen.inline.is_some()
+        });
+        if !anchored && self.options.screen == ScreenMode::Inline {
+            let cursor = self.start.take();
+            self.anchor(cursor)?;
         }
         let state = self.restoration();
         let mut active = active();
         *active = Some(state);
         drop(active);
-        self.options.enter(&mut self.output)?;
+        self.options.enter(&mut self.stdout)?;
         // Whatever ran during a suspension had the user's title back.
         if let Some(title) = self.title.take() {
             self.title(&title)?;
@@ -330,14 +341,7 @@ impl Terminal {
 
     /// Cleanup for the entered screen and input modes, including cursor parking.
     fn restoration(&self) -> Active {
-        let park = match (&self.inline, self.options.screen) {
-            (Some(inline), ScreenMode::Inline) => inline.parking(),
-            (_, ScreenMode::Alternate) => Park::default(),
-            _ => Park {
-                row: None,
-                newline: true,
-            },
-        };
+        let park = self.output.with(|screen| screen.park());
         Active {
             options: Some(self.options),
             park,
@@ -354,12 +358,16 @@ impl Terminal {
     /// row is not the frame's row. Pass every event through this before
     /// dispatching it; one that falls outside an inline frame is `None`.
     pub fn to_frame(&self, event: crate::Event) -> Option<crate::Event> {
-        match (event, &self.inline, self.options.screen) {
-            (crate::Event::Mouse(mouse), Some(inline), ScreenMode::Inline) => {
-                let y = inline.frame_row(mouse.y)?;
+        match (event, self.options.screen) {
+            (crate::Event::Mouse(mouse), ScreenMode::Inline) => {
+                let row = self.output.with(|screen| {
+                    let inline = screen.inline.as_ref()?;
+                    Some(inline.frame_row(mouse.y))
+                });
+                let y = row.unwrap_or(Some(mouse.y))?;
                 Some(crate::Event::Mouse(crate::Mouse { y, ..mouse }))
             }
-            (event, ..) => Some(event),
+            (event, _) => Some(event),
         }
     }
 
@@ -377,7 +385,7 @@ impl Terminal {
     /// window is unfocused, so call this on `Event::WindowFocus(true)` there.
     pub fn reassert(&mut self) -> io::Result<()> {
         if self.entered {
-            self.options.reassert(&mut self.output)?;
+            self.options.reassert(&mut self.stdout)?;
         }
         Ok(())
     }
@@ -387,8 +395,8 @@ impl Terminal {
     /// Nothing reads the clipboard back: pasted text arrives as
     /// `Event::Paste` while `Options::paste` is on.
     pub fn copy(&mut self, text: &str) -> io::Result<()> {
-        self.output.write_all(&render::clipboard(text, self.tmux))?;
-        self.output.flush()
+        self.stdout.write_all(&render::clipboard(text, self.tmux))?;
+        self.stdout.flush()
     }
 
     /// Set the window and tab title. The user's own title is saved first and
@@ -408,16 +416,16 @@ impl Terminal {
         // Recorded before the push, so a crash in between still pops it.
         self.record();
         if push {
-            self.output.write_all(PUSH_TITLE)?;
+            self.stdout.write_all(PUSH_TITLE)?;
         }
-        self.output.write_all(&bytes)?;
-        self.output.flush()
+        self.stdout.write_all(&bytes)?;
+        self.stdout.flush()
     }
 
     /// Ring the terminal bell, for example when a long task finishes.
     pub fn bell(&mut self) -> io::Result<()> {
-        self.output.write_all(render::BELL)?;
-        self.output.flush()
+        self.stdout.write_all(render::BELL)?;
+        self.stdout.flush()
     }
 
     /// Show progress in the tab or taskbar, where the terminal supports
@@ -427,9 +435,9 @@ impl Terminal {
         self.entered()?;
         self.progress = progress;
         self.record();
-        self.output
+        self.stdout
             .write_all(&render::progress(progress, self.tmux))?;
-        self.output.flush()
+        self.stdout.flush()
     }
 
     /// Output that the end of the session must undo needs an entered session.
@@ -446,7 +454,7 @@ impl Terminal {
     fn anchor(&mut self, cursor: Option<(u16, u16)>) -> io::Result<()> {
         let row = match cursor {
             Some((column, row)) if column > 0 => {
-                self.output.write_all(b"\r\n")?;
+                self.stdout.write_all(b"\r\n")?;
                 row.saturating_add(1)
             }
             Some((_, row)) => row,
@@ -456,7 +464,7 @@ impl Terminal {
         if cursor.is_none() {
             inline.invalidate();
         }
-        self.inline = Some(inline);
+        self.output.with(|screen| screen.inline = Some(inline));
         Ok(())
     }
 
@@ -471,8 +479,14 @@ impl Terminal {
         if old == screen {
             return Ok(());
         }
+        // Frames queued for the old screen go out before it is left.
+        self.output.flush()?;
         self.options.screen = screen;
-        self.renderer.invalidate();
+        let anchored = self.output.with(|shown| {
+            shown.mode = screen;
+            shown.renderer.invalidate();
+            shown.inline.is_some()
+        });
         if !self.entered {
             return Ok(());
         }
@@ -482,31 +496,32 @@ impl Terminal {
         // inherits key reports it cannot read.
         let crossing = old == ScreenMode::Alternate || screen == ScreenMode::Alternate;
         if crossing && self.options.keyboard {
-            self.output.write_all(b"\x1b[<1u")?;
+            self.stdout.write_all(b"\x1b[<1u")?;
         }
         if old == ScreenMode::Alternate {
-            self.output.write_all(b"\x1b[?1049l")?;
+            self.stdout.write_all(b"\x1b[?1049l")?;
         }
         if screen == ScreenMode::Alternate {
-            self.output.write_all(b"\x1b[?1049h")?;
+            self.stdout.write_all(b"\x1b[?1049h")?;
         }
         if crossing && self.options.keyboard {
-            self.output.write_all(b"\x1b[>1u")?;
+            self.stdout.write_all(b"\x1b[>1u")?;
         }
-        self.output.flush()?;
-        match (&mut self.inline, screen, old) {
-            (None, ScreenMode::Inline, _) => {
-                let reply = query::cursor(&mut self.output)?;
-                self.typed.extend(reply.typed);
-                self.anchor(reply.cursor)?;
-            }
-            // Full-screen drawing on the main screen covered the frame.
-            (Some(inline), ScreenMode::Inline, ScreenMode::Main) => inline.invalidate(),
-            // Leaving the alternate screen restores the main screen's rows
-            // but not the cursor the full-screen view hid or reshaped.
-            (Some(inline), ScreenMode::Inline, ScreenMode::Alternate) => inline.forget_cursor(),
-            _ => {}
+        self.stdout.flush()?;
+        if screen == ScreenMode::Inline && !anchored {
+            let reply = query::cursor(&mut self.stdout)?;
+            self.typed.extend(reply.typed);
+            self.anchor(reply.cursor)?;
         }
+        self.output
+            .with(|shown| match (&mut shown.inline, screen, old) {
+                // Full-screen drawing on the main screen covered the frame.
+                (Some(inline), ScreenMode::Inline, ScreenMode::Main) => inline.invalidate(),
+                // Leaving the alternate screen restores the main screen's rows
+                // but not the cursor the full-screen view hid or reshaped.
+                (Some(inline), ScreenMode::Inline, ScreenMode::Alternate) => inline.forget_cursor(),
+                _ => {}
+            });
         self.record();
         Ok(())
     }
@@ -518,44 +533,93 @@ impl Terminal {
 
     /// Paint a frame. A full-screen frame matches the terminal's dimensions.
     /// An inline frame matches its width and may be of any height.
+    ///
+    /// Until `detach`, the frame is written before this returns. After it,
+    /// the frame is handed to the writer and this returns at once; a write
+    /// that failed since the last call is reported here.
     pub fn draw(&mut self, frame: &Buffer) -> io::Result<()> {
         self.entered()?;
-        match (&mut self.inline, self.options.screen) {
-            (Some(inline), ScreenMode::Inline) => {
-                if inline.draw(&mut self.output, frame, terminal::size()?.1)? {
-                    // The frame may have grown or scrolled; a crash parks beneath it.
-                    self.record();
-                }
-                Ok(())
-            }
-            _ => self.renderer.draw(&mut self.output, frame),
+        // Only an inline frame depends on the screen's height.
+        let inline = self.options.screen == ScreenMode::Inline;
+        let height = if inline { terminal::size()?.1 } else { 0 };
+        if self.writer.is_some() {
+            return self.output.queue(frame, height);
         }
+        if self.output.draw(&mut self.stdout, frame, height)? && inline {
+            // The frame may have grown or scrolled; a crash parks beneath it.
+            self.record();
+        }
+        Ok(())
     }
 
-    /// Inline only: release the first `rows` rows of the last frame to the
-    /// terminal's history. See `Inline::commit`.
+    /// Write frames from a thread of their own from now on, so that a slow
+    /// terminal never blocks the caller of `draw`. While the writer is busy,
+    /// each new frame replaces the one waiting behind it, and the next write
+    /// brings the terminal straight to the newest frame. Commits stay in
+    /// order with the frames around them.
+    ///
+    /// `switch`, `suspend`, and dropping the session wait for queued frames;
+    /// `flush` waits on request. Calling this again does nothing.
+    pub fn detach(&mut self) -> io::Result<()> {
+        if self.writer.is_some() {
+            return Ok(());
+        }
+        let output = self.output.clone();
+        let writer = std::thread::Builder::new()
+            .name("wove-output".into())
+            .spawn(move || output.write(&mut io::stdout(), publish))?;
+        self.writer = Some(writer);
+        Ok(())
+    }
+
+    /// Wait until every frame handed to a detached writer is on the
+    /// terminal, and report a write that failed since the last `draw`. Call
+    /// it before printing around the session. Without a writer it returns
+    /// at once.
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.output.flush()
+    }
+
+    /// Inline only: release the first `rows` rows of the last frame drawn
+    /// to the terminal's history. See `Inline::commit`.
     pub fn commit(&mut self, rows: u16) {
-        if let Some(inline) = &mut self.inline {
-            inline.commit(rows);
-            if self.entered {
-                // Parking moves with the committed rows.
-                self.record();
-            }
+        if self.writer.is_some() {
+            self.output.commit(rows);
+            return;
+        }
+        self.output.with(|screen| screen.commit(rows));
+        if self.entered {
+            // Parking moves with the committed rows.
+            self.record();
         }
     }
 
     /// Repaint on the next draw after another owner wrote to stdout.
     pub fn invalidate(&mut self) {
-        self.renderer.invalidate();
-        if let Some(inline) = &mut self.inline {
-            inline.invalidate();
+        self.output.with(Screen::invalidate);
+    }
+}
+
+/// Keep a crash's cursor parking current as a detached writer draws, and
+/// report whether the session still owns the terminal. After a panic or a
+/// signal has restored it, queued frames are dropped instead of drawn.
+fn publish(park: Park) -> bool {
+    match active().as_mut() {
+        Some(active) if active.options.is_some() => {
+            active.park = park;
+            true
         }
+        _ => false,
     }
 }
 
 impl Drop for Terminal {
     fn drop(&mut self) {
         let _ = self.suspend();
+        self.output.close();
+        if let Some(writer) = self.writer.take() {
+            let _ = writer.join();
+        }
         SIGNALS.store(DEFAULT, Ordering::Release);
         OWNED.store(false, Ordering::Release);
     }
