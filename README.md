@@ -39,31 +39,26 @@ Wove is not on crates.io yet. Add it from Git:
 cargo add wove --git https://github.com/arocomputer/wove
 ```
 
-Then follow the [quickstart](https://wovetui.com/docs/quickstart/).
-
-## Development
-
-Development requires Rust 1.98 or newer and Python 3.12 or newer.
-
-```sh
-cargo build --workspace
-./x check
-```
-
-Run the examples:
+Then follow the [quickstart](https://wovetui.com/docs/quickstart/), or run an
+example from this repository:
 
 ```sh
 cargo run -p wove --example gallery
 cargo run -p wove-dioxus --example counter
 ```
 
-See [AGENTS.md](AGENTS.md) for repository conventions and
-[CONTRIBUTING.md](CONTRIBUTING.md) for checks and releases.
-
 ## Contributing
 
 Contributions are welcome. Bring a small example of what you want to build or a
-reproduction of a bug.
+reproduction of a bug. You need Rust 1.98 or newer and Python 3.12 or newer:
+
+```sh
+cargo build --workspace
+./x check
+```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers checks and releases, and
+[AGENTS.md](AGENTS.md) covers repository conventions.
 
 ## License
 

@@ -5,21 +5,20 @@ description: Text, inputs, lists, tables, scrolling, and your own.
 
 import Frame from "../../components/Frame.astro";
 
-Wove's built-in elements live in `wove::elements`. Every element is a plain
-struct: build it, add it to the [tree](/docs/ui/#the-tree), and change its
-fields with `tree.update`.
+Wove's built-in elements live in `wove::elements`. Add one to the
+[tree](/docs/ui/#the-tree), then change its fields with `tree.update`.
 
 ## Text
 
-`Text` shows a string in one style. `RichText` shows styled spans.
+`Text` shows a string in one style. `RichText` shows
+[styled spans](/docs/ui/#styled-runs) and links.
 
 ```rust
 use wove::elements::Text;
 
 let id = tree.add(tree.root(), Text::new("Hello"))?;
+tree.update::<Text>(id, |text| text.content = "Bye".into())?;
 ```
-
-### Wrapping
 
 Text is clipped at the edge by default. Set `wrap` to break it onto new lines:
 
@@ -33,23 +32,8 @@ tree.add(tree.root(), Text {
 
 `Text` breaks at any character. `RichText` takes a `Wrap` mode: `None`,
 `Character`, or `Word`. Neither ever splits a grapheme, so emoji and combined
-characters stay whole. Tabs expand to stops every four columns.
-
-`RichText` holds [styled spans](/docs/ui/#styled-runs) and links.
-
-### Changing text
-
-Update the fields with `tree.update`:
-
-```rust
-tree.update::<Text>(id, |text| text.content = "Bye".into())?;
-```
-
-Wove keeps the wrapped layout between frames and rebuilds it only when a field
-changes.
-
-Text can't write terminal control sequences. Control characters are removed
-before painting.
+characters stay whole. Tabs expand to stops every four columns, and control
+characters are removed, so text can't send commands to the terminal.
 
 ## Input and Textarea
 
@@ -113,7 +97,8 @@ Up and Down move through the wrapped rows.
 | Ctrl+Z | Undo |
 | Ctrl+Y, Ctrl+Shift+Z | Redo |
 
-A click places the cursor. Shift+click and dragging select.
+A click places the cursor. Shift+click and dragging select. Undo keeps the last
+100 edits, and a typed word with the space after it counts as one.
 
 ### Custom bindings
 
@@ -128,11 +113,6 @@ An atom is a run of text that acts as one character, such as a collapsed paste
 shown as `[pasted 40 lines]`. Add one with `Editor::insert_atom` and your own
 id. The cursor steps over it, an edit that touches it removes it whole, and undo
 brings it back. Style atoms with `Textarea::atom`.
-
-### Undo
-
-Undo keeps the last 100 edits. A typed word and the space after it count as
-one edit.
 
 ## List and Table
 
@@ -203,13 +183,9 @@ tree.add(panel, Text::new("Inside the border"))?;
 The border styles are `Single`, `Rounded`, `Double`, and `Heavy`. A long title
 is cut to fit.
 
-### Background
-
 A background color in `style` fills the panel. A filled panel covers whatever
 it overlaps, which is what a menu or a dialog needs. See
 [overlays](/docs/ui/#overlays).
-
-### Layout
 
 A panel's default layout reserves one cell on each edge for the border. Start
 from `tree.layout(panel)?.clone()` when you change it, or the border will draw
@@ -236,12 +212,8 @@ for line in lines {
 ```
 
 Set `flex_shrink: 0.0` on children so they keep their full height. Without it,
-they shrink to fit the viewport.
-
-`Scroll::default()` has no scrollbar. `Scroll::with_bar` adds one in its own
-column, hidden while everything fits.
-
-### Scrolling
+they shrink to fit the viewport. `Scroll::with_bar` adds a scrollbar, hidden
+while everything fits; `Scroll::default()` has none.
 
 A focused `Scroll` handles the arrows, Page Up and Page Down, Home, End, and the
 mouse wheel. It also scrolls to show a child that gets focus.
@@ -249,8 +221,6 @@ mouse wheel. It also scrolls to show a child that gets focus.
 End turns on `follow`, which keeps the view at the bottom as content grows.
 Scrolling away turns it off. Set `offset` and `follow` yourself to scroll from
 code.
-
-### Long content
 
 Children out of view are not painted, and content can be far taller than the
 screen. Layout still visits every child, though. For thousands of entries, use
@@ -311,16 +281,14 @@ clicked, but it stays in the focus order. Focusing it scrolls it into view.
 A child takes its height from its content. Percentage heights and
 `flex_grow` have nothing to fill.
 
-### Height
-
-Neither has a height of its own. They fill the space their parent gives them.
+Neither `Feed` nor `Lazy` has a height of its own. They fill the space their parent gives them.
 In an [inline session](/docs/running/#inline-mode), where frames take their natural
 height, set a height in the layout.
 
 ## Markdown, syntax, and diffs
 
-Three optional Core features turn text into a `RichText` element. Enable
-only the ones you use:
+Three optional features turn source text into a `RichText` element. Call them
+again when the source changes. Enable only the ones you use:
 
 ```toml
 [dependencies]
@@ -371,11 +339,6 @@ tree.add(tree.root(), render(before, after, Style::default(), added, removed))?;
 
 The diff has one row per line, styled as unchanged, added, or removed.
 
-### Updating
-
-Parsing happens when you call `render` or `highlight`. When the source changes,
-render again and replace the element's `spans` with `tree.update`.
-
 ## Custom elements
 
 Any type that implements `Element` can go in a tree. There is no registration.
@@ -409,32 +372,17 @@ impl Element for Counter {
 
 Every method has a default, so implement only what you need.
 
-### Measure
+| Method | What it does |
+| --- | --- |
+| `measure` | Returns the size the element wants, in cells, for a width. |
+| `paint` | Draws through a `Canvas` clipped to the element's area. |
+| `event` | Handles input after any node [handler](/docs/ui/#handlers). |
+| `focusable` | Says whether the element can take focus. |
+| `layout` | Returns the element's default layout. |
+| `viewport`, `reveal`, `overlay` | Scroll content and draw over children, as `Scroll` does. |
 
-`measure` returns the size the element wants, in cells, for a given width.
-Use `render::columns` to count the cells a string takes, and `render::fit` to
-cut it to a width. Measure the same way you paint.
-
-### Paint
-
-`paint` draws through a `Canvas` that covers the element's area. Anything
-outside is clipped. The canvas also expands tabs and removes control
-characters. `fill` sets a background, `border` draws a border, `cursor` places
-the cursor, and `link` draws a hyperlink.
-
-A tall element can check `canvas.visible_rows()` and draw only those rows.
-`paint` isn't called at all while nothing of the element is visible.
-
-### Handle events
-
-`event` receives input after any [handler](/docs/ui/#events-and-focus) on the
-node. Mouse positions are relative to the element's top-left cell. Return the
-right [response](/docs/ui/#handlers) so the tree knows whether to
-paint or lay out again.
-
-### Scrolling elements
-
-A scrolling element implements `viewport`, which runs just before `paint` with
-the element's size, and `reveal`, which asks it to show a child that got focus.
-`overlay` draws over the children, the way `Scroll` draws its bar. Read
-`scroll.rs` in the core crate for a full example.
+Measure the way you paint: `render::columns` counts the cells a string takes,
+and `render::fit` cuts it to a width. Besides `text`, the canvas has `fill`,
+`border`, `cursor`, and `link`. It also expands tabs and removes control
+characters. A tall element can draw only `canvas.visible_rows()`. Mouse
+positions arrive relative to the element's top-left cell.
