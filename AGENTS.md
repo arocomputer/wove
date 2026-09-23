@@ -74,8 +74,9 @@ crates/core/       wove: elements, layout, events, text, and terminal rendering
   src/input/      portable events, keys, modifiers, responses; decoder.rs turns
                   terminal input bytes into events for any byte transport
   src/tree/       node ownership, focus, input routing; paint.rs measures and paints
-  src/elements/   text, inputs, lists, tables, scrolling, panels, containers, and
-                  feed.rs, the virtualized column for long text documents
+  src/elements/   text, inputs, lists, tables, scrolling, panels, containers,
+                  feed.rs, the virtualized column for long text documents, and
+                  lazy.rs, the virtualized column of element subtrees
   src/text/       grapheme editing, undo, shared input behavior, text layout
   src/render/     flat cell buffers, styles, geometry, clipped drawing, and output
                   as plain bytes with no backend: renderer.rs (full screen),

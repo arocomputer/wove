@@ -34,9 +34,10 @@ subtree and callbacks.
 
 This is an early release with an unstable API. Current elements are `Container`,
 `Panel`, `Text`, `RichText`, `Input`, `Textarea`, `List`, `Table`, and
-`Scroll`, plus `Feed` for long text documents. `List` requests only visible rows
-from its provider, `Scroll` paints only the children in view, and `Feed` lays out
-only the blocks in view. `Textarea` scrolls long lines or, with `wrap`, breaks
+`Scroll`, plus `Feed` for long text documents and `Lazy` for long columns of
+element subtrees. `List` requests only visible rows from its provider, `Scroll`
+paints only the children in view, and `Feed` and `Lazy` lay out only the blocks
+or children in view. `Textarea` scrolls long lines or, with `wrap`, breaks
 them at words.
 
 The tree selects text on the painted screen by dragging, orders overlays with
