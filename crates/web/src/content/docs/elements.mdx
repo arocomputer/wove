@@ -51,7 +51,7 @@ Both editable elements use `wove::text::Editor`. Cursor positions are byte offse
 on grapheme boundaries.
 
 - Shift extends a selection; Ctrl+Z undoes an edit; Ctrl+Shift+Z or Ctrl+Y redoes it.
-- The multiline editor accepts pasted newlines.
+- The multiline editor accepts pasted newlines; a single-line input joins pasted lines with a space.
 - Moving vertically through short lines preserves the display column.
 - With `Textarea::wrap`, Up and Down move through the wrapped rows.
 - A click places the cursor, Shift-click and dragging select, and a click in a
