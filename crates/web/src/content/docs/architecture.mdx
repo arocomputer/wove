@@ -3,14 +3,14 @@ title: Architecture
 description: How the crates fit together and who owns what.
 ---
 
-Wove is four crates. The core has no dependency on the other three.
+Wove is four libraries. Core has no dependency on the other three.
 
-| Crate | Owns |
+| Library | Owns |
 | --- | --- |
-| `wove` | Elements, layout, input, text editing, rendering, and the local terminal |
-| `wove-dioxus` | Components and signals, mapped onto a core tree |
-| `wove-keymap` | Key bindings, sequences, and timeouts |
-| `wove-ssh` | SSH connections, authentication, and one app per connection |
+| Core | Elements, layout, input, text editing, rendering, and the local terminal |
+| Dioxus | Components and signals, mapped onto a core tree |
+| Keymap | Key bindings, sequences, and timeouts |
+| SSH | SSH connections, authentication, and one app per connection |
 
 The library sets no application policy. It binds no quit key, runs no
 executor, and never reads the clipboard.
@@ -41,7 +41,7 @@ already drawn. A repaint that doesn't move anything reuses the last layout.
 
 `Renderer`, `Inline`, and `input::Decoder` work on plain bytes with no
 terminal attached. The optional `terminal` feature wraps them around a local
-terminal with crossterm. `wove-ssh` wraps them around an SSH channel.
+terminal with crossterm. SSH wraps them around an SSH channel.
 
 `Inline` draws frames of any height on the main screen. Rows that scroll off
 the top belong to the terminal and are never rewritten.
@@ -59,7 +59,7 @@ Dioxus handles components and reconciliation. The adapter turns its mutations
 into public tree calls, the same ones any app can make. A failed mutation
 invalidates the view, so a partial update never goes unnoticed.
 
-`wove-ssh` runs each app on its own thread, so core elements never need to be
+The SSH library runs each app on its own thread, so core elements never need to be
 `Send`. It bounds input, output waits, and terminal size.
 
 ## Where the code lives

@@ -24,12 +24,12 @@ Wove is a Rust library for building terminal user interfaces.
 
 [Website](https://wovetui.com) | [Documentation](https://wovetui.com/docs) | [Crates](https://wovetui.com/crates)
 
-## Crates
+## Libraries
 
-- [`wove`](crates/core): elements, layout, input, and rendering.
-- [`wove-dioxus`](crates/dioxus): Dioxus components and signals.
-- [`wove-keymap`](crates/keymap): key bindings and sequences.
-- [`wove-ssh`](crates/ssh): serve apps over SSH.
+- [Core](crates/core): elements, layout, input, and rendering.
+- [Dioxus](crates/dioxus): components and signals.
+- [Keymap](crates/keymap): key bindings and sequences.
+- [SSH](crates/ssh): serve apps over SSH.
 
 ## Get started
 

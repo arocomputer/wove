@@ -1,4 +1,4 @@
-# wove-ssh
+# SSH
 
 Serve [Wove](https://wovetui.com) apps over SSH. Each connection gets its own
 copy of your app.

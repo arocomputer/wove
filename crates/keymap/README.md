@@ -1,4 +1,4 @@
-# wove-keymap
+# Keymap
 
 Key bindings and multi-key sequences for [Wove](https://wovetui.com) apps.
 

@@ -1,4 +1,4 @@
-# Wove examples
+# Examples
 
 Example apps. This package is not published.
 

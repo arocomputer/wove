@@ -1,4 +1,4 @@
-# wove-dioxus
+# Dioxus
 
 Write [Wove](https://wovetui.com) terminal apps with Dioxus components and
 signals.
