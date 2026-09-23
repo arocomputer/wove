@@ -79,7 +79,8 @@ frame and output storage. This is not incremental subtree painting.
 `render` also holds everything that turns frames and input into plain bytes, with
 no terminal and no backend dependency: `Renderer` for full-screen output, `Inline`
 for output that grows down the main screen, `Options` for the modes a session
-enables and disables, and `Depth` for mapping colors to what a terminal accepts.
+enables and disables, `Depth` for mapping colors to what a terminal accepts,
+and the clipboard, title, bell, and progress requests.
 `input::Decoder` turns input bytes into events and never fails: a peer can send
 anything, so malformed input is dropped and an oversized paste is delivered in
 pieces. Every source builds keys through `Event::key`, which is what makes a

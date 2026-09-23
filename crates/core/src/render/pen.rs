@@ -224,10 +224,17 @@ impl Pen {
     }
 }
 
+/// Whether caller text may be written inside an escape sequence: it cannot
+/// end the sequence or start another, because it holds no control characters,
+/// and it is short enough that no terminal truncates it mid-sequence.
+pub(crate) fn embeddable(text: &str) -> bool {
+    text.len() <= 2048 && !text.chars().any(char::is_control)
+}
+
 /// Hyperlink targets are written into an escape sequence, so they must not be
 /// able to end it.
 fn linkable(url: &str) -> bool {
-    !url.is_empty() && url.len() <= 2048 && !url.chars().any(char::is_control)
+    !url.is_empty() && embeddable(url)
 }
 
 /// FNV-1a. Equal targets share an id, so a wrapped link highlights as one.
