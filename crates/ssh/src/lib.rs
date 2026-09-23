@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 mod runtime;
 mod server;
+pub use runtime::Waker;
 pub use russh::keys::{PrivateKey, PublicKey};
 pub use server::{App, Peer, Server};
 /// Transport or application failure, preserving its original error type.
