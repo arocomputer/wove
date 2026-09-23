@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check whitespace, conflict markers, and Rust formatting without modifying files."""
+"""Check staged whitespace, conflict markers, and Rust formatting without modifying files."""
 import difflib
 import re
 import subprocess
@@ -12,21 +12,19 @@ def git(*args):
     return subprocess.check_output(['git', *args])
 
 
-def check(base=None):
-    """Inspect the index locally, or the committed CI diff against its base."""
-    diff = [base, 'HEAD'] if base else ['--cached']
-    subprocess.run(['git', 'diff', '--check', *diff], check=True)
-    paths = git('diff', '--name-only', '-z', '--diff-filter=ACMR', *diff).split(b'\0')
-    prefix = 'HEAD:' if base else ':'
+def check():
+    """Inspect the staged index, ignoring unstaged worktree edits."""
+    subprocess.run(['git', 'diff', '--check', '--cached'], check=True)
+    paths = git('diff', '--name-only', '-z', '--diff-filter=ACMR', '--cached').split(b'\0')
     failed = False
     for raw in paths:
         if not raw.endswith(b'.rs'):
             continue
         path = raw.decode('utf-8', errors='surrogateescape')
-        # Use the nearest committed/staged manifest, including workspace-inherited editions.
+        # Use the nearest staged manifest, including workspace-inherited editions.
         edition = None
         for parent in PurePosixPath(path).parents:
-            manifest = prefix + str(parent / 'Cargo.toml')
+            manifest = ':' + str(parent / 'Cargo.toml')
             result = subprocess.run(['git', 'show', manifest], capture_output=True)
             if result.returncode == 0:
                 match = re.search(rb'^edition\s*=\s*"(\d+)"', result.stdout, re.MULTILINE)
@@ -35,8 +33,8 @@ def check(base=None):
                     break
         if edition is None:
             raise RuntimeError(f'Cannot determine Rust edition for {path}')
-        print(f'Checking staged Rust: {path}' if not base else f'Checking Rust: {path}', flush=True)
-        source = git('show', prefix + path)
+        print(f'Checking staged Rust: {path}', flush=True)
+        source = git('show', ':' + path)
         result = subprocess.run(['rustfmt', '--edition', edition,
                                  '--config', 'skip_children=true'], input=source, stdout=subprocess.PIPE)
         # rustfmt's stdin check mode can report differences with a zero exit status.
@@ -53,9 +51,9 @@ def check(base=None):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 2:
-        sys.exit('usage: check.py [base-commit]')
+    if len(sys.argv) > 1:
+        sys.exit('usage: check.py')
     try:
-        sys.exit(check(sys.argv[1] if len(sys.argv) == 2 else None))
+        sys.exit(check())
     except (subprocess.CalledProcessError, RuntimeError, FileNotFoundError) as error:
         sys.exit(str(error))
