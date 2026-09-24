@@ -1,5 +1,6 @@
 //! Built-in terminal elements. Applications can implement `Element` for their own types.
 mod input;
+mod pixels;
 mod scroll;
 mod text;
 
@@ -8,6 +9,7 @@ use crate::{
     Border, Button, Canvas, Color, Element, Event, Key, Layout, MouseKind, Response, Style,
 };
 pub use input::Input;
+pub use pixels::{split, Blocks, Pixels};
 pub use scroll::Scroll;
 pub use text::{RichText, Text};
 

@@ -285,6 +285,31 @@ Neither `Feed` nor `Lazy` has a height of its own. They fill the space their par
 In an [inline session](/docs/running/#inline-mode), where frames take their natural
 height, set a height in the layout.
 
+## Pixels
+
+```rust
+use wove::elements::{Blocks, Pixels};
+
+let mut image = Pixels::new(64, 48);
+image.blocks = Blocks::Sextant;
+for x in 0..64 {
+    image.set(x, 24, [255, 214, 92]);
+}
+tree.add(tree.root(), image)?;
+```
+
+`Pixels` holds an opaque RGB image and draws it with block characters. A
+cell holds two pixels with `Blocks::Half`, one above the other, which every
+terminal draws. `Quadrant` gives four and `Sextant` six; most current
+terminals draw them, and a few older ones need a font that has them. A cell
+can show two colors, so each block of pixels is reduced to the pair that
+loses least and the glyph whose pattern tells them apart.
+
+`set` and `fill` draw pixels, `write` copies tightly packed RGBA bytes, and
+`resize` keeps the pixels that still fit. The element measures the cells its
+pixels need; given fewer, it is clipped. [`wove-gpu`](/docs/gpu/) renders
+into one on the GPU.
+
 ## Markdown, syntax, and diffs
 
 Three optional features turn source text into a `RichText` element. Call them

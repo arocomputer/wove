@@ -8,7 +8,7 @@ import subprocess
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGE_NAMES = {"core": "wove", "dioxus": "wove-dioxus", "keymap": "wove-keymap", "ssh": "wove-ssh"}
+PACKAGE_NAMES = {"core": "wove", "dioxus": "wove-dioxus", "keymap": "wove-keymap", "ssh": "wove-ssh", "gpu": "wove-gpu"}
 PACKAGES = set(PACKAGE_NAMES)
 CHECKS = PACKAGES | {"quality", "website", "audit"}
 RUST = PACKAGES | {"core-ui", "dioxus-ui", "quality", "quality-rust"}
@@ -18,6 +18,7 @@ WORKFLOWS = {
     "dioxus": {"dioxus", "dioxus-ui", "quality-rust"},
     "keymap": {"keymap", "quality-rust"},
     "ssh": {"ssh", "quality-rust"},
+    "gpu": {"gpu", "quality-rust"},
     "quality": {"quality", "quality-rust"},
     "website": {"website"},
     "security": {"audit"},

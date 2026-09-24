@@ -30,7 +30,7 @@ case "$command" in
       cargo test -p wove --locked --no-default-features --features "$feature"
     done
     ;;
-  core|dioxus|keymap|ssh)
+  core|dioxus|keymap|ssh|gpu)
     # Package workflows exercise their crate without enabling sibling features.
     package="wove-$command"
     if [ "$command" = core ]; then package=wove; fi
@@ -66,5 +66,5 @@ case "$command" in
     target/ui/bin/python -m pip install --quiet -r scripts/ui/requirements.txt
     target/ui/bin/python scripts/ui.py "$@"
     ;;
-  *) echo 'usage: ./x [hooks|check|quality|core|dioxus|keymap|ssh|fmt|lint|test|docs|package|guard|ui|web|affected]' >&2; exit 2 ;;
+  *) echo 'usage: ./x [hooks|check|quality|core|dioxus|keymap|ssh|gpu|fmt|lint|test|docs|package|guard|ui|web|affected]' >&2; exit 2 ;;
 esac

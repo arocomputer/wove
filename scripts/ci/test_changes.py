@@ -16,7 +16,7 @@ class ChangeTests(unittest.TestCase):
         self.assertEqual(affected(["crates/core/src/tree.rs"]), RUST)
 
     def test_adapter_changes_do_not_retest_siblings(self):
-        for package in ("dioxus", "keymap", "ssh"):
+        for package in ("dioxus", "keymap", "ssh", "gpu"):
             with self.subTest(package=package):
                 expected = {package, "quality", "quality-rust"}
                 if package == "dioxus":
@@ -25,7 +25,8 @@ class ChangeTests(unittest.TestCase):
 
     def test_local_dependency_edges_are_covered(self):
         for manifest in (ROOT / "crates").glob("*/Cargo.toml"):
-            consumer = "core" if manifest.parent.name == "examples" else manifest.parent.name
+            # The application examples have no tests; the shared lint compiles them.
+            consumer = "quality-rust" if manifest.parent.name == "examples" else manifest.parent.name
             data = tomllib.loads(manifest.read_text())
             for section in ("dependencies", "dev-dependencies", "build-dependencies"):
                 for dependency in data.get(section, {}).values():
@@ -151,11 +152,13 @@ class LockfileTests(unittest.TestCase):
             {"name": "wove-dioxus", "version": "0.0.1", "dependencies": ["wove"]},
             {"name": "wove-keymap", "version": "0.0.1", "dependencies": ["wove"]},
             {"name": "wove-ssh", "version": "0.0.1", "dependencies": ["wove", "tokio"]},
+            {"name": "wove-gpu", "version": "0.0.1", "dependencies": ["wove", "gfx"]},
             {"name": "wove-examples", "version": "0.0.1", "dependencies": ["wove", "demo"]},
             {"name": "tokio", "version": "1.0.0", "source": "registry", "dependencies": ["bytes"]},
             {"name": "bytes", "version": "1.0.0", "source": "registry"},
             {"name": "render", "version": "1.0.0", "source": "registry"},
             {"name": "demo", "version": "1.0.0", "source": "registry"},
+            {"name": "gfx", "version": "1.0.0", "source": "registry"},
         ]}
         self.after = copy.deepcopy(self.before)
 

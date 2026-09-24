@@ -1,0 +1,22 @@
+[package]
+name = "wove-gpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Render with the GPU into Wove pixel elements"
+
+[dependencies]
+wove = { path = "../core", version = "=0.0.1", default-features = false }
+wgpu = { version = "30", default-features = false, features = ["wgsl", "metal", "vulkan", "dx12", "gles"] }
+pollster = "1"
+
+[[example]]
+name = "shader"
+path = "examples/shader.rs"
+required-features = ["terminal"]
+
+[features]
+default = ["terminal"]
+terminal = ["wove/terminal"]
