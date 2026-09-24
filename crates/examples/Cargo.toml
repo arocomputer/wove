@@ -8,7 +8,13 @@ publish = false
 
 [dependencies]
 wove = { path = "../core" }
+wove-ssh = { path = "../ssh" }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "signal"] }
 
 [[bin]]
 name = "editor"
 path = "src/editor.rs"
+
+[[bin]]
+name = "chess"
+path = "src/chess/main.rs"
