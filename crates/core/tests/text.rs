@@ -606,3 +606,72 @@ fn a_focused_empty_input_shows_its_placeholder_until_typing() {
     screen.send(Key::Char('a')).unwrap();
     assert_eq!(screen.frame().unwrap().lines()[0], "a           ");
 }
+
+#[test]
+fn an_empty_input_is_as_wide_as_its_placeholder() {
+    use wove::{
+        elements::{Container, Input},
+        layout::*,
+        testing::Screen,
+    };
+    let mut screen = Screen::new(20, 1);
+    let row = screen.tree.add(screen.tree.root(), Container).unwrap();
+    screen
+        .tree
+        .set_layout(
+            row,
+            wove::Layout {
+                flex_direction: FlexDirection::Row,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let input = Input {
+        placeholder: "type here".into(),
+        ..Input::default()
+    };
+    let id = screen.tree.add(row, input).unwrap();
+    assert_eq!(screen.frame().unwrap().lines()[0], "type here           ");
+    assert_eq!(screen.tree.bounds(id).unwrap().width, 9);
+}
+
+#[test]
+fn the_view_stays_put_while_the_cursor_moves_inside_it() {
+    use wove::{
+        elements::{Input, Textarea},
+        testing::Screen,
+        Key,
+    };
+    let mut screen = Screen::new(5, 1);
+    let mut input = Input::default();
+    input.editor.set("abcdefghij");
+    let id = screen.tree.add(screen.tree.root(), input).unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    screen.send(Key::End).unwrap();
+    assert_eq!(screen.frame().unwrap().lines()[0], "ghij ");
+    // Moving left inside the view scrolls nothing; leaving it scrolls one cell.
+    screen.send(Key::Left).unwrap();
+    screen.send(Key::Left).unwrap();
+    assert_eq!(screen.frame().unwrap().lines()[0], "ghij ");
+    assert_eq!(screen.frame().unwrap().cursor(), Some((2, 0)));
+    for _ in 0..3 {
+        screen.send(Key::Left).unwrap();
+    }
+    assert_eq!(screen.frame().unwrap().lines()[0], "fghij");
+    assert_eq!(screen.frame().unwrap().cursor(), Some((0, 0)));
+
+    // A two-row area over five lines, with the cursor on the last.
+    let mut screen = Screen::new(4, 2);
+    let mut area = Textarea::default();
+    area.editor.set("1\n2\n3\n4\n5");
+    let id = screen.tree.add(screen.tree.root(), area).unwrap();
+    let mut layout = screen.tree.layout(id).unwrap().clone();
+    layout.size.height = wove::layout::length(2.0);
+    screen.tree.set_layout(id, layout).unwrap();
+    screen.tree.focus(Some(id)).unwrap();
+    assert_eq!(screen.frame().unwrap().lines(), ["4   ", "5   "]);
+    screen.send(Key::Up).unwrap();
+    assert_eq!(screen.frame().unwrap().lines(), ["4   ", "5   "]);
+    screen.send(Key::Up).unwrap();
+    assert_eq!(screen.frame().unwrap().lines(), ["3   ", "4   "]);
+}

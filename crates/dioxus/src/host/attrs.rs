@@ -3,7 +3,7 @@ use super::{Error, Host};
 use dioxus_core::AttributeValue;
 use std::any::Any;
 use wove::{
-    elements::{Input, Lazy, List, Panel, RichText, Table, Text, Textarea},
+    elements::{Input, Lazy, List, Panel, RichText, Scroll, Table, Text, Textarea},
     render::columns,
     text::{clean, Span, Wrap},
     Id, Layout, Style,
@@ -40,27 +40,7 @@ impl Host {
             }
         }
         if name == "style" {
-            let style = match value {
-                AttributeValue::Any(value) => *value
-                    .as_any()
-                    .downcast_ref::<Style>()
-                    .ok_or_else(|| Error::Unsupported("style expects Style".into()))?,
-                AttributeValue::None => Style::default(),
-                _ => return Err(Error::Unsupported("style expects Style".into())),
-            };
-            match self.tags.get(&id).map(String::as_str) {
-                Some("text") => self.tree.update::<Text>(id, |w| w.style = style)?,
-                Some("input") => self.tree.update::<Input>(id, |w| w.style = style)?,
-                Some("textarea") => self.tree.update::<Textarea>(id, |w| w.style = style)?,
-                Some("panel") => self.tree.update::<Panel>(id, |w| w.style = style)?,
-                Some("table") => self.tree.update::<Table>(id, |w| w.style = style)?,
-                _ => {
-                    return Err(Error::Unsupported(
-                        "style requires text, input, textarea, panel, or table".into(),
-                    ))
-                }
-            }
-            return Ok(());
+            return self.style_attr(id, value);
         }
         let tag = self.tags.get(&id).map(String::as_str);
         match (tag, name) {
@@ -99,6 +79,43 @@ impl Host {
             }
             _ => {}
         }
+        let tag = tag.map(str::to_owned);
+        self.scalar_attr(id, tag.as_deref(), name, value)
+    }
+
+    /// A `Style` value on an element that has one.
+    fn style_attr(&mut self, id: Id, value: &AttributeValue) -> Result<(), Error> {
+        let style = match value {
+            AttributeValue::Any(value) => *value
+                .as_any()
+                .downcast_ref::<Style>()
+                .ok_or_else(|| Error::Unsupported("style expects Style".into()))?,
+            AttributeValue::None => Style::default(),
+            _ => return Err(Error::Unsupported("style expects Style".into())),
+        };
+        match self.tags.get(&id).map(String::as_str) {
+            Some("text") => self.tree.update::<Text>(id, |w| w.style = style)?,
+            Some("input") => self.tree.update::<Input>(id, |w| w.style = style)?,
+            Some("textarea") => self.tree.update::<Textarea>(id, |w| w.style = style)?,
+            Some("panel") => self.tree.update::<Panel>(id, |w| w.style = style)?,
+            Some("table") => self.tree.update::<Table>(id, |w| w.style = style)?,
+            _ => {
+                return Err(Error::Unsupported(
+                    "style requires text, input, textarea, panel, or table".into(),
+                ))
+            }
+        }
+        Ok(())
+    }
+
+    /// An attribute given as text, a number, or a bool, or removed.
+    fn scalar_attr(
+        &mut self,
+        id: Id,
+        tag: Option<&str>,
+        name: &str,
+        value: &AttributeValue,
+    ) -> Result<(), Error> {
         let (text, absent) = scalar(name, value)?;
         let textarea = self.tags.get(&id).is_some_and(|tag| tag == "textarea");
         match name {
@@ -131,8 +148,18 @@ impl Host {
                     (Some("rich"), "wrap") => self.tree.update::<RichText>(id, |w| {
                         w.wrap = if on { Wrap::Word } else { Wrap::None }
                     })?,
-                    (_, "wrap") => self.tree.update::<Text>(id, |w| w.wrap = on)?,
-                    _ => self.tree.update::<Lazy>(id, |w| w.follow = on)?,
+                    (Some("text"), "wrap") => self.tree.update::<Text>(id, |w| w.wrap = on)?,
+                    (Some("textarea"), "wrap") => {
+                        self.tree.update::<Textarea>(id, |w| w.wrap = on)?
+                    }
+                    (Some("lazy"), "follow") => self.tree.update::<Lazy>(id, |w| w.follow = on)?,
+                    (Some("scroll"), "follow") => {
+                        self.tree.update::<Scroll>(id, |w| w.follow = on)?
+                    }
+                    _ => {
+                        let tag = tag.unwrap_or("a custom element");
+                        return Err(Error::Unsupported(format!("{tag} has no {name}")));
+                    }
                 }
             }
             "selected" => {

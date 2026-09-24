@@ -50,3 +50,11 @@ fn blocks_are_separated_by_one_blank_row_and_nothing_trails_the_last() {
 fn a_link_that_shows_its_destination_does_not_repeat_it() {
     assert_eq!(plain("<https://example.com>"), "https://example.com");
 }
+
+#[test]
+fn a_rule_is_a_block_of_its_own_and_code_in_a_link_is_linked() {
+    assert_eq!(plain("para\n\n---\n\nnext"), "para\n\n────\n\nnext");
+    let rich = render("[`code`](https://example.com)", Palette::default());
+    let code = rich.spans.iter().find(|s| s.text == "code").unwrap();
+    assert_eq!(code.link.as_deref(), Some("https://example.com"));
+}

@@ -386,3 +386,33 @@ fn table_and_rich_tags_draw_typed_rows_and_spans() {
     assert!(frame.cell(6, 2).unwrap().style().bold);
     assert!(!frame.cell(0, 2).unwrap().style().bold);
 }
+
+#[test]
+fn follow_and_wrap_reach_the_element_their_tag_names() {
+    use wove::elements::{Scroll, Textarea};
+    fn app() -> Element {
+        rsx! {view {direction:"column",
+            scroll {follow:true, text {content:"a"}}
+            textarea {wrap:true, value:"b"}
+        }}
+    }
+    let mut view = View::new(VirtualDom::new(app)).unwrap();
+    view.frame(20, 10).unwrap();
+    let tree = view.tree();
+    let root = tree.children(tree.root()).unwrap()[0];
+    let [scroll, area] = tree.children(root).unwrap() else {
+        panic!("two children");
+    };
+    assert!(tree.get::<Scroll>(*scroll).unwrap().follow);
+    assert!(tree.get::<Textarea>(*area).unwrap().wrap);
+    fn wrong() -> Element {
+        rsx! {input {follow:true}}
+    }
+    match View::new(VirtualDom::new(wrong)) {
+        Err(wove_dioxus::Error::Unsupported(message)) => {
+            assert!(message.contains("input has no follow"), "{message}")
+        }
+        Err(other) => panic!("{other:?}"),
+        Ok(_) => panic!("an input took a follow attribute"),
+    }
+}

@@ -182,6 +182,74 @@ impl Tree {
     ) -> Result<(), Error> {
         let node = &self.nodes[id];
         let layout = *self.layout.layout(node.layout)?;
+        let place = Placement::new(&layout, parent, clip);
+        // Children never draw outside their parent, so a node with nothing
+        // visible ends the walk: scrolled-away content costs nothing to paint.
+        if self.layout.style(node.layout)?.display == Display::None
+            || place.bounds.width == 0
+            || place.bounds.height == 0
+        {
+            self.hide(id);
+            return Ok(());
+        }
+        // The viewport comes first, so an element paints the view it just chose.
+        let node = &mut self.nodes[id];
+        node.origin = place.origin;
+        node.size = place.size;
+        node.clip = place.bounds;
+        let offset = node.element.viewport(place.inner_size, place.content);
+        node.element.paint(&mut Canvas {
+            buffer,
+            origin: place.origin,
+            size: place.size,
+            clip: place.bounds,
+            focused: self.focus == Some(id),
+        });
+        let offset = (
+            i32::try_from(offset.0).unwrap_or(i32::MAX),
+            i32::try_from(offset.1).unwrap_or(i32::MAX),
+        );
+        if self.lazy(id) {
+            self.paint_lazy(id, &layout, place.origin, place.inner, buffer)?;
+        } else {
+            let scrolled = (
+                place.origin.0.saturating_sub(offset.0),
+                place.origin.1.saturating_sub(offset.1),
+            );
+            for index in 0..self.nodes[id].children.len() {
+                let child = self.nodes[id].layers()[index];
+                self.paint(child, scrolled, place.inner, buffer)?;
+            }
+        }
+        self.nodes[id].element.overlay(&mut Canvas {
+            buffer,
+            origin: place.origin,
+            size: place.size,
+            clip: place.bounds,
+            focused: self.focus == Some(id),
+        });
+        Ok(())
+    }
+}
+
+/// Where a node paints, from its layout and its parent's origin and clip.
+struct Placement {
+    /// The node's top-left cell in frame coordinates.
+    origin: (i32, i32),
+    /// The node's size as cells; a taller container saturates.
+    size: (u16, u16),
+    /// The node's visible cells.
+    bounds: Rect,
+    /// The visible cells inside its border, which clip its children.
+    inner: Rect,
+    inner_size: (u16, u16),
+    /// The extent of its children's content, for its viewport.
+    content: (u32, u32),
+}
+
+impl Placement {
+    fn new(layout: &taffy::Layout, parent: (i32, i32), clip: Rect) -> Self {
+        let cells = |n: u32| n.min(u32::from(u16::MAX)) as u16;
         let origin = (
             parent.0.saturating_add(layout.location.x as i32),
             parent.1.saturating_add(layout.location.y as i32),
@@ -192,79 +260,26 @@ impl Tree {
             layout.size.width.max(0.0) as u32,
             layout.size.height.max(0.0) as u32,
         );
-        let size = (
-            extent.0.min(u32::from(u16::MAX)) as u16,
-            extent.1.min(u32::from(u16::MAX)) as u16,
-        );
         let bounds = clip_signed(origin, extent, clip);
-        // Children never draw outside their parent, so a node with nothing
-        // visible ends the walk: scrolled-away content costs nothing to paint.
-        if self.layout.style(node.layout)?.display == Display::None
-            || bounds.width == 0
-            || bounds.height == 0
-        {
-            self.hide(id);
-            return Ok(());
-        }
-        let inset = (layout.border.left as i32, layout.border.top as i32);
         let inner_extent = (
             (layout.size.width - layout.border.left - layout.border.right).max(0.0) as u32,
             (layout.size.height - layout.border.top - layout.border.bottom).max(0.0) as u32,
         );
-        let inner_size = (
-            inner_extent.0.min(u32::from(u16::MAX)) as u16,
-            inner_extent.1.min(u32::from(u16::MAX)) as u16,
+        let inset = (
+            origin.0.saturating_add(layout.border.left as i32),
+            origin.1.saturating_add(layout.border.top as i32),
         );
-        let inner = clip_signed(
-            (origin.0 + inset.0, origin.1 + inset.1),
-            inner_extent,
+        Self {
+            origin,
+            size: (cells(extent.0), cells(extent.1)),
             bounds,
-        );
-        let content = (
-            layout.scrollable_overflow_rect.right.max(0.0) as u32,
-            layout.scrollable_overflow_rect.bottom.max(0.0) as u32,
-        );
-        // The viewport comes first, so an element paints the view it just chose.
-        let node = &mut self.nodes[id];
-        node.origin = origin;
-        node.size = size;
-        node.clip = bounds;
-        let offset = node.element.viewport(inner_size, content);
-        node.element.paint(&mut Canvas {
-            buffer,
-            origin,
-            size,
-            clip: bounds,
-            focused: self.focus == Some(id),
-        });
-        let offset = (
-            i32::try_from(offset.0).unwrap_or(i32::MAX),
-            i32::try_from(offset.1).unwrap_or(i32::MAX),
-        );
-        if self.lazy(id) {
-            self.paint_lazy(id, &layout, origin, inner, buffer)?;
-        } else {
-            for index in 0..self.nodes[id].children.len() {
-                let child = self.nodes[id].layers()[index];
-                self.paint(
-                    child,
-                    (
-                        origin.0.saturating_sub(offset.0),
-                        origin.1.saturating_sub(offset.1),
-                    ),
-                    inner,
-                    buffer,
-                )?;
-            }
+            inner: clip_signed(inset, inner_extent, bounds),
+            inner_size: (cells(inner_extent.0), cells(inner_extent.1)),
+            content: (
+                layout.scrollable_overflow_rect.right.max(0.0) as u32,
+                layout.scrollable_overflow_rect.bottom.max(0.0) as u32,
+            ),
         }
-        self.nodes[id].element.overlay(&mut Canvas {
-            buffer,
-            origin,
-            size,
-            clip: bounds,
-            focused: self.focus == Some(id),
-        });
-        Ok(())
     }
 }
 

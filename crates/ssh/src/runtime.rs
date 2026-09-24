@@ -1,8 +1,9 @@
 //! Run a remote application without acquiring the server terminal.
-use crate::{server::Factory, Error, Peer};
+use crate::{server::Factory, App, Error, Peer};
 use russh::{server::Msg, ChannelWriteHalf};
 use std::{
     mem,
+    ops::ControlFlow,
     panic::{catch_unwind, AssertUnwindSafe},
     sync::{Arc, Mutex, PoisonError, Weak},
     time::Duration,
@@ -141,80 +142,14 @@ enum Wake {
 pub(crate) fn run(factory: Factory, peer: Peer, input: Arc<Inbox>, output: ChannelWriteHalf<Msg>) {
     let runtime = tokio::runtime::Handle::current();
     let output = Arc::new(output);
+    // Declared outside the boundary so that a frame still being written when
+    // the application panics is waited for before the modes are left.
     let mut writing: Option<JoinHandle<Result<(), Error>>> = None;
     // The same modes a local terminal session enables, carried over the channel.
     let modes = Options::default();
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), Error> {
-        let mut app = factory(&peer)?;
-        let (mut width, mut height) = (peer.width, peer.height);
-        // The peer's terminal type is all that is known of its colors.
-        let term = peer.term.clone();
-        let depth = Depth::from_env(|name| (name == "TERM").then(|| term.clone()));
-        let mut renderer = Renderer::with_depth(depth);
-        let mut decoder = Decoder::default();
-        // The modes go out with the first frame.
-        let mut first = Vec::new();
-        modes.enter(&mut first)?;
-        let mut dirty = true;
-        loop {
-            if dirty && writing.is_none() {
-                // The renderer assumes its bytes arrive; a failed write ends
-                // the session, so there is no later frame to invalidate.
-                let bytes = renderer.render(app.frame(width, height)?);
-                dirty = false;
-                let bytes = if first.is_empty() {
-                    chunks(bytes)
-                } else {
-                    first.extend_from_slice(bytes);
-                    chunks(&mem::take(&mut first))
-                };
-                if !bytes.is_empty() {
-                    writing = Some(runtime.spawn(write(output.clone(), bytes)));
-                }
-            }
-            let escape = decoder.escape_pending();
-            let wake = runtime.block_on(async {
-                let written = async {
-                    match &mut writing {
-                        Some(writing) => finish(writing).await,
-                        None => std::future::pending().await,
-                    }
-                };
-                tokio::select! {
-                    result = written => Wake::Written(result),
-                    () = input.ready.notified() => Wake::Input,
-                    () = tokio::time::sleep(Duration::from_millis(40)), if escape => Wake::Escape,
-                }
-            });
-            let mut events = Vec::new();
-            let mut closed = false;
-            match wake {
-                Wake::Written(result) => {
-                    writing = None;
-                    result?;
-                }
-                Wake::Escape => events = decoder.flush_escape(),
-                Wake::Input => {
-                    let pending = input.take();
-                    if let Some((w, h)) = pending.resize {
-                        (width, height) = (w, h);
-                        events.push(Event::Resize(w, h));
-                    }
-                    events.extend(decoder.push(&pending.data));
-                    dirty |= pending.woken;
-                    closed = pending.closed;
-                }
-            }
-            for event in events {
-                dirty = true;
-                if !app.event(event)? {
-                    return Ok(());
-                }
-            }
-            if closed {
-                break;
-            }
-        }
+        let mut session = Session::start(&factory, &peer, &runtime, &output, &modes, &mut writing)?;
+        while session.step(&input)?.is_continue() {}
         Ok(())
     }))
     .unwrap_or_else(|_| Err("SSH application panicked".into()));
@@ -235,4 +170,138 @@ pub(crate) fn run(factory: Factory, peer: Peer, input: Arc<Inbox>, output: Chann
         })
         .await
     });
+}
+
+/// One application on its thread: what it needs to draw a frame and to turn
+/// the peer's bytes into events.
+struct Session<'a> {
+    app: Box<dyn App>,
+    width: u16,
+    height: u16,
+    renderer: Renderer,
+    decoder: Decoder,
+    /// The mode-entering bytes, sent ahead of the first frame.
+    first: Vec<u8>,
+    /// A frame is owed: something changed since the last one was sent.
+    dirty: bool,
+    writing: &'a mut Option<JoinHandle<Result<(), Error>>>,
+    runtime: &'a tokio::runtime::Handle,
+    output: &'a Arc<ChannelWriteHalf<Msg>>,
+}
+
+impl<'a> Session<'a> {
+    fn start(
+        factory: &Factory,
+        peer: &Peer,
+        runtime: &'a tokio::runtime::Handle,
+        output: &'a Arc<ChannelWriteHalf<Msg>>,
+        modes: &Options,
+        writing: &'a mut Option<JoinHandle<Result<(), Error>>>,
+    ) -> Result<Self, Error> {
+        let app = factory(peer)?;
+        // The peer's terminal type is all that is known of its colors.
+        let term = peer.term.clone();
+        let depth = Depth::from_env(|name| (name == "TERM").then(|| term.clone()));
+        let mut first = Vec::new();
+        modes.enter(&mut first)?;
+        Ok(Self {
+            app,
+            width: peer.width,
+            height: peer.height,
+            renderer: Renderer::with_depth(depth),
+            decoder: Decoder::default(),
+            first,
+            dirty: true,
+            writing,
+            runtime,
+            output,
+        })
+    }
+
+    /// Send a frame if one is owed, wait for the next thing to happen, and
+    /// deliver it to the application. Breaks when the application ends or
+    /// the peer has closed the channel.
+    fn step(&mut self, input: &Inbox) -> Result<ControlFlow<()>, Error> {
+        self.send_frame()?;
+        let (events, closed) = match self.wait(input) {
+            Wake::Written(result) => {
+                *self.writing = None;
+                result?;
+                (Vec::new(), false)
+            }
+            Wake::Escape => (self.decoder.flush_escape(), false),
+            Wake::Input => self.take_input(input),
+        };
+        for event in events {
+            self.dirty = true;
+            if !self.app.event(event)? {
+                return Ok(ControlFlow::Break(()));
+            }
+        }
+        Ok(if closed {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        })
+    }
+
+    /// Render and start writing a frame, unless one is still being written.
+    /// The renderer assumes its bytes arrive; a failed write ends the
+    /// session, so there is no later frame to invalidate.
+    fn send_frame(&mut self) -> Result<(), Error> {
+        if !self.dirty || self.writing.is_some() {
+            return Ok(());
+        }
+        let bytes = self
+            .renderer
+            .render(self.app.frame(self.width, self.height)?);
+        self.dirty = false;
+        let bytes = if self.first.is_empty() {
+            chunks(bytes)
+        } else {
+            self.first.extend_from_slice(bytes);
+            chunks(&mem::take(&mut self.first))
+        };
+        if !bytes.is_empty() {
+            *self.writing = Some(self.runtime.spawn(write(self.output.clone(), bytes)));
+        }
+        Ok(())
+    }
+
+    /// Block until the frame in flight is written, input arrives, or a lone
+    /// Escape has waited long enough to be a key of its own.
+    fn wait(&mut self, input: &Inbox) -> Wake {
+        let escape = self.decoder.escape_pending();
+        let writing = &mut *self.writing;
+        self.runtime.block_on(async {
+            let written = async {
+                match writing {
+                    Some(writing) => finish(writing).await,
+                    None => std::future::pending().await,
+                }
+            };
+            tokio::select! {
+                result = written => Wake::Written(result),
+                () = input.ready.notified() => Wake::Input,
+                () = tokio::time::sleep(Duration::from_millis(40)), if escape => Wake::Escape,
+            }
+        })
+    }
+
+    /// Everything the peer sent since the last take, as events, and whether
+    /// the channel has closed behind it.
+    fn take_input(&mut self, input: &Inbox) -> (Vec<Event>, bool) {
+        let pending = input.take();
+        let mut events = Vec::new();
+        if let Some((width, height)) = pending.resize {
+            (self.width, self.height) = (width, height);
+            // The peer's terminal may have moved rows even when the size is
+            // back to what it was, so a resize always repaints.
+            self.renderer.invalidate();
+            events.push(Event::Resize(width, height));
+        }
+        events.extend(self.decoder.push(&pending.data));
+        self.dirty |= pending.woken;
+        (events, pending.closed)
+    }
 }

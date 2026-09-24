@@ -310,9 +310,11 @@ impl server::Handler for Client {
         _: u32,
         _: &mut Session,
     ) -> Result<(), Error> {
-        if self.channel == Some(channel) {
-            let (width, height) =
-                dimensions(width, height).ok_or("invalid SSH terminal dimensions")?;
+        // A window the peer reports as empty or absurd keeps the last size;
+        // it is not worth the session.
+        if let (true, Some((width, height))) =
+            (self.channel == Some(channel), dimensions(width, height))
+        {
             if let Some(input) = &self.input {
                 input.resize(width, height);
             } else if let Some(pty) = &mut self.pty {
