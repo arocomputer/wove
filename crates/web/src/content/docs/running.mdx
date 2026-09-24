@@ -14,15 +14,17 @@ background work, or a different screen.
 ## Write a loop
 
 ```rust
-use wove::terminal::{self, Terminal};
+use wove::{terminal::{self, Terminal}, Event, Key};
 
 let mut terminal = Terminal::new()?;
 loop {
     let (width, height) = terminal.size()?;
     terminal.draw(tree.frame(width, height)?)?;
     if let Some(event) = terminal::read()? {
-        if event == Key::Escape.into() {
-            break;
+        match event {
+            Event::Key(Key::Escape, _) => break,
+            Event::Resize(..) => terminal.invalidate(),
+            _ => {}
         }
         tree.dispatch(event)?;
     }
@@ -32,6 +34,11 @@ loop {
 `read` waits for the next event. `poll` waits with a timeout and returns
 whether input arrived. Drawing on every pass is free when nothing changed,
 because an unchanged frame is skipped before any cell is compared.
+
+Call `terminal.invalidate()` on every `Event::Resize`, as `terminal::run`
+does. A window that changes size and back before a draw has still moved
+rows, and a frame of the same size would otherwise diff against a screen
+that no longer matches it.
 
 Handle `terminal.typed_ahead()` before you read. It returns keys the user typed
 while the session was starting. `terminal::run` does this for you.

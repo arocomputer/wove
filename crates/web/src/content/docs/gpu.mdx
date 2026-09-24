@@ -1,0 +1,51 @@
+---
+title: GPU
+description: Render with the GPU into pixel elements.
+---
+
+Render frames on the GPU and show them in the terminal as blocks.
+
+```toml
+[dependencies]
+wove-gpu = { git = "https://github.com/arocomputer/wove" }
+```
+
+`Gpu::new` opens a device with no window: a real GPU when there is one,
+otherwise a software renderer such as Mesa's or Windows' WARP. `Gpu::render`
+makes a texture the size of a [`Pixels`](/docs/elements/#pixels) element,
+lets you record and submit any wgpu work against it, and copies the frame
+back into the element. The tree then draws the pixels like any other
+element, locally or over SSH.
+
+```rust
+use wove::elements::Pixels;
+use wove_gpu::{wgpu, Gpu};
+
+let gpu = Gpu::new()?;
+let mut pixels = Pixels::new(160, 90);
+gpu.render(&mut pixels, |device, queue, target| {
+    let mut encoder = device.create_command_encoder(&Default::default());
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: target,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        ..Default::default()
+    });
+    queue.submit([encoder.finish()]);
+})?;
+```
+
+wgpu is re-exported, so pipelines and WGSL shaders are written as for any
+wgpu program. The target is `Rgba8UnormSrgb`: shaders write linear color
+and the bytes come back ready for a terminal. A frame wider or taller than
+the device allows is an error, not a panic.
+
+`cargo run -p wove-gpu --example shader` ray-marches a lit scene in a
+fragment shader and animates it in the terminal, with sextants where the
+terminal draws them and half blocks elsewhere.

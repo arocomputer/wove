@@ -411,7 +411,8 @@ impl Tree {
     }
     /// A node handler runs before its element's default behavior. Returning handled
     /// stops the default and parent handlers. Replacing it drops the old callback.
-    /// Mouse positions are relative to the node's top-left cell.
+    /// Mouse positions are relative to the node's top-left cell, and never
+    /// negative: a captured drag past the node's left or top edge reports zero.
     pub fn on(
         &mut self,
         id: Id,
@@ -599,15 +600,21 @@ impl Tree {
         Ok(response)
     }
     /// The topmost node painted at a cell. Children are clipped to their
-    /// parent, so a subtree that misses the cell is skipped whole.
+    /// parent, so a subtree that misses the cell is skipped whole. A `Lazy`
+    /// paints its children in child order, stacked, so they are hit that way.
     fn hit(&self, id: Id, x: u16, y: u16) -> Option<Id> {
         let node = &self.nodes[id];
         if !node.clip.contains(x, y) {
             return None;
         }
-        let layers = node.layers().iter().rev();
-        layers
-            .into_iter()
+        let children = if self.lazy(id) {
+            &node.children[..]
+        } else {
+            node.layers()
+        };
+        children
+            .iter()
+            .rev()
             .find_map(|child| self.hit(*child, x, y))
             .or(Some(id))
     }
@@ -674,6 +681,22 @@ impl Tree {
         Ok(Pointer::Target { target, changed })
     }
 
+    /// A press focuses the nearest focusable node at or above the target.
+    /// The node is under the pointer already, so scrolling to show all of
+    /// it, which focus otherwise asks for, would move it out from under it.
+    fn focus_pressed(&mut self, target: Option<Id>) -> Result<(), Error> {
+        let mut ancestor = target;
+        while let Some(id) = ancestor {
+            if self.nodes[id].element.focusable() {
+                self.focus(Some(id))?;
+                self.reveal_focus = false;
+                break;
+            }
+            ancestor = self.nodes[id].parent;
+        }
+        Ok(())
+    }
+
     /// Drop the focus from a node that is no longer displayed or focusable.
     fn drop_stale_focus(&mut self) -> Result<(), Error> {
         if self
@@ -716,17 +739,7 @@ impl Tree {
             _ => None,
         };
         if press.is_some() {
-            let mut ancestor = target;
-            while let Some(id) = ancestor {
-                if self.nodes[id].element.focusable() {
-                    self.focus(Some(id))?;
-                    // The node is under the pointer already; scrolling
-                    // to show all of it would move it out from under it.
-                    self.reveal_focus = false;
-                    break;
-                }
-                ancestor = self.nodes[id].parent;
-            }
+            self.focus_pressed(target)?;
         }
         let mut result = Dispatch {
             target,

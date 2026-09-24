@@ -466,15 +466,17 @@ impl Buffer {
         self.cells[index] = slot;
     }
 
-    /// A link's table index plus one. Runs of cells share their link, so only
-    /// the newest entry is checked; a full table drops further links.
+    /// A link's table index plus one. Each distinct target is stored once,
+    /// however cells alternate between targets; a frame with more targets
+    /// than the table holds drops the rest.
     fn intern(&mut self, link: &Arc<str>) -> u16 {
-        if !self.links.last().is_some_and(|last| last == link) {
-            if self.links.len() >= usize::from(u16::MAX) {
-                return 0;
-            }
-            self.links.push(link.clone());
+        if let Some(index) = self.links.iter().rposition(|known| known == link) {
+            return index as u16 + 1;
         }
+        if self.links.len() >= usize::from(u16::MAX) {
+            return 0;
+        }
+        self.links.push(link.clone());
         self.links.len() as u16
     }
 

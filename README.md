@@ -30,6 +30,7 @@ Wove is a Rust library for building terminal user interfaces.
 - [Dioxus](crates/dioxus): components and signals.
 - [Keymap](crates/keymap): key bindings and sequences.
 - [SSH](crates/ssh): serve apps over SSH.
+- [GPU](crates/gpu): render with the GPU into pixel elements.
 
 ## Get started
 

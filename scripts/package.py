@@ -9,7 +9,7 @@ import tomllib
 
 root = Path(__file__).resolve().parents[1]
 # The consumer below depends on each of these by name; keep them in sync.
-CONSUMED = {"wove", "wove-dioxus", "wove-keymap", "wove-ssh"}
+CONSUMED = {"wove", "wove-dioxus", "wove-keymap", "wove-ssh", "wove-gpu"}
 
 
 def published():
@@ -31,6 +31,8 @@ def main():
     if set(names) != CONSUMED:
         raise SystemExit(f"publishable crates {sorted(names)} differ from the packaged consumer's {sorted(CONSUMED)}")
     selection = [flag for name in names for flag in ("-p", name)]
+    # The consumer compiles wove-gpu, and so wgpu, in both builds below; that
+    # is most of this check's time.
     subprocess.run(["cargo", "package", *selection, "--locked", "--allow-dirty", "--no-verify"], cwd=root, check=True)
     # A fresh consumer avoids Cargo's temporary-registry cache retaining an older
     # archive when contributors package the same unpublished version repeatedly.
@@ -45,7 +47,7 @@ version = "0.0.0"
 edition = "2021"
 [features]
 default = ["terminal", "markdown", "syntax", "diff"]
-terminal = ["wove/terminal", "wove-dioxus/terminal", "dep:wove-ssh"]
+terminal = ["wove/terminal", "wove-dioxus/terminal", "wove-gpu/terminal", "dep:wove-ssh"]
 markdown = ["wove/markdown"]
 syntax = ["wove/syntax"]
 diff = ["wove/diff"]
@@ -54,6 +56,7 @@ wove = {{ path = "wove-{version}", default-features = false }}
 wove-keymap = {{ path = "wove-keymap-{version}" }}
 wove-dioxus = {{ path = "wove-dioxus-{version}", default-features = false }}
 wove-ssh = {{ path = "wove-ssh-{version}", optional = true }}
+wove-gpu = {{ path = "wove-gpu-{version}", default-features = false }}
 [patch.crates-io]
 wove = {{ path = "wove-{version}" }}
 ''', encoding="utf-8")
@@ -72,6 +75,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _diff = wove::diff::render("old", "new", wove::Style::default(), wove::Style::default(), wove::Style::default());
     let _keys = wove_keymap::Keymap::<()>::new(std::time::Duration::from_millis(300));
     let _registry = wove_dioxus::Registry::default();
+    // Opening a device needs hardware; the type alone proves the crate links.
+    let _gpu = std::mem::size_of::<wove_gpu::Gpu>();
     #[cfg(feature = "terminal")]
     let _remote = std::mem::size_of::<wove_ssh::Server>();
     // Rendering to bytes needs no terminal backend, so it runs in both builds.

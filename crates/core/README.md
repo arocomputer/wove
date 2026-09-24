@@ -36,3 +36,10 @@ Only `terminal` is on by default. Each of these works on its own:
 
 Turn off default features to render without a terminal, for tests or custom
 transports.
+
+## Pixels
+
+`Pixels` is an element holding an RGB image that draws itself with block
+characters: two pixels a cell with half blocks, which every terminal draws,
+or six with sextants, which most current terminals draw. Draw into it
+directly, or on the GPU through [`wove-gpu`](../gpu).

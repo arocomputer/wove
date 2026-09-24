@@ -74,12 +74,33 @@ fn active() -> std::sync::MutexGuard<'static, Option<Active>> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Restore the terminal from wherever the process is ending.
+/// Restore the terminal from wherever the process is ending. The bytes go
+/// straight to the descriptor: a detached writer stalled on a slow terminal
+/// holds stdout's lock, and waiting for it would leave the terminal raw.
 fn rescue() {
     let taken = active().take();
     if let Some(active) = taken {
-        let _ = active.leave(&mut io::stdout());
+        let _ = active.leave(&mut Descriptor);
         let _ = terminal::disable_raw_mode();
+    }
+}
+
+/// Standard output as a descriptor, bypassing `io::Stdout` and its lock.
+struct Descriptor;
+
+impl Write for Descriptor {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        #[cfg(unix)]
+        {
+            Ok(rustix::io::write(rustix::stdio::stdout(), bytes)?)
+        }
+        #[cfg(not(unix))]
+        {
+            io::stdout().write(bytes)
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -164,13 +185,23 @@ pub struct Terminal {
     /// Whether requests tmux would swallow need its passthrough wrapper.
     tmux: bool,
     probed: bool,
-    raw: bool,
-    entered: bool,
+    held: Held,
+}
+
+/// Which of the terminal's modes the session holds: none while suspended,
+/// raw mode alone during the startup probe or after leaving the screen
+/// failed, and every mode while it runs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Held {
+    Nothing,
+    Raw,
+    Entered,
 }
 
 impl Terminal {
     /// Acquire an interactive stdin/stdout terminal and enter the alternate screen.
-    /// Existing raw sessions are rejected rather than taking over their modes.
+    /// A raw mode this process already enabled through crossterm is rejected
+    /// rather than taken over; raw mode set by anything else is not seen.
     pub fn new() -> io::Result<Self> {
         Self::with_options(Options::default())
     }
@@ -215,8 +246,7 @@ impl Terminal {
             progress: Progress::Clear,
             tmux: std::env::var_os("TMUX").is_some(),
             probed: false,
-            raw: false,
-            entered: false,
+            held: Held::Nothing,
         };
         if terminal::is_raw_mode_enabled()? {
             return Err(io::Error::other("terminal is already in raw mode"));
@@ -272,10 +302,13 @@ impl Terminal {
             };
             result = result.and(state.leave(&mut self.stdout));
         }
-        self.entered = false;
-        if self.raw {
+        if self.held != Held::Nothing {
             let raw = terminal::disable_raw_mode();
-            self.raw = raw.is_err();
+            self.held = if raw.is_ok() {
+                Held::Nothing
+            } else {
+                Held::Raw
+            };
             result = result.and(raw);
         }
         drop(active);
@@ -285,15 +318,15 @@ impl Terminal {
 
     /// Reacquire modes after suspension and force a complete repaint.
     pub fn resume(&mut self) -> io::Result<()> {
-        if self.raw && self.entered {
+        if self.held == Held::Entered {
             return Ok(());
         }
-        if !self.raw {
+        if self.held == Held::Nothing {
             // Publish raw-mode ownership before the probe can block. Holding
             // the lock closes the gap between acquiring it and registering it.
             let mut active = active();
             terminal::enable_raw_mode()?;
-            self.raw = true;
+            self.held = Held::Raw;
             *active = Some(Active {
                 options: None,
                 park: Park::default(),
@@ -312,7 +345,7 @@ impl Terminal {
             // A request for key reports the terminal never answered is dropped.
             self.options.keyboard &= self.capabilities.keyboard;
         }
-        self.entered = true;
+        self.held = Held::Entered;
         // Whatever ran during the suspension may have written anywhere.
         let anchored = self.output.with(|screen| {
             screen.invalidate();
@@ -387,7 +420,7 @@ impl Terminal {
     /// Turn the input modes on again. Windows consoles drop them while the
     /// window is unfocused, so call this on `Event::WindowFocus(true)` there.
     pub fn reassert(&mut self) -> io::Result<()> {
-        if self.entered {
+        if self.held == Held::Entered {
             self.options.reassert(&mut self.stdout)?;
         }
         Ok(())
@@ -445,7 +478,7 @@ impl Terminal {
 
     /// Output that the end of the session must undo needs an entered session.
     fn entered(&self) -> io::Result<()> {
-        if self.raw && self.entered {
+        if self.held == Held::Entered {
             Ok(())
         } else {
             Err(io::Error::other("terminal is suspended"))
@@ -490,7 +523,7 @@ impl Terminal {
             shown.renderer.invalidate();
             shown.inline.is_some()
         });
-        if !self.entered {
+        if self.held != Held::Entered {
             return Ok(());
         }
         // The main and alternate screens keep separate stacks of keyboard
@@ -591,7 +624,7 @@ impl Terminal {
             return;
         }
         self.output.with(|screen| screen.commit(rows));
-        if self.entered {
+        if self.held == Held::Entered {
             // Parking moves with the committed rows.
             self.record();
         }
@@ -736,6 +769,11 @@ pub fn run(
         let Some(event) = event else {
             continue;
         };
+        // The terminal may have moved rows even when the size is back to
+        // what it was, so a resize always repaints.
+        if let crate::Event::Resize(..) = event {
+            terminal.invalidate();
+        }
         let result = tree.dispatch(event.clone()).map_err(io::Error::other)?;
         if !update(tree, &event, &result) {
             break;

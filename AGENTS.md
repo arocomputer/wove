@@ -34,13 +34,15 @@ Bun 1.4.2 or newer is needed for `crates/web`. CI runs the same `./x` commands.
 core builds, and a consumer compiled from the packaged crates.
 
 Required package checks are `Core - Build and Test`, `Dioxus - Build and Test`,
-`Keymap - Build and Test`, and `SSH - Build and Test`. Shared checks are `Validate`
+`Keymap - Build and Test`, `SSH - Build and Test`, and `GPU - Build and Test`. Shared checks are `Validate`
 from Quality, `Build` from Website, and `Audit` from Dependencies.
-Use `./x core`, `./x dioxus`, `./x keymap`, or `./x ssh` for a package's CI test
-sequence. `./x quality` runs shared formatting, lint, documentation, packaging,
-and guard checks. Platform jobs feed a required summary for each package.
+Use `./x core`, `./x dioxus`, `./x keymap`, `./x ssh`, or `./x gpu` for a package's
+CI test sequence. `./x quality` runs shared formatting, lint, documentation,
+packaging, and guard checks. Platform jobs feed a required summary for each
+package.
 `scripts/ci/changes.py` selects affected packages and consumers. Core changes
-must test all adapters; an adapter-only change can skip its siblings. Unknown
+must test all adapters; an adapter-only change can skip its siblings. The
+application examples have no tests; the shared lint compiles them. Unknown
 paths and shared CI changes run everything. Selection failures must fail CI.
 Only an explicitly unaffected package may pass with a skipped platform matrix.
 Keep required names aligned with repository rules.
@@ -75,6 +77,7 @@ crates/core/       wove: elements, layout, events, text, and terminal rendering
                   terminal input bytes into events for any byte transport
   src/tree/       node ownership, focus, input routing; paint.rs measures and paints
   src/elements/   text, inputs, lists, tables, scrolling, panels, containers,
+                  pixels.rs, an image drawn with block characters,
                   feed.rs, the virtualized column for long text documents, and
                   lazy.rs, the virtualized column of element subtrees
   src/text/       grapheme editing, undo, shared input behavior, text layout
@@ -92,6 +95,8 @@ crates/dioxus/    component adapter; core does not depend on it
   src/host/      tree mutations and typed RSX attributes
   src/runtime.rs optional local terminal loop
 crates/keymap/   scoped command bindings, sequences, and timeouts
+crates/gpu/      wgpu rendering into Pixels elements; its test needs a GPU or a
+                 software adapter, which the GPU workflow installs on Linux
 crates/ssh/      authenticated remote applications
   src/server.rs  listener, authentication, PTY requests, connection lifecycle
   src/runtime.rs application thread, frame output, and remote cleanup
@@ -112,6 +117,7 @@ cargo test -p wove --no-default-features --features markdown --test markdown
 cargo test -p wove-dioxus --test view
 cargo test -p wove-keymap
 cargo test -p wove-ssh --test connection
+cargo test -p wove-gpu --test render
 python3 -m unittest discover -s scripts/hooks -p 'test_*.py'
 python3 -m unittest discover -s scripts/ci -p 'test_*.py'
 ```
@@ -137,10 +143,13 @@ never depend on personal configuration, credentials, or a public service.
 - SSH owns its authentication and network lifecycle. Require a supplied host key
   and authorization policy. Preserve bounded input, output waits, and dimensions.
   Do not force Send onto core elements just to satisfy transport scheduling.
+- GPU work stays in `wove-gpu`. It writes frames into `Pixels` and nothing
+  else; core never depends on a graphics API, and a missing adapter is an error
+  the application sees, not a panic.
 - Text content must not emit terminal control sequences. Terminal and SSH backends
   own protocol output and cleanup. No unsafe code in library modules.
-- When changing a shared contract, check direct core use, Dioxus, keymap, SSH, and
-  examples. Update every affected consumer and guide in the same change.
+- When changing a shared contract, check direct core use, Dioxus, keymap, SSH, GPU,
+  and examples. Update every affected consumer and guide in the same change.
 
 ## Naming and documentation
 

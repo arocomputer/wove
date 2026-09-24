@@ -16,7 +16,9 @@ use std::time::{Duration, Instant};
 /// Ends a wait in `terminal::poll` or `terminal::read` from any thread.
 /// `poll` then returns true, and `read` returns `Ok(None)`, so a loop that
 /// draws after every iteration takes its work and draws. Wakes that arrive
-/// before the loop waits again are merged into one.
+/// before the loop waits again are merged into one. Only those two waits
+/// see a wake: a loop on crossterm's own `read` or on `EventStream` does
+/// not, and `poll` keeps reporting the wake until `read` takes it.
 #[derive(Clone, Copy, Debug)]
 pub struct Waker {
     channel: &'static Channel,
@@ -68,6 +70,11 @@ pub fn waker() -> io::Result<Waker> {
         requested: AtomicBool::new(false),
     };
     if CHANNEL.set(channel).is_ok() {
+        // Signal actions run in registration order, and crossterm registers
+        // its own resize action when it first waits for input. Ours must
+        // come after it, or a wait can wake before crossterm has noted the
+        // resize and go back to sleep with it unread.
+        let _ = event::poll(Duration::ZERO);
         watch_resizes()?;
     }
     let channel = CHANNEL
