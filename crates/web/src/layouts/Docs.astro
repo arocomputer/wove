@@ -9,9 +9,10 @@ interface Props {
 const collection = await getCollection("docs");
 const { title, description, current } = Astro.props;
 const groups = [
-  { label: "Start", ids: ["start"] },
-  { label: "Build", ids: ["elements", "dioxus", "ssh"] },
-  { label: "Reference", ids: ["packages", "architecture"] },
+  { label: "Start", ids: ["quickstart"] },
+  { label: "Guides", ids: ["ui", "elements", "running", "testing"] },
+  { label: "Packages", ids: ["dioxus", "keymap", "ssh"] },
+  { label: "Reference", ids: ["architecture"] },
 ];
 const guides = groups.flatMap((group) =>
   group.ids.map((id) => collection.find((guide) => guide.id === id)!),

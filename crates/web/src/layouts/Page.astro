@@ -42,7 +42,20 @@ const isHome = Astro.url.pathname === "/" || sidebar;
       media="(prefers-color-scheme: dark)"
     />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
-    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <!-- Browsers without SVG favicons pick the ICO for the current theme;
+         the SVG switches by itself. /favicon.ico is the light-theme icon. -->
+    <link
+      rel="icon"
+      href="/favicon.ico"
+      sizes="16x16 32x32 48x48"
+      media="(prefers-color-scheme: light)"
+    />
+    <link
+      rel="icon"
+      href="/favicon-dark.ico"
+      sizes="16x16 32x32 48x48"
+      media="(prefers-color-scheme: dark)"
+    />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
     <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#EDEDED" />
     <title>{title === "Wove" ? "Wove" : `${title} | Wove`}</title>

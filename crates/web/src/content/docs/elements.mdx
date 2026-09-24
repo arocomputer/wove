@@ -1,93 +1,388 @@
 ---
-title: Elements and text
-description: Compose persistent elements and edit Unicode text.
-order: 2
+title: Elements
+description: Text, inputs, lists, tables, scrolling, and your own.
 ---
 
-An element supplies measurement, drawing, and input behavior. The tree owns its state and lifetime. `Tree::add` attaches a new element. Moving it preserves state; removing it drops its descendants and callbacks.
+import Frame from "../../components/Frame.astro";
 
-## Built-in elements
+Wove's built-in elements live in `wove::elements`. Add one to the
+[tree](/docs/ui/#the-tree), then change its fields with `tree.update`.
 
-- `Container` groups children.
-- `Panel` draws a border around its content, in a `Border` style, with an optional
-  title. A background color in its style fills it, which makes it opaque over
-  whatever it overlaps.
-- `Text` draws a string.
-- `RichText` draws styled spans with optional word wrapping.
-- `Input` edits a single line. `mask` hides a secret, `limit` caps its length,
-  and `cursor` chooses the cursor's shape.
-- `Textarea` edits multiple lines and can soft-wrap them.
-- `List` and `Table` draw only their visible rows and share their navigation:
-  arrows, paging, Home, End, the wheel, and clicks. `List` rows are styled spans.
-  Their view moves only when the selection leaves it, so a click never slides
-  the rows under the pointer.
-- `Scroll` clips its children to a viewport and paints only those in view, and
-  scrolls to show a child that receives focus.
-  `Scroll::with_bar` adds a scrollbar in a column of its own.
-- `Feed` shows a long document of styled text blocks, such as a log or a
-  conversation.
-- `Lazy` shows a long column of element subtrees, such as messages with their
-  own chrome, and lays out only those in view.
+## Text
 
-## Long documents
+`Text` shows a string in one style. `RichText` shows
+[styled spans](/docs/ui/#styled-runs) and links.
 
-A `Scroll` holds elements, and layout visits every one of them, so a frame costs
-more as the content grows. A `Feed` holds text blocks instead and lays out only
-the blocks in view: a frame costs what is visible, however many blocks there are,
-and replacing the last block with `Feed::set` relays out only that block. In the
-local timing example, a streaming frame over 10,000 wrapped blocks takes about
-0.03 ms in a `Feed` and about 4 ms in a `Scroll`.
+```rust
+use wove::elements::Text;
 
-A feed follows its tail until the user scrolls away, and holds its place while
-blocks arrive beneath. Its position is a block and a row within it, not a row
-count, because the rows above the view are never measured.
+let id = tree.add(tree.root(), Text::new("Hello"))?;
+tree.update::<Text>(id, |text| text.content = "Bye".into())?;
+```
 
-When each entry is a subtree of elements, such as a message with a header and
-controls or an entry of a file tree, add the entries as children of a `Lazy`. The
-tree lays out only the children in view, and keeps each child's layout until
-something in it changes. It scrolls, reveals focus, and follows its tail with
-`Lazy::follow` the way a feed does. In the same timing example, a streaming
-frame over 10,000 wrapped `Text` children takes about 0.05 ms in a `Lazy`. A
-feed stays the faster choice for text alone, because its blocks are not elements.
+Text is clipped at the edge by default. Set `wrap` to break it onto new lines:
 
-For the same reason neither has a height of its own: each grows into the space
-its parent gives it. A frame of natural height, such as an inline session, gives
-it none, so set a height in its layout there.
+```rust
+tree.add(tree.root(), Text {
+    content: long_string,
+    wrap: true,
+    ..Text::default()
+})?;
+```
 
-## Editing
+`Text` breaks at any character. `RichText` takes a `Wrap` mode: `None`,
+`Character`, or `Word`. Neither ever splits a grapheme, so emoji and combined
+characters stay whole. Tabs expand to stops every four columns, and control
+characters are removed, so text can't send commands to the terminal.
 
-Both editable elements use `wove::text::Editor`. Cursor positions are byte offsets
-on grapheme boundaries.
+## Input and Textarea
 
-- Shift extends a selection; Ctrl+Z undoes an edit; Ctrl+Shift+Z or Ctrl+Y redoes it.
-- The multiline editor accepts pasted newlines; a single-line input joins pasted lines with a space.
-- Moving vertically through short lines preserves the display column.
-- With `Textarea::wrap`, Up and Down move through the wrapped rows.
-- A click places the cursor, Shift-click and dragging select, and a click in a
-  `List` or `Table` selects the row under it.
+`Input` edits one line. `Textarea` edits many. Both need focus to receive keys.
 
-Edits are data. A `Command` inserts text, moves by a `Motion`, deletes up to a `Motion`, selects all, undoes, or redoes; `Editor::apply` runs one. `text::command` maps an event to a command under the default bindings: arrows, Home and End, Ctrl or Alt with arrows for words, Ctrl+W and Alt+Backspace to delete a word, Ctrl+K and Ctrl+U to delete to the end or start of the line. Applications with their own bindings handle the key first, in their loop or a node handler, and apply the commands they choose.
+```rust
+use wove::elements::Input;
 
-An atom is a run of text that acts as one unit, for tokens that stand for something
-else, such as a collapsed paste. `Editor::insert_atom` adds one with an
-application-chosen id. The cursor steps over it, an edit that touches it removes
-it whole, and undo brings it back. Atom boundaries always include whole graphemes.
-If an edit joins neighboring atoms into one grapheme, they merge under the
-leftmost atom's id. A new atom that joins existing text or atoms includes them
-under its own id. Undo restores the previous text and atom identities.
-`Textarea::atom` styles atoms.
+let name = tree.add(tree.root(), Input {
+    placeholder: "Your name".into(),
+    ..Input::default()
+})?;
+tree.focus(Some(name))?;
+```
 
-Undo keeps at most 100 edits and stores changed text rather than a copy of the entire document. A typed word and the whitespace after it are one edit. Text storage is currently a `String`; large-document editing still needs profiling.
+Read the value through the editor:
+
+```rust
+let value = tree.get::<Input>(name)?.editor.text();
+```
+
+### Input options
+
+| Field | Effect |
+| --- | --- |
+| `placeholder` | Shown while the value is empty. |
+| `mask` | Shows this character in place of each one typed, for passwords. |
+| `limit` | The most characters the input accepts. |
+| `cursor` | The cursor shape. |
+
+A pasted newline becomes a space.
+
+### Textarea
+
+```rust
+use wove::elements::Textarea;
+
+tree.add(tree.root(), Textarea {
+    wrap: true,
+    ..Textarea::new("First line\nSecond line")
+})?;
+```
+
+The `editor` example is a `Textarea` with a status line:
+
+<Frame name="editor-resized" command="cargo run -p wove-examples --bin editor" />
+
+Without `wrap`, long lines scroll sideways. With it, lines break at words and
+Up and Down move through the wrapped rows.
+
+### Keys
+
+| Keys | Action |
+| --- | --- |
+| Arrows, Home, End | Move |
+| Ctrl or Alt with arrows | Move by word |
+| Shift with any movement | Select |
+| Ctrl+A | Select all |
+| Ctrl+W, Alt+Backspace | Delete a word |
+| Ctrl+K, Ctrl+U | Delete to the end or start of the line |
+| Ctrl+Z | Undo |
+| Ctrl+Y, Ctrl+Shift+Z | Redo |
+
+A click places the cursor. Shift+click and dragging select. Undo keeps the last
+100 edits, and a typed word with the space after it counts as one.
+
+### Custom bindings
+
+Edits are values. `text::command` turns an event into a `Command` under the
+default bindings, and `Editor::apply` runs one. To use your own keys, handle
+them first in a [handler](/docs/ui/#events-and-focus) and apply the command you
+want.
+
+### Atoms
+
+An atom is a run of text that acts as one character, such as a collapsed paste
+shown as `[pasted 40 lines]`. Add one with `Editor::insert_atom` and your own
+id. The cursor steps over it, an edit that touches it removes it whole, and undo
+brings it back. Style atoms with `Textarea::atom`.
+
+## List and Table
+
+A `List` shows one styled line per row. A `Table` shows columns with a header.
+Both ask only for the rows in view, so they handle long data cheaply.
+
+```rust
+use wove::{elements::List, text::Span, Style};
+
+let names = vec!["Ada", "Grace", "Linus"];
+let rows = names.clone();
+let list = tree.add(tree.root(), List::new(names.len(), 16, move |i| {
+    vec![Span::new(rows[i], Style::default())]
+}))?;
+tree.focus(Some(list))?;
+```
+
+`List::new` takes the row count, the width in cells, and a function that
+returns row `i`. Your app keeps the data. When it changes, update `count`:
+
+```rust
+tree.update::<List>(list, |list| list.count = 2)?;
+```
+
+### Table
+
+```rust
+use wove::elements::Table;
+
+let table = tree.add(tree.root(), Table::new(
+    vec![("Name".into(), 12), ("Role".into(), 16)],
+    vec![
+        vec!["Ada".into(), "Engineer".into()],
+        vec!["Grace".into(), "Admiral".into()],
+    ],
+))?;
+```
+
+Each column is a header and a width in cells. Values that don't fit are cut.
+The header stays in place while the rows scroll.
+
+### Selection
+
+Read the selected row from `selected`. Style it with `highlight`.
+
+Both elements handle the arrows, Page Up and Page Down, Home, End, the mouse
+wheel, and clicks. The view only moves when the selection leaves it, so a click
+never slides rows under the pointer.
+
+## Panel and Container
+
+A `Container` groups children and draws nothing. Use it for rows, columns, and
+grids.
+
+A `Panel` draws a border around its children, with an optional title.
+
+```rust
+use wove::{elements::{Panel, Text}, Border};
+
+let panel = tree.add(tree.root(), Panel {
+    title: "Settings".into(),
+    border: Border::Rounded,
+    ..Panel::default()
+})?;
+tree.add(panel, Text::new("Inside the border"))?;
+```
+
+The border styles are `Single`, `Rounded`, `Double`, and `Heavy`. A long title
+is cut to fit.
+
+A background color in `style` fills the panel. A filled panel covers whatever
+it overlaps, which is what a menu or a dialog needs. See
+[overlays](/docs/ui/#overlays).
+
+A panel's default layout reserves one cell on each edge for the border. Start
+from `tree.layout(panel)?.clone()` when you change it, or the border will draw
+over your content.
+
+## Scroll
+
+A `Scroll` clips its children to its size and scrolls them.
+
+```rust
+use wove::{elements::{Scroll, Text}, Style};
+
+let scroll = tree.add(tree.root(), Scroll::with_bar(Style::default()))?;
+let mut layout = tree.layout(scroll)?.clone();
+layout.flex_grow = 1.0;
+tree.set_layout(scroll, layout)?;
+
+for line in lines {
+    let text = tree.add(scroll, Text::new(line))?;
+    let mut layout = tree.layout(text)?.clone();
+    layout.flex_shrink = 0.0;
+    tree.set_layout(text, layout)?;
+}
+```
+
+Set `flex_shrink: 0.0` on children so they keep their full height. Without it,
+they shrink to fit the viewport. `Scroll::with_bar` adds a scrollbar, hidden
+while everything fits; `Scroll::default()` has none.
+
+A focused `Scroll` handles the arrows, Page Up and Page Down, Home, End, and the
+mouse wheel. It also scrolls to show a child that gets focus.
+
+End turns on `follow`, which keeps the view at the bottom as content grows.
+Scrolling away turns it off. Set `offset` and `follow` yourself to scroll from
+code.
+
+Children out of view are not painted, and content can be far taller than the
+screen. Layout still visits every child, though. For thousands of entries, use
+[Feed or Lazy](#feed-and-lazy).
+
+## Feed and Lazy
+
+A `Feed` and a `Lazy` both show long content, such as a log or a conversation.
+They lay out only what is on screen, so a frame costs the same with ten entries
+or ten thousand.
+
+| Use | When each entry is |
+| --- | --- |
+| `Feed` | Styled text. Fastest. |
+| `Lazy` | A subtree of elements, such as a message with a header and buttons. |
+
+### Feed
+
+```rust
+use wove::{elements::Feed, text::{Span, Wrap}};
+
+let feed = tree.add(tree.root(), Feed::new(1))?;
+tree.update::<Feed>(feed, |feed| {
+    feed.push(vec![Span::new("Hello", Style::default())], Wrap::Word);
+})?;
+```
+
+`Feed::new` takes the blank rows between blocks. `push` adds a block and
+returns its index. `set` replaces a block, which suits text that is still
+streaming in, and relays out only that block.
+
+A feed follows its tail until the user scrolls away. It then holds its place
+while new blocks arrive. `follow` returns to the tail.
+
+### Lazy
+
+```rust
+use wove::elements::Lazy;
+
+let mut lazy = Lazy::default();
+lazy.follow = true;
+let column = tree.add(tree.root(), lazy)?;
+
+for message in messages {
+    let entry = tree.add(column, Panel {
+        title: message.author,
+        ..Panel::default()
+    })?;
+    tree.add(entry, Text { wrap: true, ..Text::new(message.body) })?;
+}
+```
+
+Children of a `Lazy` are ordinary elements. Each one is laid out alone, at the
+column's width, and only when it comes into view. Its layout is kept until
+something in it changes. A child out of view isn't painted and can't be
+clicked, but it stays in the focus order. Focusing it scrolls it into view.
+
+A child takes its height from its content. Percentage heights and
+`flex_grow` have nothing to fill.
+
+Neither `Feed` nor `Lazy` has a height of its own. They fill the space their parent gives them.
+In an [inline session](/docs/running/#inline-mode), where frames take their natural
+height, set a height in the layout.
+
+## Markdown, syntax, and diffs
+
+Three optional features turn source text into a `RichText` element. Call them
+again when the source changes. Enable only the ones you use:
+
+```toml
+[dependencies]
+wove = { git = "https://github.com/arocomputer/wove", features = ["markdown"] }
+```
+
+Each works without the others, and without the terminal backend.
+
+### Markdown
+
+```rust
+use wove::markdown::{render, Palette};
+
+let palette = Palette {
+    heading: Style { bold: true, ..Style::default() },
+    ..Palette::default()
+};
+tree.add(tree.root(), render("# Title\n\nSome *text*.", palette))?;
+```
+
+`Palette` sets the style of `text`, `heading`, `code`, and `link`. Links open
+in terminals that support them. Tables are not supported yet, and HTML shows as
+plain text.
+
+### Syntax highlighting
+
+```rust
+use wove::syntax::{Highlighter, Syntaxes, ThemeSet};
+
+let theme = ThemeSet::load_defaults().themes["base16-ocean.dark"].clone();
+let highlighter = Highlighter::new(Syntaxes::load_defaults_newlines(), theme);
+tree.add(tree.root(), highlighter.highlight(source, "rs")?)?;
+```
+
+Pass a language name or file extension. Unknown languages stay plain. Reuse
+one `Highlighter` for every document. Spans have no background, so fill the
+parent with the theme's background color if you want it.
+
+### Diffs
+
+```rust
+use wove::diff::render;
+
+let added = Style { fg: Color::Indexed(2), ..Style::default() };
+let removed = Style { fg: Color::Indexed(1), ..Style::default() };
+tree.add(tree.root(), render(before, after, Style::default(), added, removed))?;
+```
+
+The diff has one row per line, styled as unchanged, added, or removed.
 
 ## Custom elements
 
-Implement `wove::Element` and add your type to a tree. Drawing goes through `Canvas`, which clips output to the assigned area, expands tabs, and removes other terminal control characters. `render::columns` counts the cells a line of text takes the same way, and `render::fit` cuts text to a number of cells, so an element measures what it paints. An element with nothing visible is not painted, and `Canvas::visible_rows` tells a tall element which of its rows to draw. A scrolling element implements `Element::reveal` to show a descendant that receives focus. Just before painting, `Element::viewport` receives the element's inner size, so an element settles what it shows, such as its first row or a scroll offset, and then paints exactly that. Mouse events arrive with positions relative to the element's top-left cell, so an element can act on a click without knowing where it was laid out or scrolled to. `Element::overlay` draws over the element's children, which is how `Scroll` draws its bar. No global registration is required.
+Any type that implements `Element` can go in a tree. There is no registration.
 
-Any element, custom ones included, can be a child of a `Lazy`. The column guarantees its children the following:
+```rust
+use wove::{Canvas, Element, Event, Key, Response, Style};
 
-- Children stack from the top in child order; `z` does not reorder them.
-- Each child is laid out on its own, as the only child of a flex column as wide as the `Lazy`'s content box, and only when it comes near the view, is scrolled past, or holds the focus.
-- A child that is not in view is not painted, has empty bounds, and cannot take a click. It stays in the focus order, and focusing it scrolls it into view.
-- A child's layout is kept until the child or a descendant changes through `Tree::update`, `Tree::set_layout`, or an event response that asks for layout.
+struct Counter(i32);
 
-In return, a child takes its height from its content at the width it is given. Percentage heights and `flex_grow` have no height to fill, and a child with nothing to measure takes no rows. A child that changes how it measures must say so through one of those paths, as any element must, or the column keeps its old height.
+impl Element for Counter {
+    fn measure(&self, _width: Option<u16>) -> (u16, u16) {
+        (12, 1)
+    }
+    fn paint(&self, canvas: &mut Canvas<'_>) {
+        let text = format!("Count: {}", self.0);
+        canvas.text(0, 0, &text, Style::default());
+    }
+    fn focusable(&self) -> bool {
+        true
+    }
+    fn event(&mut self, event: &Event) -> Response {
+        match event {
+            Event::Key(Key::Up, _) => self.0 += 1,
+            Event::Key(Key::Down, _) => self.0 -= 1,
+            _ => return Response::IGNORE,
+        }
+        Response::REPAINT
+    }
+}
+```
+
+Every method has a default, so implement only what you need.
+
+| Method | What it does |
+| --- | --- |
+| `measure` | Returns the size the element wants, in cells, for a width. |
+| `paint` | Draws through a `Canvas` clipped to the element's area. |
+| `event` | Handles input after any node [handler](/docs/ui/#handlers). |
+| `focusable` | Says whether the element can take focus. |
+| `layout` | Returns the element's default layout. |
+| `viewport`, `reveal`, `overlay` | Scroll content and draw over children, as `Scroll` does. |
+
+Measure the way you paint: `render::columns` counts the cells a string takes,
+and `render::fit` cuts it to a width. Besides `text`, the canvas has `fill`,
+`border`, `cursor`, and `link`. It also expands tabs and removes control
+characters. A tall element can draw only `canvas.visible_rows()`. Mouse
+positions arrive relative to the element's top-left cell.

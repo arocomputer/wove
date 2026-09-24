@@ -1,8 +1,7 @@
 # SSH
 
-Serve Wove applications through SSH with `wove-ssh`. Supply a persistent host key,
-a public-key authorization policy, and a factory that creates an app per peer.
-Each app owns its tree and input state. No local terminal is acquired.
+Serve [Wove](https://wovetui.com) apps over SSH. Each connection gets its own
+copy of your app.
 
 ```sh
 ssh-keygen -t ed25519 -f /tmp/wove-host -N ''
@@ -10,11 +9,8 @@ cargo run -p wove-ssh --example server -- /tmp/wove-host ~/.ssh/id_ed25519.pub
 ssh -p 2222 -i ~/.ssh/id_ed25519 guest@localhost
 ```
 
-The example listens on loopback and accepts only the public key supplied on the
-command line. Ctrl-C exits a client, because `Tree` finishes its session on
-Ctrl-C; a custom `App` receives Ctrl-C as an ordinary key. Ctrl-C in the server
-stops all connections.
-The host key file is private. Keep it outside the repository.
+The example listens on localhost and accepts only the public key you pass it.
+Keep the host key out of your repository.
 
-See the [SSH guide](https://github.com/arocomputer/wove/blob/main/crates/web/src/content/docs/ssh.mdx)
-for the application contract and limits.
+See the [SSH guide](https://wovetui.com/docs/ssh/) for the full
+example and the connection limits.

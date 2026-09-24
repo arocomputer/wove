@@ -5,5 +5,5 @@
       rect { fill: #EDEDED; }
     }
   </style>
-  <rect x="5" y="3" width="6" height="10" fill="#EDEDED"/>
+  <rect x="5" y="3" width="6" height="10" fill="#171717"/>
 </svg>

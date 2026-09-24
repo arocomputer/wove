@@ -1,0 +1,202 @@
+---
+title: Building a UI
+description: The tree, layout, styling, and input.
+---
+
+Every Wove app is a tree of elements. This page covers how you build the tree,
+arrange it, style it, and respond to input.
+
+## The tree
+
+A `Tree` holds every element in your app and owns its state. Adding an element
+returns an `Id`, which you use for everything else:
+
+```rust
+let mut tree = Tree::new();
+let list = tree.add(tree.root(), Container)?;
+let item = tree.add(list, Text::new("First"))?;
+tree.update::<Text>(item, |text| text.content = "Updated".into())?;
+```
+
+| Method | What it does |
+| --- | --- |
+| `add(parent, element)` | Create an element under a parent. |
+| `create(element)` | Create an element with no parent yet. |
+| `append`, `insert` | Attach an element, or move one. It keeps its state. |
+| `get::<T>(id)` | Borrow an element as its type. |
+| `update::<T>(id, f)` | Change an element. The tree lays out and paints again. |
+| `remove(id)` | Drop an element, its children, and their handlers. |
+
+A moved input keeps its text, cursor, and undo history. An `Id` is never
+reused, and it only works with the tree that made it.
+
+`tree.frame(width, height)` lays out the tree and returns a `Buffer` of cells.
+If nothing changed, it returns the last frame without doing any work.
+`terminal::run` calls it for you.
+
+## Layout
+
+Wove uses [Taffy](https://github.com/DioxusLabs/taffy) for flexbox and grid
+layout. Every length is a number of terminal cells. The root fills the frame
+and stacks its children in a column.
+
+```rust
+use wove::{elements::{Container, Text}, layout::*, Layout, Tree};
+
+let mut tree = Tree::new();
+let row = tree.add(tree.root(), Container)?;
+tree.set_layout(row, Layout {
+    flex_direction: FlexDirection::Row,
+    gap: Size { width: length(2.0), height: zero() },
+    ..Layout::default()
+})?;
+tree.add(row, Text::new("Left"))?;
+tree.add(row, Text::new("Right"))?;
+```
+
+`wove::Layout` is Taffy's `Style`. `wove::layout` re-exports Taffy's helpers,
+such as `length`, `percent`, `Size`, and `FlexDirection`.
+
+### Keep an element's defaults
+
+Some elements come with a layout. A `Panel` reserves one cell on each edge for
+its border. `set_layout` replaces the whole layout, so start from the current
+one when you only want to change a field:
+
+```rust
+let mut layout = tree.layout(panel)?.clone();
+layout.flex_grow = 1.0;
+tree.set_layout(panel, layout)?;
+```
+
+### Fill the remaining space
+
+Give an element `flex_grow: 1.0` to take the space its siblings leave. A child
+of a flex container can also shrink below its content. Set `flex_shrink: 0.0`
+to keep its full height, which you usually want for children of a
+[`Scroll`](/docs/elements/#scroll).
+
+### Overlays
+
+Set `position: Position::Absolute` to take an element out of the flow, then
+raise it with `Tree::set_z`. Siblings paint in ascending `z`, and the mouse hits
+the top one first. A `Panel` with a background color covers what is beneath it,
+which suits menus and dialogs.
+
+## Styling
+
+A `Style` sets colors and text attributes. Every field has a default, so set
+only what you need:
+
+```rust
+use wove::{Color, Style};
+
+let title = Style {
+    fg: Color::Rgb(104, 211, 192),
+    bold: true,
+    ..Style::default()
+};
+```
+
+The attributes are `bold`, `dim`, `italic`, `underline`, `strikethrough`, and
+`reverse`.
+
+### Colors
+
+| Color | Meaning |
+| --- | --- |
+| `Default` | No color. A background keeps whatever is painted beneath. |
+| `Reset` | The terminal's default color, covering anything beneath. |
+| `Indexed(n)` | A color from the terminal's 256-color palette. |
+| `Rgb(r, g, b)` | A true color. |
+
+`Default` is what lets text sit on a filled panel without cutting a hole in it.
+Terminals with fewer colors get the nearest match.
+
+### Styled runs
+
+A `Span` is text with one style. Put several in a `RichText` to mix styles in
+one block:
+
+```rust
+use wove::{elements::RichText, text::{Span, Wrap}};
+
+let line = RichText::new(vec![
+    Span::new("error: ", Style { fg: Color::Indexed(1), ..Style::default() }),
+    Span::new("file not found", Style::default()),
+], Wrap::Word);
+```
+
+### Links
+
+`Span::link` makes text open a URL in terminals that support hyperlinks. Other
+terminals show plain text.
+
+```rust
+let docs = Span::link("docs", Style::default(), "https://wovetui.com");
+```
+
+## Events and focus
+
+Keys go to the focused element. Mouse events go to the element under the
+pointer. Either way, the event then bubbles up through its parents.
+
+```rust
+use wove::{Event, Key, Response};
+
+tree.on(input, move |event| match event {
+    Event::Key(Key::Enter, _) => {
+        // Submit the form.
+        Response::HANDLED
+    }
+    _ => Response::IGNORE,
+})?;
+```
+
+### Handlers
+
+`Tree::on` attaches a handler to a node. It runs before the element's own
+behavior. Return one of these:
+
+| Response | Meaning |
+| --- | --- |
+| `IGNORE` | Not handled. The element and its parents get the event. |
+| `HANDLED` | Stop here. Nothing on screen changed. |
+| `REPAINT` | Stop here and paint again. |
+| `CHANGED` | Stop here, lay out, and paint again. |
+
+Use `CHANGED` only when something can change size. Layout visits the whole
+tree, so a cursor move or a scroll should return `REPAINT`.
+
+### Keys
+
+`Event::Key` carries a `Key` and `Modifiers`. A letter already includes Shift,
+so Shift+g arrives as `Key::Char('G')` with no `shift` flag. That holds for a
+local terminal, SSH, and kitty key reports alike. Build key events with
+`Event::key` to get the same form.
+
+### Focus
+
+`tree.focus(Some(id))` focuses an element. Tab and Shift+Tab move focus in
+child order when no handler takes the key. A click focuses the nearest element
+that accepts focus. A `Scroll` or `Lazy` scrolls to show whatever gets focus.
+
+Elements receive `Event::Focus` and `Event::Blur`. `Event::WindowFocus` is
+different: it reports the terminal window itself.
+
+### Mouse
+
+Mouse positions are relative to the receiving element's top-left cell, so a
+handler never needs to know where the element was laid out. The element that
+handles a press keeps the pointer until release, even when a drag leaves it.
+
+`Event::Enter` and `Event::Leave` report the pointer crossing an element. They
+need `Options::motion`, which is off by default.
+
+### Text selection
+
+Capturing the mouse takes away the terminal's own selection, so Wove adds one
+back. Dragging on anything that doesn't handle the press selects text on
+screen. Read it with `Tree::selected_text`, and copy it with `Terminal::copy`.
+You decide when to copy, on release or on a key. Turn selection off with
+`Tree::set_selectable(false)`.

@@ -1,107 +1,119 @@
 ---
 title: Dioxus
-description: Components and signals over the same core tree.
-order: 4
+description: Write Wove apps with components, signals, and RSX.
 ---
 
-Use `wove-dioxus` when an application wants components, signals, and RSX.
-Direct core use does not require it.
+import Frame from "../../components/Frame.astro";
+
+Run [Dioxus](https://dioxuslabs.com) components on a Wove tree.
+You write RSX, and signals update the screen.
 
 ```toml
 [dependencies]
-wove = { path = "../wove/crates/core" }
-wove-dioxus = { path = "../wove/crates/dioxus" }
+wove = { git = "https://github.com/arocomputer/wove" }
+wove-dioxus = { git = "https://github.com/arocomputer/wove" }
 dioxus = { version = "=0.7.10", default-features = false, features = ["macro", "hooks", "signals"] }
+futures-lite = "2"
 ```
 
 ```rust
 use dioxus::prelude::*;
+use wove::{Event, Key};
 use wove_dioxus::{elements as dioxus_elements, View};
 
 fn app() -> Element {
+    let mut name = use_signal(String::new);
     rsx! {
-        view { direction: "column", gap: 1,
-            text { content: "Hello from Wove" }
-            input { placeholder: "Type here" }
+        view { direction: "column",
+            text { content: "Your name?" }
+            input {
+                value: "{name}",
+                oninput: move |event| name.set(event.data.to_string()),
+            }
+            text { content: "Hello, {name}!" }
         }
     }
 }
 
-let mut view = View::new(VirtualDom::new(app))?;
-let frame = view.frame(80, 24)?;
-# Ok::<(), wove_dioxus::Error>(())
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut view = View::new(VirtualDom::new(app))?;
+    view.focus_next(false)?;
+    let quit = |event: &Event| *event == Key::Escape.into();
+    futures_lite::future::block_on(wove_dioxus::run(&mut view, quit))?;
+    Ok(())
+}
 ```
 
-Tags are `view`, `panel`, `text`, `input`, `textarea`, `scroll`, `lazy`, `list`,
-`table`, and `rich`. Bare RSX strings create separate text elements, and adjacent
-strings are not merged. Use `content` for one measured text block, and `rich` for
-styled runs in one block.
+`wove_dioxus::run` handles terminal input and repaints when a signal changes.
+Bring your own executor. Like Core, it binds no quit key.
 
-`lazy` is the core `Lazy` column: its RSX children are ordinary elements, laid out
-only while in view, so a long keyed `for` loop of messages or entries stays cheap.
-Set `follow` to keep the tail in view. There is no `feed` tag, because a `Feed`
-holds text blocks rather than children and would be rebuilt from a list on every
-render; a `lazy` of `text` children covers the same case with keyed updates.
-Register a tag with `Registry` to use a `Feed`, or any other element without a
-tag, directly.
+The `counter` example adds a signal-driven count:
 
-Layout attributes are `width`, `height`, `grow`, `gap`, `padding`, and `direction`.
-Numeric values are nonnegative cell lengths, and direction is `row` or `column`.
-Every tag accepts them and `layout`, including registered tags. Removing one
-restores the element's own default for that property.
-`text` accepts `content` and `wrap`; `input` and `textarea` accept `value` and `placeholder`.
-For full Taffy layout, pass `wove_dioxus::AttributeValue::any_value(layout)` as
-`layout`. Likewise, `style` accepts an `AttributeValue::any_value(Style)` on text,
-input, textarea, panel, and table. Use either a complete layout or individual layout
-attributes for a node, to avoid relying on attribute application order.
+<Frame name="counter-0" command="cargo run -p wove-dioxus --example counter" />
 
-Rows, columns, and spans are typed values passed the same way, and removing one
-empties it:
+## Tags
 
-- `list` takes `rows` as a `Vec<Vec<Span>>`, one styled line per row, and is as wide as its widest row.
-- `table` takes `columns` as a `Vec<(String, u16)>` of headers and cell widths, and `rows` as a `Vec<Vec<String>>`.
-- `rich` takes `spans` as a `Vec<Span>`, and `wrap` breaks it at words.
-- `list` and `table` take `selected`, the index of the selected row.
+| Tag | Core element | Attributes |
+| --- | --- | --- |
+| `view` | `Container` | |
+| `panel` | `Panel` | `style` |
+| `text` | `Text` | `content`, `wrap`, `style` |
+| `rich` | `RichText` | `spans`, `wrap` |
+| `input` | `Input` | `value`, `placeholder`, `style` |
+| `textarea` | `Textarea` | `value`, `placeholder`, `style` |
+| `scroll` | `Scroll` | |
+| `lazy` | `Lazy` | `follow` |
+| `list` | `List` | `rows`, `selected` |
+| `table` | `Table` | `columns`, `rows`, `selected`, `style` |
 
-`onkey`, `onpaste`, and `onmouse` receive `dioxus_core::Event<wove::Event>`.
-The data is the portable core event. Other core events, such as focus changes
-and resizes, reach native elements without a Dioxus listener. Listeners can call
-`prevent_default` or `stop_propagation`. Initial focus is explicit: call `view.focus_next(false)`, send Tab, or let the
-user choose an element with the mouse. Event handlers on unfocused descendants do
-not receive keyboard events.
+Use `content` for a block of text. Bare strings in RSX become separate `text`
+elements, one per string.
 
-Mouse listeners follow the native element's pointer capture. A drag or release
-goes to the element that handled the press even when the pointer moves over a
-different element. `prevent_default` can cancel a captured drag's native editing;
-a prevented release still ends capture.
+There is no `feed` tag. A `lazy` of `text` children covers the same case and
+updates by key.
 
-A `value` update replaces input text only when it differs from the stored text.
-Values are stored as a paste would be: tabs become spaces and control characters
-are removed, and `input` joins lines with a space. The native element owns cursor and undo
-state; binding the edited value back, or any value that stores the same text,
-preserves that state.
-`oninput` receives `Event<String>` after a native edit, paste, undo, or redo changes
-the value. Set a signal from `event.data.to_string()` and bind that signal to
-`value` to keep component state in sync. It is a notification; cancel editing in
-`onkey` or `onpaste` instead. Cursor movement does not emit `oninput`.
-`onselect` receives `Event<usize>` after navigation or a click changes the selected
-row of a `list` or `table`. Bind the index to `selected` the same way.
+## Layout
 
-Call `frame` to apply pending component updates and render. Call `send` for input;
-paint first when hit testing needs current geometry. Async hosts must drive
-`wait_for_work` and call `render` or `frame` after it wakes. No executor is forced
-on applications.
+Every tag accepts `width`, `height`, `grow`, `gap`, `padding`, and `direction`
+(`row` or `column`). Numbers are cells.
 
-For custom elements, register a tag with `Registry::register`. Its factory creates
-a detached core node. Its attribute function validates and applies every attribute
-except the layout attributes, which the adapter handles.
-Pass the registry to `View::with_registry`. Hyphenated custom RSX tags work without
-an element schema; applications can define a schema for short tags and completion.
-See the [adapter tests](https://github.com/arocomputer/wove/blob/main/crates/dioxus/tests/view.rs) for a tested custom tag.
+For anything else, pass a full core layout:
 
-## Run an application
+```rust
+use wove_dioxus::AttributeValue;
 
-`wove_dioxus::run(&mut view, quit).await` drives terminal input and component
-work until `quit` accepts an event; the library binds no quit key.
-It repaints when a signal or task wakes, even without keyboard input. Use your
-executor of choice; the counter example uses `futures_lite::future::block_on`.
+rsx! { text { layout: AttributeValue::any_value(my_layout) } }
+```
+
+Use either `layout` or the individual attributes on one element, not both.
+
+## Events
+
+| Listener | Receives |
+| --- | --- |
+| `onkey`, `onpaste`, `onmouse` | The core `wove::Event` |
+| `oninput` | The new value, after an edit |
+| `onselect` | The new row index of a `list` or `table` |
+
+Call `prevent_default` to stop the element's own behavior, and
+`stop_propagation` to stop parent listeners. Keys only reach focused elements
+and their parents. Nothing is focused at start, so call `view.focus_next` or
+let the user press Tab.
+
+## Controlled inputs
+
+Bind a signal to `value` and set it from `oninput`, as in the example above.
+The input keeps its cursor and undo history as long as the value you pass back
+matches its text.
+
+## Custom tags
+
+Register your own elements with `Registry::register`, then create the view with
+`View::with_registry`. Hyphenated tag names work without a schema. See the
+[adapter tests](https://github.com/arocomputer/wove/blob/main/crates/dioxus/tests/view.rs)
+for an example.
+
+## Without a terminal
+
+`view.frame(width, height)` applies pending updates and returns a frame.
+`view.send(event)` dispatches input. Use these for tests or your own loop.

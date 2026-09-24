@@ -74,6 +74,9 @@ def affected(paths, lock_owners=None):
             result.update(package_work(path.split("/")[1]))
         elif path == "scripts/ui.py" or path.startswith("scripts/ui/"):
             result.update({"core-ui", "dioxus-ui", "quality"})
+            if path.startswith("scripts/ui/frames/"):
+                # The website shows these goldens as example screens.
+                result.add("website")
         elif path in {"scripts/package.py", "scripts/release.py"}:
             result.update({"quality", "quality-rust"})
         elif path.startswith("scripts/"):
