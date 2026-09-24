@@ -330,3 +330,64 @@ fn a_child_moves_between_a_lazy_column_and_an_ordinary_parent() {
     screen.send(Key::End).unwrap();
     assert_eq!(screen.frame().unwrap().lines(), ["r2    ", "r0    "]);
 }
+
+#[test]
+fn a_scroll_sent_home_stays_at_the_top_while_children_arrive() {
+    use wove::elements::Scroll;
+    let mut screen = Screen::new(6, 3);
+    let id = screen
+        .tree
+        .add(screen.tree.root(), Scroll::default())
+        .unwrap();
+    for i in 0..2 {
+        screen.tree.add(id, Text::new(format!("l{i}"))).unwrap();
+    }
+    screen.tree.focus(Some(id)).unwrap();
+    // Everything fits, so Home moves nothing and bubbles; it must not turn
+    // following on behind the user's back.
+    let dispatch = screen.send(Key::Home).unwrap();
+    assert!(!dispatch.handled);
+    for i in 2..20 {
+        screen.tree.add(id, Text::new(format!("l{i}"))).unwrap();
+    }
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["l0    ", "l1    ", "l2    "]
+    );
+    // End follows, and so does reaching the end by arrows.
+    screen.send(Key::End).unwrap();
+    screen.tree.add(id, Text::new("l20")).unwrap();
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["l18   ", "l19   ", "l20   "]
+    );
+}
+
+#[test]
+fn a_lazy_column_sent_end_follows_children_that_arrive_later() {
+    let mut screen = Screen::new(6, 4);
+    let (id, _, measured) = rows(&mut screen, Lazy::default(), 2);
+    screen.tree.focus(Some(id)).unwrap();
+    screen.send(Key::End).unwrap();
+    assert!(screen.tree.get::<Lazy>(id).unwrap().follow);
+    for index in 2..20 {
+        let measured = measured.clone();
+        screen.tree.add(id, Row { index, measured }).unwrap();
+    }
+    assert_eq!(
+        screen.frame().unwrap().lines(),
+        ["r16   ", "r17   ", "r18   ", "r19   "]
+    );
+}
+
+#[test]
+fn a_click_below_the_last_row_selects_nothing() {
+    let mut screen = Screen::new(6, 6);
+    let list = List::new(3, 6, |i| block(&format!("r{i}")));
+    let id = screen.tree.add(screen.tree.root(), list).unwrap();
+    let dispatch = screen.click(1, 5).unwrap();
+    assert!(!dispatch.handled);
+    assert_eq!(screen.tree.get::<List>(id).unwrap().selected, 0);
+    screen.click(1, 2).unwrap();
+    assert_eq!(screen.tree.get::<List>(id).unwrap().selected, 2);
+}

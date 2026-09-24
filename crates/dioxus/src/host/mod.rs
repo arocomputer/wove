@@ -67,8 +67,17 @@ pub(crate) struct Host {
     /// The rows behind each `list` tag, replaced by its `rows` attribute.
     lists: HashMap<Id, Rows>,
     registry: Registry,
-    error: Option<Error>,
-    failed: bool,
+    /// Whether mutations still apply. The first failure is reported once and
+    /// poisons the host, so nothing later builds on a tree that is wrong.
+    health: Health,
+}
+
+enum Health {
+    Sound,
+    /// A mutation failed and the error has not been reported yet.
+    Failed(Error),
+    /// The failure was reported; the host stays unusable.
+    Poisoned,
 }
 impl Host {
     pub fn new(registry: Registry) -> Self {
@@ -83,26 +92,25 @@ impl Host {
             listeners: HashMap::new(),
             lists: HashMap::new(),
             registry,
-            error: None,
-            failed: false,
+            health: Health::Sound,
         }
     }
     pub fn check(&mut self) -> Result<(), Error> {
-        if let Some(e) = self.error.take() {
-            return Err(e);
+        match std::mem::replace(&mut self.health, Health::Poisoned) {
+            Health::Sound => {
+                self.health = Health::Sound;
+                Ok(())
+            }
+            Health::Failed(error) => Err(error),
+            Health::Poisoned => Err(Error::Poisoned),
         }
-        if self.failed {
-            return Err(Error::Poisoned);
-        }
-        Ok(())
     }
     fn apply(&mut self, f: impl FnOnce(&mut Self) -> Result<(), Error>) {
-        if self.failed {
+        if !matches!(self.health, Health::Sound) {
             return;
         }
-        if let Err(e) = f(self) {
-            self.failed = true;
-            self.error = Some(e);
+        if let Err(error) = f(self) {
+            self.health = Health::Failed(error);
         }
     }
     pub fn listener(&self, node: Id, name: &'static str) -> Option<ElementId> {

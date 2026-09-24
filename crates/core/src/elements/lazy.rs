@@ -165,7 +165,7 @@ impl Element for Lazy {
                 (self.top, self.follow, self.pending) = (None, false, 0);
                 return Response::REPAINT;
             }
-            Event::Key(Key::End, _) if !last => {
+            Event::Key(Key::End, _) if !last || !self.follow => {
                 (self.follow, self.pending) = (true, 0);
                 return Response::REPAINT;
             }

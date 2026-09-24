@@ -43,6 +43,14 @@ impl Highlighter {
                 ));
             }
         }
+        // A trailing newline would lay out as an empty row.
+        while let Some(last) = spans.last_mut() {
+            last.text.truncate(last.text.trim_end_matches('\n').len());
+            if !last.text.is_empty() {
+                break;
+            }
+            spans.pop();
+        }
         Ok(RichText::new(spans, Wrap::None))
     }
 }

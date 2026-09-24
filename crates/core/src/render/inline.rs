@@ -18,7 +18,7 @@
 //! Absolute positioning starts with a carriage return, so it never depends on
 //! the terminal's pending-wrap state.
 use super::buffer::Slot;
-use super::pen::{Depth, Shadow};
+use super::pen::{Depth, Pen, Shadow};
 use crate::Buffer;
 use std::collections::VecDeque;
 use std::io::{self, Write};
@@ -141,89 +141,29 @@ impl Inline {
         let previous = self.shadow.previous.take();
         let mut old = previous.as_ref().filter(|_| !redraw);
         let old_len = old.map_or(0, |old| i64::from(old.area().height));
-        let same = |old: Option<&Buffer>, index: i64| {
-            old.is_some_and(|old| frame.same_row(old, index as u16))
-        };
         let reachable = (-self.top).max(0);
-        let first_changed = (reachable..len.max(old_len)).find(|&index| !same(old, index));
+        let first_changed =
+            (reachable..len.max(old_len)).find(|&index| !same_row(frame, old, index));
         let cursor_changed = self.shadow.cursor_changed(frame, old);
         if first_changed.is_none() && !cursor_changed && !redraw {
             self.shadow.keep(frame, previous);
             return &self.shadow.output;
         }
         let mut pen = self.shadow.begin();
-        let output = &mut self.shadow.output;
-
         // Screen rows that may hold stale content from the last frame.
         let mut stale = self.top + old_len;
         if redraw || len < old_len && (self.top + len <= 0 || len >= rows) {
-            // Positions are unknown, or a shrinking frame that fills the screen
-            // keeps its last row at the bottom so every visible row moves.
-            // Either way the tail is placed at the top of the screen beneath
-            // the committed rows that fit, or ending at its bottom, and every
-            // visible row is rewritten.
-            self.top = (rows - len).min(kept_len(&self.kept));
-            let width = usize::from(frame.area().width);
-            let skip = kept_len(&self.kept) - self.top.max(0);
-            let visible = self
-                .kept
-                .iter()
-                .flat_map(|kept| (0..kept.area().height).map(move |y| (kept, kept.row(y))));
-            for (screen_row, (kept, row)) in visible.skip(skip as usize).enumerate() {
-                let _ = write!(output, "\r\x1b[{};1H", screen_row + 1);
-                // The terminal has reflowed rows kept from another width, if
-                // it reflows at all; they are cropped or padded, not rewrapped.
-                let row = crop(row, width);
-                pen.row(output, kept, row);
-                if row.len() < width {
-                    output.extend_from_slice(b"\x1b[K");
-                }
-            }
+            self.repaint_kept(&mut pen, frame, rows);
             old = None;
             stale = rows;
         }
         let top = self.top.min(rows - len);
         let scroll = self.top - top;
-        if let Some(first) = first_changed.filter(|first| scroll > 0 && top + first < 0) {
-            // Flow: print from the first changed row and let the terminal
-            // scroll. A row one past the bottom scrolls in with one newline.
-            let position = self.top + first;
-            if position >= rows {
-                let _ = write!(output, "\r\x1b[{rows};1H\n");
-            } else {
-                let _ = write!(output, "\r\x1b[{};1H", position + 1);
-            }
-            for (i, index) in (first..len).enumerate() {
-                if i > 0 {
-                    output.extend_from_slice(b"\r\n");
-                }
-                pen.row(output, frame, frame.row(index as u16));
-            }
-            self.top = top;
-        } else {
-            if scroll > 0 {
-                let _ = write!(output, "\r\x1b[{rows};1H");
-                output.extend(std::iter::repeat_n(b'\n', scroll as usize));
-            }
-            self.top = top;
-            stale -= scroll;
-            let mut written = None;
-            for screen_row in self.top.max(0)..rows.min(stale.max(self.top + len)) {
-                let index = screen_row - self.top;
-                if index < old_len && same(old, index) {
-                    continue;
-                }
-                if written == Some(screen_row - 1) {
-                    output.extend_from_slice(b"\r\n");
-                } else {
-                    let _ = write!(output, "\r\x1b[{};1H", screen_row + 1);
-                }
-                let index = index.min(i64::from(u16::MAX)) as u16;
-                pen.row(output, frame, frame.row(index));
-                written = Some(screen_row);
-            }
+        match first_changed.filter(|first| scroll > 0 && top + first < 0) {
+            Some(first) => self.flow(&mut pen, frame, rows, first),
+            None => self.rewrite(&mut pen, frame, old, rows, scroll, stale),
         }
-
+        self.top = top;
         let cursor = frame.cursor().and_then(|(x, y)| {
             let y = self.top + i64::from(y);
             (0..rows).contains(&y).then_some((x, y as u16))
@@ -232,6 +172,91 @@ impl Inline {
         self.redraw = false;
         self.trim();
         &self.shadow.output
+    }
+
+    /// Positions are unknown, or a shrinking frame that fills the screen
+    /// keeps its last row at the bottom so every visible row moves. Either
+    /// way the tail is placed at the top of the screen beneath the committed
+    /// rows that fit, or ending at its bottom, and the committed rows are
+    /// written again from the top. Every visible row is then stale.
+    fn repaint_kept(&mut self, pen: &mut Pen, frame: &Buffer, rows: i64) {
+        let len = i64::from(frame.area().height);
+        self.top = (rows - len).min(kept_len(&self.kept));
+        let width = usize::from(frame.area().width);
+        let skip = kept_len(&self.kept) - self.top.max(0);
+        let output = &mut self.shadow.output;
+        let visible = self
+            .kept
+            .iter()
+            .flat_map(|kept| (0..kept.area().height).map(move |y| (kept, kept.row(y))));
+        for (screen_row, (kept, row)) in visible.skip(skip as usize).enumerate() {
+            let _ = write!(output, "\r\x1b[{};1H", screen_row + 1);
+            // The terminal has reflowed rows kept from another width, if
+            // it reflows at all; they are cropped or padded, not rewrapped.
+            let row = crop(row, width);
+            pen.row(output, kept, row);
+            if row.len() < width {
+                output.extend_from_slice(b"\x1b[K");
+            }
+        }
+    }
+
+    /// Flow: print from the first changed row and let the terminal scroll,
+    /// so every row reaches history with its final content. A row one past
+    /// the bottom scrolls in with one newline.
+    fn flow(&mut self, pen: &mut Pen, frame: &Buffer, rows: i64, first: i64) {
+        let len = i64::from(frame.area().height);
+        let output = &mut self.shadow.output;
+        let position = self.top + first;
+        if position >= rows {
+            let _ = write!(output, "\r\x1b[{rows};1H\n");
+        } else {
+            let _ = write!(output, "\r\x1b[{};1H", position + 1);
+        }
+        for (i, index) in (first..len).enumerate() {
+            if i > 0 {
+                output.extend_from_slice(b"\r\n");
+            }
+            pen.row(output, frame, frame.row(index as u16));
+        }
+    }
+
+    /// Scroll growth in with newlines, then rewrite only the rows that
+    /// differ from the last frame, and the stale rows beneath a frame that
+    /// shrank.
+    fn rewrite(
+        &mut self,
+        pen: &mut Pen,
+        frame: &Buffer,
+        old: Option<&Buffer>,
+        rows: i64,
+        scroll: i64,
+        stale: i64,
+    ) {
+        let len = i64::from(frame.area().height);
+        let old_len = old.map_or(0, |old| i64::from(old.area().height));
+        let output = &mut self.shadow.output;
+        if scroll > 0 {
+            let _ = write!(output, "\r\x1b[{rows};1H");
+            output.extend(std::iter::repeat_n(b'\n', scroll as usize));
+        }
+        let top = self.top - scroll;
+        let stale = stale - scroll;
+        let mut written = None;
+        for screen_row in top.max(0)..rows.min(stale.max(top + len)) {
+            let index = screen_row - top;
+            if index < old_len && same_row(frame, old, index) {
+                continue;
+            }
+            if written == Some(screen_row - 1) {
+                output.extend_from_slice(b"\r\n");
+            } else {
+                let _ = write!(output, "\r\x1b[{};1H", screen_row + 1);
+            }
+            let index = index.min(i64::from(u16::MAX)) as u16;
+            pen.row(output, frame, frame.row(index));
+            written = Some(screen_row);
+        }
     }
 
     /// Whether `render` would return no bytes without comparing a row:
@@ -291,6 +316,11 @@ impl Inline {
         let row = i64::from(screen_row) - self.top;
         (0..self.len()).contains(&row).then_some(row as u16)
     }
+}
+
+/// Whether a row of `frame` is unchanged from the same row of `old`.
+fn same_row(frame: &Buffer, old: Option<&Buffer>, index: i64) -> bool {
+    old.is_some_and(|old| frame.same_row(old, index as u16))
 }
 
 /// How many committed rows are kept.

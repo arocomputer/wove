@@ -89,7 +89,7 @@ impl Element for Scroll {
         (0, self.offset)
     }
     fn event(&mut self, event: &Event) -> Response {
-        let old = self.offset;
+        let old = (self.offset, self.follow);
         match event {
             Event::Key(Key::Up, _)
             | Event::Mouse(crate::Mouse {
@@ -111,9 +111,10 @@ impl Element for Scroll {
             Event::Key(Key::End, _) => self.offset = self.limit,
             _ => return Response::IGNORE,
         }
-        self.follow = self.offset == self.limit;
+        // Reaching the end by any key follows new content; Home never does.
+        self.follow = self.offset == self.limit && !matches!(event, Event::Key(Key::Home, _));
         // An offset that cannot move lets the event reach an outer scroll.
-        if old == self.offset {
+        if old == (self.offset, self.follow) {
             Response::IGNORE
         } else {
             Response::REPAINT

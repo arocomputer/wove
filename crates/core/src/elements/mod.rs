@@ -31,7 +31,8 @@ pub(crate) fn window(offset: usize, selected: usize, count: usize, height: usize
 
 /// Move a selection among `count` rows, shown `page` at a time from `offset`,
 /// for arrows, paging, Home, End, the wheel, and a left click on a row.
-/// Clicks on the `header` rows above the first row are ignored. The offset
+/// Clicks on the `header` rows above the first row, or below the last row,
+/// are ignored. The offset
 /// moves as `window` moves it. Navigation is consumed even at either end.
 pub(crate) fn navigate(
     event: &Event,
@@ -45,7 +46,11 @@ pub(crate) fn navigate(
     let next = match event {
         Event::Mouse(mouse) => match mouse.kind {
             MouseKind::Down(Button::Left) if mouse.y >= header => {
-                first + usize::from(mouse.y - header)
+                let row = first + usize::from(mouse.y - header);
+                if row >= count {
+                    return Response::IGNORE;
+                }
+                row
             }
             MouseKind::ScrollUp => selected.saturating_sub(1),
             MouseKind::ScrollDown => selected.saturating_add(1),

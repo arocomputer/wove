@@ -37,24 +37,30 @@ impl Element for Textarea {
         true
     }
     fn measure(&self, width: Option<u16>) -> (u16, u16) {
-        let (widest, rows) = self.editor.extent_at(width.and_then(|w| self.width(w)));
+        let (mut widest, rows) = self.editor.extent_at(width.and_then(|w| self.width(w)));
+        // An empty area is as wide as the placeholder it shows.
+        if self.editor.text().is_empty() {
+            widest = widest.max(columns(&self.placeholder));
+        }
         (
             widest.clamp(1, usize::from(width.unwrap_or(u16::MAX)).max(1)) as u16,
             rows.min(u16::MAX as usize) as u16,
         )
     }
-    /// Wrap to the width and scroll just far enough to keep the cursor in view.
+    /// Wrap to the width and scroll just far enough to keep the cursor in
+    /// view: the view stays where it was until the cursor leaves it.
     fn viewport(&mut self, (width, height): (u16, u16), _: (u32, u32)) -> (u32, u32) {
         self.editor.width = self.width(width);
         let rows = self.editor.rows();
         let cursor = self.editor.cursor();
         let row = Editor::row_of(&rows, cursor);
         let col = columns(&self.editor.text()[rows[row].start..cursor]);
-        let top = row.saturating_sub(usize::from(height.max(1)) - 1);
+        let (top, left) = self.editor.view();
+        let top = keep_in_view(top, row, usize::from(height.max(1)));
         let left = if self.wrap {
             0
         } else {
-            col.saturating_sub(usize::from(width.max(1)) - 1)
+            keep_in_view(left, col, usize::from(width.max(1)))
         };
         self.editor.set_view(top, left);
         (0, 0)
@@ -122,5 +128,15 @@ impl Element for Textarea {
     }
     fn event(&mut self, event: &Event) -> Response {
         edit(&mut self.editor, event, true)
+    }
+}
+
+/// The first shown position after moving `shown` by the least that puts
+/// `wanted` among the `extent` positions in view.
+fn keep_in_view(shown: usize, wanted: usize, extent: usize) -> usize {
+    if wanted < shown {
+        wanted
+    } else {
+        shown.max(wanted.saturating_sub(extent - 1))
     }
 }

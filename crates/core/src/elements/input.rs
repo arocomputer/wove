@@ -60,15 +60,23 @@ impl Element for Input {
     fn measure(&self, _: Option<u16>) -> (u16, u16) {
         // One cell more than the text, for the cursor after its last grapheme.
         // Without it an input sized to its content scrolls its first cell away.
-        let text = self.width(self.editor.text());
-        ((text + 1).min(u16::MAX as usize) as u16, 1)
+        // An empty input is as wide as the placeholder it shows.
+        let text = self.width(self.editor.text()) + 1;
+        let placeholder = self.width(&self.placeholder);
+        (text.max(placeholder).min(u16::MAX as usize) as u16, 1)
     }
-    /// Scroll just far enough to keep the cursor in view.
+    /// Scroll just far enough to keep the cursor in view: the view stays
+    /// where it was until the cursor leaves it.
     fn viewport(&mut self, size: (u16, u16), _: (u32, u32)) -> (u32, u32) {
         let width = usize::from(size.0).max(1);
         let value = self.editor.text();
         let cursor_col = self.width(&value[..self.editor.cursor()]);
-        let desired = cursor_col.saturating_sub(width - 1);
+        let (_, shown) = self.editor.view();
+        let desired = if cursor_col < shown {
+            cursor_col
+        } else {
+            shown.max(cursor_col.saturating_sub(width - 1))
+        };
         let mut left = 0;
         for g in value.graphemes(true) {
             if left >= desired {

@@ -77,43 +77,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Text::new("Tab focus · arrows select / scroll · Esc quit"),
     )?;
     tree.focus(Some(input))?;
+    let ids = Ids {
+        input,
+        list,
+        detail,
+        scroll,
+    };
     terminal::run(&mut tree, |tree, event, _| {
-        let filter = tree
-            .get::<Input>(input)
-            .expect("input exists")
-            .editor
-            .text()
-            .to_lowercase();
-        let items: Vec<String> = names
-            .iter()
-            .filter(|name| name.to_lowercase().contains(&filter))
-            .map(|s| s.to_string())
-            .collect();
-        if *shown.borrow() != items {
-            let count = items.len();
-            *shown.borrow_mut() = items;
-            tree.update::<List>(list, |w| {
-                w.count = count;
-                w.selected = 0;
-            })
-            .expect("list exists");
-        }
-        let selected = tree.get::<List>(list).expect("list exists").selected;
-        let content = shown
-            .borrow()
-            .get(selected)
-            .map_or_else(|| "No matching elements".into(), |s| description(s));
-        if tree.get::<Text>(detail).expect("detail exists").content != content {
-            tree.update::<Text>(detail, |w| w.content = content)
-                .expect("detail exists");
-            tree.update::<Scroll>(scroll, |w| {
-                w.offset = 0;
-                w.follow = false;
-            })
-            .expect("scroll exists");
-        }
+        refresh(tree, &ids, &names, &shown).expect("the tree keeps its nodes");
         *event != wove::Key::Escape.into()
     })?;
+    Ok(())
+}
+
+/// The nodes an event can change.
+struct Ids {
+    input: wove::Id,
+    list: wove::Id,
+    detail: wove::Id,
+    scroll: wove::Id,
+}
+
+/// After an event: filter the names by the input, and show the description
+/// of the selected one, scrolled to its top when it changed.
+fn refresh(
+    tree: &mut Tree,
+    ids: &Ids,
+    names: &[&str],
+    shown: &Rc<RefCell<Vec<String>>>,
+) -> Result<(), wove::Error> {
+    let filter = tree.get::<Input>(ids.input)?.editor.text().to_lowercase();
+    let items: Vec<String> = names
+        .iter()
+        .filter(|name| name.to_lowercase().contains(&filter))
+        .map(|s| s.to_string())
+        .collect();
+    if *shown.borrow() != items {
+        let count = items.len();
+        *shown.borrow_mut() = items;
+        tree.update::<List>(ids.list, |w| {
+            w.count = count;
+            w.selected = 0;
+        })?;
+    }
+    let selected = tree.get::<List>(ids.list)?.selected;
+    let content = shown
+        .borrow()
+        .get(selected)
+        .map_or_else(|| "No matching elements".into(), |s| description(s));
+    if tree.get::<Text>(ids.detail)?.content != content {
+        tree.update::<Text>(ids.detail, |w| w.content = content)?;
+        tree.update::<Scroll>(ids.scroll, |w| {
+            w.offset = 0;
+            w.follow = false;
+        })?;
+    }
     Ok(())
 }
 fn description(name: &str) -> String {
