@@ -31,7 +31,7 @@ crossterm = { version = "0.29", optional = true, features = ["event-stream"] }
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", optional = true, default-features = false, features = ["std", "event", "stdio"] }
 # Restores the terminal before a fatal signal; crossterm already brings this crate in.
-signal-hook = { version = "0.3", optional = true }
+signal-hook = { version = "0.4", optional = true }
 
 [[example]]
 name = "gallery"
