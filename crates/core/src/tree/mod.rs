@@ -1,8 +1,6 @@
 //! Retained element ownership, layout, focus, and bubbling input.
-use crate::{
-    elements::{Container, Lazy},
-    Buffer, Element, Event, Key, Layout, MouseKind, Rect, Response,
-};
+use crate::{elements::Container, Buffer, Element, Event, Key, Layout, MouseKind, Rect, Response};
+mod layers;
 mod paint;
 use std::any::Any;
 use std::{
@@ -112,6 +110,12 @@ struct Node {
     /// The children sorted by `z`, kept only while one of them has a `z`.
     /// Empty means child order is paint order.
     order: Vec<Id>,
+    /// Managed children painted last frame, in paint order.
+    painted: Vec<Id>,
+    overlay: bool,
+    pointer_events: bool,
+    /// The managed child and its descendant to reveal at the next arrangement.
+    reveal: Option<(Id, Id)>,
 }
 impl Node {
     /// A detached node with no children or handler.
@@ -127,6 +131,10 @@ impl Node {
             clip: Rect::default(),
             z: 0,
             order: vec![],
+            painted: vec![],
+            overlay: false,
+            pointer_events: true,
+            reveal: None,
         }
     }
     /// The children in paint order.
@@ -172,10 +180,15 @@ pub struct Tree {
     selection: Option<((u16, u16), (u16, u16))>,
     /// The focus moved and the next frame should scroll it into view.
     reveal_focus: bool,
-    /// A column that lays out one child of a `Lazy` at a time, apart from
+    /// A column that lays out one managed child at a time, apart from
     /// the rest of the layout, which never includes those children.
     lane: taffy::NodeId,
     frame: Buffer,
+    overlays: Vec<Id>,
+    scopes: Vec<(Id, Option<Id>)>,
+    /// Logical selection remains attached to content across scrolling and reflow.
+    text_selection: Option<Id>,
+    text_anchor: Option<usize>,
 }
 
 impl Default for Tree {
@@ -213,6 +226,10 @@ impl Tree {
             reveal_focus: false,
             lane,
             frame: Buffer::new(0, 0),
+            overlays: Vec::new(),
+            scopes: Vec::new(),
+            text_selection: None,
+            text_anchor: None,
         }
     }
     pub fn root(&self) -> Id {
@@ -240,6 +257,7 @@ impl Tree {
             self.restack(parent, id);
         }
         self.dirty = true;
+        self.sort_overlays();
         Ok(())
     }
     /// Sort a node's children into paint order after `child` joins, leaves,
@@ -277,14 +295,27 @@ impl Tree {
     }
     pub fn clear_selection(&mut self) {
         self.anchor = None;
+        self.text_anchor = None;
+        if let Some(id) = self.text_selection.take() {
+            if let Some(node) = self.nodes.get_mut(id) {
+                node.element.select(None);
+            }
+            self.dirty = true;
+        }
         if self.selection.take().is_some() {
             self.dirty = true;
         }
     }
-    /// The selected text as last painted, one line per row, for the clipboard.
+    /// Logical selected text when available, otherwise the last painted screen
+    /// selection with one line per row, for the clipboard.
     pub fn selected_text(&self) -> Option<String> {
-        let (from, to) = self.selection()?;
-        Some(self.frame.text(from, to))
+        if let Some(id) = self.text_selection {
+            return self.nodes.get(id)?.element.selected_text();
+        }
+        if let Some((from, to)) = self.selection() {
+            return Some(self.frame.text(from, to));
+        }
+        None
     }
     pub fn contains(&self, id: Id) -> bool {
         self.nodes.contains_key(id)
@@ -342,9 +373,10 @@ impl Tree {
         }
         if let Some(old) = self.nodes[child].parent {
             self.nodes[old].children.retain(|id| *id != child);
+            self.nodes[old].painted.retain(|id| *id != child);
             self.restack(old, child);
         }
-        // A child of a `Lazy` has no parent in the layout, or the lane.
+        // A managed child has no parent in the layout, or the lane.
         let node = self.nodes[child].layout;
         if let Some(old) = self.layout.parent(node) {
             self.layout.remove_child(old, node)?;
@@ -354,9 +386,19 @@ impl Tree {
         self.nodes[child].parent = Some(parent);
         self.restack(parent, child);
         self.hide(child);
-        if !self.lazy(parent) {
-            self.layout
-                .insert_child_at_index(self.nodes[parent].layout, index, node)?;
+        if self.nodes[child].overlay {
+            self.layout.add_child(self.nodes[self.root].layout, node)?;
+        } else if !self.managed(parent) {
+            if index + 1 == self.nodes[parent].children.len() {
+                self.layout.add_child(self.nodes[parent].layout, node)?;
+            } else {
+                let index = self.nodes[parent].children[..index]
+                    .iter()
+                    .filter(|id| !self.nodes[**id].overlay)
+                    .count();
+                self.layout
+                    .insert_child_at_index(self.nodes[parent].layout, index, node)?;
+            }
         }
         self.touch();
         Ok(())
@@ -370,9 +412,11 @@ impl Tree {
         }
         if let Some(parent) = self.nodes[id].parent {
             self.nodes[parent].children.retain(|n| *n != id);
+            self.nodes[parent].painted.retain(|n| *n != id);
             self.restack(parent, id);
         }
         self.remove_subtree(id)?;
+        self.restore_scopes()?;
         self.touch();
         Ok(())
     }
@@ -384,13 +428,18 @@ impl Tree {
             self.remove_subtree(child)?;
         }
         let node = self.nodes.remove(id).ok_or(Error::MissingNode)?;
+        self.overlays.retain(|overlay| *overlay != id);
         self.layout.remove(node.layout)?;
         Ok(())
     }
 
-    pub fn set_layout(&mut self, id: Id, style: Layout) -> Result<(), Error> {
+    pub fn set_layout(&mut self, id: Id, mut style: Layout) -> Result<(), Error> {
+        if self.node(id)?.overlay {
+            style.position = taffy::Position::Absolute;
+        }
         self.layout.set_style(self.node(id)?.layout, style)?;
         self.touch();
+        self.drop_stale_focus()?;
         Ok(())
     }
     pub fn get<E: Element>(&self, id: Id) -> Result<&E, Error> {
@@ -409,6 +458,21 @@ impl Tree {
         self.touch();
         Ok(())
     }
+    /// Mutate appearance without invalidating measurement. The caller promises
+    /// that intrinsic size and layout are unchanged; use `update` otherwise.
+    pub fn repaint<E: Element>(
+        &mut self,
+        id: Id,
+        update: impl FnOnce(&mut E),
+    ) -> Result<(), Error> {
+        let node = self.nodes.get_mut(id).ok_or(Error::MissingNode)?;
+        let element = (node.element.as_mut() as &mut dyn Any)
+            .downcast_mut()
+            .ok_or(Error::WrongType)?;
+        update(element);
+        self.dirty = true;
+        Ok(())
+    }
     /// A node handler runs before its element's default behavior. Returning handled
     /// stops the default and parent handlers. Replacing it drops the old callback.
     /// Mouse positions are relative to the node's top-left cell, and never
@@ -422,11 +486,11 @@ impl Tree {
         Ok(())
     }
     /// Focus a displayed, focusable node, or clear the focus. The next frame
-    /// scrolls the nearest scrolling ancestor or `Lazy` to show the node.
+    /// asks the nearest scrolling or managed ancestor to show the node.
     pub fn focus(&mut self, id: Option<Id>) -> Result<(), Error> {
         if let Some(id) = id {
             self.node(id)?;
-            if !self.visible(id) || !self.nodes[id].element.focusable() {
+            if !self.visible(id) || !self.in_scope(id) || !self.nodes[id].element.focusable() {
                 return Ok(());
             }
         }
@@ -445,28 +509,31 @@ impl Tree {
         self.reveal_focus = id.is_some();
         Ok(())
     }
-    /// Ask the nearest ancestor whose layout scrolls, or the nearest `Lazy`,
+    /// Ask the nearest scrolling or managed ancestor
     /// to show a node, with the node's place in that ancestor's content.
     /// Needs a current layout.
     fn reveal(&mut self, id: Id) -> Result<(), Error> {
         // The ancestor, and its child that holds the node.
         let mut child = id;
         let ancestor = loop {
+            if self.nodes[child].overlay {
+                return Ok(());
+            }
             let Some(parent) = self.nodes[child].parent else {
                 return Ok(());
             };
             let overflow = self.layout.style(self.nodes[parent].layout)?.overflow;
-            if self.lazy(parent) || overflow.x == Overflow::Scroll || overflow.y == Overflow::Scroll
+            if self.managed(parent)
+                || overflow.x == Overflow::Scroll
+                || overflow.y == Overflow::Scroll
             {
                 break parent;
             }
             child = parent;
         };
-        let lazy = self.lazy(ancestor);
-        if lazy {
-            // The child may never have been laid out at the column's width.
-            let layout = *self.layout.layout(self.nodes[ancestor].layout)?;
-            self.lay(child, paint::content(&layout, (0, 0)).2)?;
+        if self.managed(ancestor) {
+            self.nodes[ancestor].reveal = Some((child, id));
+            return Ok(());
         }
         let layout = self.layout.layout(self.nodes[id].layout)?;
         let size = (
@@ -485,23 +552,12 @@ impl Tree {
             }
         }
         let at = (x.max(0.0) as u32, y.max(0.0) as u32);
-        let ancestor = &mut self.nodes[ancestor];
-        if lazy {
-            let index = ancestor.children.iter().position(|c| *c == child);
-            if let (Some(index), Some(lazy)) = (
-                index,
-                (ancestor.element.as_mut() as &mut dyn Any).downcast_mut::<Lazy>(),
-            ) {
-                lazy.show(index, at.1 as usize, usize::from(size.1));
-            }
-        } else {
-            ancestor.element.reveal(at, size);
-        }
+        self.nodes[ancestor].element.reveal(at, size);
         Ok(())
     }
-    /// Whether a node is a `Lazy`, whose children are laid out only in view.
-    fn lazy(&self, id: Id) -> bool {
-        (self.nodes[id].element.as_ref() as &dyn Any).is::<Lazy>()
+    /// Whether an element owns child placement instead of using flex/grid.
+    fn managed(&self, id: Id) -> bool {
+        self.nodes[id].element.manages_children()
     }
     /// Forget where a subtree was painted, so hit testing cannot reach it. An
     /// empty clip implies empty clips below it, which lets this stop early.
@@ -510,7 +566,18 @@ impl Tree {
         let painted = node.clip.width > 0 && node.clip.height > 0;
         node.clip = Rect::default();
         if painted {
-            for child in node.children.clone() {
+            let children = if node.element.manages_children() {
+                node.painted.clone()
+            } else {
+                node.children.clone()
+            };
+            for child in children {
+                if !self.contains(child) {
+                    continue;
+                }
+                if self.nodes[child].overlay {
+                    continue;
+                }
                 self.hide(child);
             }
         }
@@ -551,7 +618,7 @@ impl Tree {
     /// previous one with `reverse`, wrapping at either end.
     pub fn focus_next(&mut self, reverse: bool) -> Result<(), Error> {
         let mut ids = Vec::new();
-        self.ordered(self.root, &mut ids);
+        self.ordered(self.scope().unwrap_or(self.root), &mut ids);
         ids.retain(|id| self.nodes[*id].element.focusable());
         if ids.is_empty() {
             return self.focus(None);
@@ -600,21 +667,22 @@ impl Tree {
         Ok(response)
     }
     /// The topmost node painted at a cell. Children are clipped to their
-    /// parent, so a subtree that misses the cell is skipped whole. A `Lazy`
-    /// paints its children in child order, stacked, so they are hit that way.
+    /// parent, so a subtree that misses the cell is skipped whole. Managed
+    /// containers hit only the children placed in their last frame.
     fn hit(&self, id: Id, x: u16, y: u16) -> Option<Id> {
         let node = &self.nodes[id];
-        if !node.clip.contains(x, y) {
+        if !node.pointer_events || !node.clip.contains(x, y) {
             return None;
         }
-        let children = if self.lazy(id) {
-            &node.children[..]
+        let children = if self.managed(id) {
+            &node.painted[..]
         } else {
             node.layers()
         };
         children
             .iter()
             .rev()
+            .filter(|child| !self.nodes[**child].overlay)
             .find_map(|child| self.hit(*child, x, y))
             .or(Some(id))
     }
@@ -624,15 +692,26 @@ impl Tree {
     pub fn target(&self, event: &Event) -> Option<Id> {
         if let Event::Mouse(mouse) = event {
             if matches!(mouse.kind, MouseKind::Drag(_) | MouseKind::Up(_)) {
-                if let Some(id) = self.capture.filter(|id| self.contains(*id)) {
+                if let Some(id) = self
+                    .capture
+                    .filter(|id| self.visible(*id) && self.in_scope(*id))
+                {
                     return Some(id);
                 }
             }
-            self.hit(self.root, mouse.x, mouse.y)
+            self.overlays
+                .iter()
+                .rev()
+                .filter(|id| {
+                    self.visible(**id) && self.in_scope(**id) && self.pointer_enabled(**id)
+                })
+                .find_map(|id| self.hit(*id, mouse.x, mouse.y))
+                .or_else(|| self.hit(self.scope().unwrap_or(self.root), mouse.x, mouse.y))
+                .or(self.scope())
         } else {
             self.focus
-                .filter(|id| self.visible(*id))
-                .or(Some(self.root))
+                .filter(|id| self.visible(*id) && self.in_scope(*id))
+                .or(Some(self.scope().unwrap_or(self.root)))
         }
     }
 
@@ -642,16 +721,28 @@ impl Tree {
     pub fn release_pointer(&mut self) {
         self.capture = None;
         self.anchor = None;
+        self.text_anchor = None;
     }
 
     /// What becomes of a mouse event before any node sees it: selection and
     /// capture are the tree's business, not an element's.
     fn pointer(&mut self, mouse: &crate::Mouse, target: Option<Id>) -> Result<Pointer, Error> {
         let mut changed = false;
+        if let (Some(id), Some(anchor)) = (self.text_selection, self.text_anchor) {
+            if matches!(mouse.kind, MouseKind::Drag(_)) {
+                if let Some(at) = self.logical_position(id, mouse.x, mouse.y) {
+                    self.nodes[id]
+                        .element
+                        .select(Some(anchor.min(at)..anchor.max(at)));
+                    self.dirty = true;
+                    return Ok(Pointer::Selecting { changed: true });
+                }
+            }
+        }
         match (mouse.kind, self.anchor) {
             (MouseKind::Down(_), _) => {
                 self.release_pointer();
-                changed = self.selection.is_some();
+                changed = self.selection.is_some() || self.text_selection.is_some();
                 self.clear_selection();
             }
             // A press that no node wanted is dragged into a selection.
@@ -699,10 +790,10 @@ impl Tree {
 
     /// Drop the focus from a node that is no longer displayed or focusable.
     fn drop_stale_focus(&mut self) -> Result<(), Error> {
-        if self
-            .focus
-            .is_some_and(|id| !self.visible(id) || !self.nodes[id].element.focusable())
-        {
+        self.restore_scopes()?;
+        if self.focus.is_some_and(|id| {
+            !self.visible(id) || !self.in_scope(id) || !self.nodes[id].element.focusable()
+        }) {
             self.focus(None)?;
         }
         Ok(())
@@ -755,13 +846,34 @@ impl Tree {
                 result.handled = true;
                 break;
             }
-            next = self.nodes[id].parent;
+            next = if Some(id) == self.scope() {
+                None
+            } else {
+                self.nodes[id].parent
+            };
         }
         match press {
             // The node that handled a press owns the pointer until release.
             Some(_) if result.handled => self.capture = result.path.last().copied(),
             // A left press that nothing handled may become a selection.
-            Some((crate::Button::Left, at)) if self.selectable => self.anchor = Some(at),
+            Some((crate::Button::Left, at)) if self.selectable => {
+                let mut owner = target;
+                while let Some(id) = owner {
+                    if let Some(position) = self.logical_position(id, at.0, at.1) {
+                        self.text_selection = Some(id);
+                        self.text_anchor = Some(position);
+                        self.nodes[id].element.select(Some(position..position));
+                        break;
+                    }
+                    if Some(id) == self.scope() {
+                        break;
+                    }
+                    owner = self.nodes[id].parent;
+                }
+                if self.text_selection.is_none() {
+                    self.anchor = Some(at);
+                }
+            }
             _ => {}
         }
         if !result.handled {
@@ -772,6 +884,16 @@ impl Tree {
             }
         }
         Ok(result)
+    }
+
+    /// Translate a screen pointer into an element's stable content position.
+    fn logical_position(&self, id: Id, x: u16, y: u16) -> Option<usize> {
+        let node = self.nodes.get(id)?;
+        let local = (
+            (i32::from(x) - node.origin.0).clamp(0, i32::from(u16::MAX)) as u16,
+            (i32::from(y) - node.origin.1).clamp(0, i32::from(u16::MAX)) as u16,
+        );
+        node.element.text_position(local, node.size)
     }
 }
 

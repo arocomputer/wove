@@ -46,3 +46,15 @@ required-features = ["terminal"]
 [[example]]
 name = "timing"
 path = "examples/timing.rs"
+
+[[example]]
+name = "files"
+required-features = ["terminal"]
+
+[[example]]
+name = "grid"
+required-features = ["terminal"]
+
+[[example]]
+name = "logs"
+required-features = ["terminal"]

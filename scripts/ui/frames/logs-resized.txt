@@ -1,0 +1,13 @@
+Wove logs · Space streams · c copies · E
+record 0000  synthetic request completed
+record 0001  synthetic request completed
+record 0002  synthetic request completed
+record 0003  synthetic request completed
+record 0004  synthetic request completed
+record 0005  synthetic request completed
+record 0006  synthetic request completed
+record 0007  synthetic request completed
+record 0008  synthetic request completed
+record 0009  synthetic request completed
+record 0010  synthetic request completed
+@cursor none

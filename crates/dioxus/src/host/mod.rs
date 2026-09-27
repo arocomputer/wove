@@ -5,7 +5,9 @@ use dioxus_core::{
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 mod attrs;
 use wove::{
-    elements::{Container, Input, Lazy, List, Panel, RichText, Scroll, Table, Text, Textarea},
+    elements::{
+        Container, Document, Input, Lazy, List, Panel, RichText, Scroll, Table, Text, Textarea,
+    },
     text::Span,
     Id, Layout, Tree,
 };
@@ -176,6 +178,7 @@ impl Host {
                     "textarea" => self.tree.create(Textarea::default())?,
                     "scroll" => self.tree.create(Scroll::default())?,
                     "lazy" => self.tree.create(Lazy::default())?,
+                    "document" => self.tree.create(Document::default())?,
                     "list" => {
                         let rows = Rows::default();
                         let source = rows.clone();

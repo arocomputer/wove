@@ -44,6 +44,10 @@ impl Input {
 }
 
 impl Element for Input {
+    fn selected_text(&self) -> Option<String> {
+        let range = self.editor.selection();
+        (!range.is_empty()).then(|| self.editor.text()[range].to_owned())
+    }
     fn focusable(&self) -> bool {
         true
     }

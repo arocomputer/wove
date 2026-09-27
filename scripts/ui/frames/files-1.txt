@@ -1,0 +1,25 @@
+Wove files · Enter inspects · Esc closes
+src/module_000.rs
+src/module_001.rs
+src/module_002.rs
+src/module_003.rs
+src/module_004.rs
+src/module_005.rs
+src/module_006.rs
+src/module_007.rs
+src/module_008.rs
+src/module_009.rs
+src/module_010.rs
+src/module_011.rs
+src/module_012.rs
+src/module_013.rs
+src/module_014.rs
+src/module_015.rs
+src/module_016.rs
+src/module_017.rs
+src/module_018.rs
+src/module_019.rs
+src/module_020.rs
+src/module_021.rs
+src/module_022.rs
+@cursor none

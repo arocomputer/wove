@@ -1,5 +1,5 @@
 //! A virtualized column of element subtrees, laid out only where in view.
-use crate::{Element, Event, Id, Key, Layout, MouseKind, Response};
+use crate::{Children, Element, Error, Event, Id, Key, Layout, MouseKind, Response};
 
 /// A long column of element subtrees, such as messages that each carry their
 /// own header and controls, or the entries of a file tree. The tree lays out
@@ -43,45 +43,28 @@ pub struct Lazy {
 impl Lazy {
     /// Ask the next paint to show `size` rows of the child at `index`,
     /// starting at `row`. The tree calls it when focus moves inside the child.
-    pub(crate) fn show(&mut self, index: usize, row: usize, size: usize) {
+    fn show(&mut self, index: usize, row: usize, size: usize) {
         self.reveal = Some((index, row, size));
     }
 
-    /// Settle the view for a paint `height` rows tall over `children`, and
+    /// Settle the view for a paint `height` rows tall over nonempty children, and
     /// return the first visible child and how many of its rows are above the
     /// view. `rows` lays out a child and returns its height; it is only asked
     /// about the children near the view and those a scroll passes.
-    pub(crate) fn settle(
+    fn settle(
         &mut self,
         height: u16,
-        children: &[Id],
+        count: usize,
+        anchor: Option<(usize, usize)>,
         rows: &mut dyn FnMut(usize) -> usize,
     ) -> (usize, usize) {
         self.height = height;
-        let count = children.len();
-        if count == 0 {
-            self.top = None;
-            self.pending = 0;
-            self.reveal = None;
-            self.ends = (true, true);
-            return (0, 0);
-        }
         let height = usize::from(height);
         let tail = super::tail(count, height, rows);
-        let mut at = match self.top {
+        let mut at = match anchor {
             _ if self.follow => tail,
             None => (0, 0),
-            Some((id, hint, row)) => {
-                let index = if children.get(hint) == Some(&id) {
-                    hint
-                } else {
-                    // The child was moved, or removed, in which case the one
-                    // now in its place holds the view.
-                    children
-                        .iter()
-                        .position(|child| *child == id)
-                        .unwrap_or(hint.min(count - 1))
-                };
+            Some((index, row)) => {
                 // A child laid out again at a new width may have fewer rows
                 // than the anchor remembers; hold its last row instead.
                 (index, row.min(rows(index).saturating_sub(1))).min(tail)
@@ -97,7 +80,6 @@ impl Lazy {
         if moved {
             self.follow = at >= tail;
         }
-        self.top = Some((children[at.0], at.0, at.1));
         self.ends = (at == (0, 0), at >= tail);
         at
     }
@@ -132,6 +114,66 @@ fn reveal(
 }
 
 impl Element for Lazy {
+    fn manages_children(&self) -> bool {
+        true
+    }
+    fn arrange(&mut self, children: &mut dyn Children) -> Result<(), Error> {
+        let (width, height) = children.size();
+        if let Some(focus) = children.reveal(width)? {
+            self.show(focus.index, focus.at.1 as usize, usize::from(focus.size.1));
+        }
+        let count = children.ids().len();
+        if count == 0 {
+            self.top = None;
+            self.pending = 0;
+            self.reveal = None;
+            self.height = height;
+            self.ends = (true, true);
+            return Ok(());
+        }
+        let anchor = self.top.map(|(id, hint, row)| {
+            let ids = children.ids();
+            let index = if ids.get(hint) == Some(&id) {
+                hint
+            } else {
+                ids.iter()
+                    .position(|child| *child == id)
+                    .unwrap_or(hint.min(count - 1))
+            };
+            (index, row)
+        });
+        let mut failed = None;
+        let (first, skipped) = self.settle(height, count, anchor, &mut |index| {
+            children
+                .measure(index, width)
+                .map(|size| size.1 as usize)
+                .unwrap_or_else(|error| {
+                    failed = Some(error);
+                    0
+                })
+        });
+        if let Some(error) = failed {
+            return Err(error);
+        }
+        self.top = Some((children.ids()[first], first, skipped));
+        let mut top = -(skipped as i64);
+        for index in first..count {
+            if top >= i64::from(height) {
+                break;
+            }
+            let rows = children.measure(index, width)?.1;
+            children.place(
+                index,
+                (
+                    0,
+                    top.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
+                ),
+                width,
+            )?;
+            top += i64::from(rows);
+        }
+        Ok(())
+    }
     fn focusable(&self) -> bool {
         true
     }

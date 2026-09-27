@@ -1,5 +1,7 @@
 //! Built-in terminal elements. Applications can implement `Element` for their own types.
+mod document;
 mod input;
+pub use document::Document;
 mod pixels;
 mod scroll;
 mod text;

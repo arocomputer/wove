@@ -33,6 +33,17 @@ impl View {
         self.host.tree.focus_next(reverse)?;
         Ok(())
     }
+    /// Bound input to a mounted subtree, restoring focus when the scope closes.
+    pub fn push_scope(&mut self, id: wove::Id) -> Result<(), Error> {
+        self.host.check()?;
+        self.host.tree.push_scope(id)?;
+        Ok(())
+    }
+    /// Close the latest input scope. Unmounting its root closes it automatically.
+    pub fn pop_scope(&mut self) -> Result<Option<wove::Id>, Error> {
+        self.host.check()?;
+        Ok(self.host.tree.pop_scope()?)
+    }
     /// Apply scheduled component updates. A failed mutation makes the view unusable.
     pub fn render(&mut self) -> Result<(), Error> {
         self.host.check()?;
@@ -123,6 +134,24 @@ impl View {
             .ok()
     }
     fn emit(&self, target: Option<wove::Id>, name: &'static str, data: Rc<dyn Any>) -> bool {
+        if let Some(boundary) = self.host.tree.scope() {
+            let event = UiEvent::new(data, true);
+            let mut node = target;
+            while let Some(id) = node {
+                if let Some(element) = self.host.listener(id, name) {
+                    if let Some(listener) =
+                        listener(self.dom.base_scope().root_node(), &self.dom, element, name)
+                    {
+                        self.dom.in_runtime(|| listener.call(event.clone()));
+                    }
+                }
+                if id == boundary || !event.propagates() {
+                    break;
+                }
+                node = self.host.tree.parent(id);
+            }
+            return event.default_action_enabled();
+        }
         let mut node = target;
         while let Some(id) = node {
             if let Some(element) = self.host.listener(id, name) {
@@ -139,4 +168,48 @@ impl View {
     pub async fn wait_for_work(&mut self) {
         self.dom.wait_for_work().await;
     }
+}
+
+/// Locate a mounted listener through public Dioxus APIs. Scoped events invoke
+/// it directly so Dioxus's own bubbling cannot cross the terminal input boundary.
+fn listener(
+    node: &dioxus_core::VNode,
+    dom: &VirtualDom,
+    id: dioxus_core::ElementId,
+    name: &str,
+) -> Option<dioxus_core::ListenerCallback> {
+    for (index, attrs) in node.dynamic_attrs.iter().enumerate() {
+        if node.mounted_dynamic_attribute(index, dom) == Some(id) {
+            for attr in attrs.iter() {
+                if attr.name.strip_prefix("on") == Some(name) {
+                    if let dioxus_core::AttributeValue::Listener(listener) = &attr.value {
+                        return Some(listener.clone());
+                    }
+                }
+            }
+        }
+    }
+    for (index, child) in node.dynamic_nodes.iter().enumerate() {
+        match child {
+            dioxus_core::DynamicNode::Fragment(nodes) => {
+                for node in nodes {
+                    if let Some(found) = listener(node, dom, id, name) {
+                        return Some(found);
+                    }
+                }
+            }
+            dioxus_core::DynamicNode::Component(component) => {
+                if let Some(node) = component
+                    .mounted_scope(index, node, dom)
+                    .and_then(|scope| scope.try_root_node())
+                {
+                    if let Some(found) = listener(node, dom, id, name) {
+                        return Some(found);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }

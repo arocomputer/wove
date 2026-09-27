@@ -13,7 +13,7 @@
 
 pub mod animation;
 mod element;
-pub use element::Element;
+pub use element::{ChildFocus, Children, Element};
 pub mod elements;
 pub mod input;
 pub mod render;

@@ -54,7 +54,7 @@ Root README and published docs select only Website. Terminal-harness changes
 select PTYs without unrelated unit tests. Tooling-only changes use lightweight
 Quality checks rather than compilation.
 
-Core runs `./x ui gallery editor inline` on Unix; Dioxus runs `./x ui counter`. An
+Core runs `./x ui gallery editor inline grid files logs` on Unix; Dioxus runs `./x ui counter`. An
 unfiltered `./x ui` runs all scenarios. Keep selection and its tests current when
 adding dependencies, packages, or shared build inputs.
 

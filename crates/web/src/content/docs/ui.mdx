@@ -25,6 +25,7 @@ tree.update::<Text>(item, |text| text.content = "Updated".into())?;
 | `append`, `insert` | Attach an element, or move one. It keeps its state. |
 | `get::<T>(id)` | Borrow an element as its type. |
 | `update::<T>(id, f)` | Change an element. The tree lays out and paints again. |
+| `repaint::<T>(id, f)` | Change appearance without remeasuring. The closure must not change intrinsic size or layout. |
 | `remove(id)` | Drop an element, its children, and their handlers. |
 
 A moved input keeps its text, cursor, and undo history. An `Id` is never
@@ -78,10 +79,28 @@ to keep its full height, which you usually want for children of a
 
 ### Overlays
 
-Set `position: Position::Absolute` to take an element out of the flow, then
-raise it with `Tree::set_z`. Siblings paint in ascending `z`, and the mouse hits
-the top one first. A `Panel` with a background color covers what is beneath it,
-which suits menus and dialogs.
+For overlapping siblings within a container, set `position: Position::Absolute`
+and raise an element with `Tree::set_z`. Siblings paint in ascending `z`, and
+the mouse hits the top one first.
+
+Use `tree.set_overlay(id, true)` for a popover that must escape ancestor clipping.
+It becomes absolutely positioned against the root and paints above ordinary
+content. Layout insets position it; `set_z` orders overlays. Logical parents
+still control ownership, visibility, and event bubbling. Removing a parent drops
+its overlays. Disabling overlay mode retains the layout style.
+
+`tree.set_pointer_events(id, false)` makes a decorative subtree transparent to
+the pointer. It does not change keyboard focus. A `Panel` with a background
+color covers what is painted beneath it.
+
+### Modal focus
+
+Call `tree.push_scope(dialog)` to restrict focus and pointer input to a displayed
+subtree. Tab wraps within it, and unhandled events stop at its root. Outside
+clicks target the scope root, letting its handler dismiss the dialog if desired.
+`tree.pop_scope()` restores the previous focus if it still exists and is visible.
+Removing or hiding a scope root closes it and any nested scopes automatically.
+Scopes control input independently of overlay painting.
 
 ## Styling
 
@@ -196,7 +215,10 @@ need `Options::motion`, which is off by default.
 ### Text selection
 
 Capturing the mouse takes away the terminal's own selection, so Wove adds one
-back. Dragging on anything that doesn't handle the press selects text on
-screen. Read it with `Tree::selected_text`, and copy it with `Terminal::copy`.
+back. An unhandled press first asks the element and its parents for logical text
+positions. `Document` uses source-byte selection that survives scrolling and
+reflow; custom elements can exclude gutters and other display-only content.
+Otherwise dragging selects painted screen cells. Read either form with
+`Tree::selected_text`, and copy it with `Terminal::copy`.
 You decide when to copy, on release or on a key. Turn selection off with
 `Tree::set_selectable(false)`.
