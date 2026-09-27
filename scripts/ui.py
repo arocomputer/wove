@@ -1,5 +1,6 @@
 """Exercise input, resize, and terminal restoration through real Unix PTYs."""
 import difflib
+import copy
 import errno
 import fcntl
 import os
@@ -18,6 +19,26 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "artifacts/ui"
 OUT.mkdir(parents=True, exist_ok=True)
 FRAMES = ROOT / "scripts/ui/frames"
+
+
+class TerminalScreen(pyte.Screen):
+    """Add DEC alternate-screen save/restore, which pyte itself does not model."""
+
+    _main = None
+
+    def set_mode(self, *modes, **kwargs):
+        if kwargs.get("private") and 1049 in modes and self._main is None:
+            self._main = copy.deepcopy((self.buffer, self.cursor, self.margins))
+            self.buffer.clear()
+            self.cursor_position()
+        super().set_mode(*modes, **kwargs)
+
+    def reset_mode(self, *modes, **kwargs):
+        super().reset_mode(*modes, **kwargs)
+        if kwargs.get("private") and 1049 in modes and self._main is not None:
+            self.buffer, self.cursor, self.margins = self._main
+            self._main = None
+            self.dirty.update(range(self.lines))
 
 
 def snapshot(screen):
@@ -65,7 +86,7 @@ def scenario(name, steps, fullscreen=True):
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
     original = termios.tcgetattr(slave)
-    screen = pyte.Screen(80, 24)
+    screen = TerminalScreen(80, 24)
     stream = pyte.ByteStream(screen)
     raw = bytearray()
     cursor_answered = False
@@ -128,6 +149,10 @@ def scenario(name, steps, fullscreen=True):
 
     def finish(fullscreen):
         """Quit with Escape and check that the terminal is as it was found."""
+        if name == "files":
+            after = len(raw)
+            os.write(master, b"\x1b")
+            receive("src/module_000.rs", after=after)
         os.write(master, b"\x1b")
         # Keep draining while waiting so cleanup output cannot fill the PTY buffer.
         deadline = time.monotonic() + 10
@@ -140,7 +165,7 @@ def scenario(name, steps, fullscreen=True):
             pass
         restored = termios.tcgetattr(slave)
         assert restored == original, f"{name}: terminal attributes were not restored"
-        assert (b"\x1b[?1049l" in raw) == fullscreen, "alternate screen use is wrong"
+        assert (b"\x1b[?1049l" in raw) == (fullscreen or name == "inline"), "alternate screen use is wrong"
         assert b"\x1b[?25h" in raw, "cursor was not restored"
         assert b"\x1b[?2026h" in raw, "frames were not synchronized"
         print(f"{name}: input and terminal restoration passed")
@@ -162,7 +187,7 @@ def scenario(name, steps, fullscreen=True):
             check_border()
             keep(f"{name}-{index}", screen)
         if not fullscreen:
-            expected = [step[1] for step in steps]
+            expected = list(dict.fromkeys(step[1] for step in steps if step[1].startswith("echo: ")))
 
             def in_order():
                 rows = [row.strip() for row in screen.display]
@@ -187,8 +212,16 @@ def scenario(name, steps, fullscreen=True):
         receive("Wove", after=before_resize)
         # An additional key produces an observable update after the resize.
         after_key = len(raw)
-        os.write(master, b"+" if name == "counter" else b"x" if name == "editor" else b"\x01\x7f")
-        receive("Count: 3" if name == "counter" else "bytes" if name == "editor" else "Text",
+        keys, expected = {
+            "counter": (b"+", "Count: 3"),
+            "editor": (b"x", "bytes"),
+            "gallery": (b"\x01\x7f", "Text"),
+            "grid": (b"\x1b[C", "0001:002"),
+            "files": (b"\r", "Inspector"),
+            "logs": (b"\x1b[H", "record 0000"),
+        }[name]
+        os.write(master, keys)
+        receive(expected,
                 after=after_key, frame=f"{name}-resized")
         check_border()
         keep(f"{name}-resized", screen)
@@ -240,7 +273,11 @@ scenarios = {
     "gallery": [(b"\x1b[200~scroll\x1b[201~", "A clipped viewport.")],
     "editor": [(b"\x1b[200~\nNew line\x1b[201~", "New line")],
     # The answers come from a worker thread and are drawn only if it wakes the loop.
-    "inline": [(b"one\r", "echo: one"), (b"two\r", "echo: two")],
+    "inline": [(b"one\r", "echo: one"), (b"two\r", "echo: two"),
+               (b"\x1bOQ", "Wove history"), (b"\x1b", "echo: two")],
+    "grid": [(b"\x1b[B\x1b[C", "0001:001")],
+    "files": [(b"\r", "Inspector"), (b"\x1b", "src/module_000.rs")],
+    "logs": [(b"\x1b[H", "record 0000"), (b"\x1b[F", "record 0099")],
 }
 # Package CI selects its own examples; a local invocation without names runs all.
 selected = sys.argv[1:] or list(scenarios)

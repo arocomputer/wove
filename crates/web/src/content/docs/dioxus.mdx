@@ -59,6 +59,7 @@ The `counter` example adds a signal-driven count:
 | `panel` | `Panel` | `style` |
 | `text` | `Text` | `content`, `wrap`, `style` |
 | `rich` | `RichText` | `spans`, `wrap` |
+| `document` | `Document` | `content`, `wrap`, `follow`, `style` |
 | `input` | `Input` | `value`, `placeholder`, `style` |
 | `textarea` | `Textarea` | `value`, `placeholder`, `style` |
 | `scroll` | `Scroll` | |
@@ -86,6 +87,11 @@ rsx! { text { layout: AttributeValue::any_value(my_layout) } }
 ```
 
 Use either `layout` or the individual attributes on one element, not both.
+
+Every tag also accepts `overlay` and `pointer_events` booleans. Overlays use
+root-relative absolute positioning and retain logical ownership. Set layout
+insets for their position. `View::push_scope(id)` and `pop_scope()` restrict
+native input and Dioxus listener bubbling to a mounted subtree and restore focus.
 
 ## Events
 

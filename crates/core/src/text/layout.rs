@@ -91,6 +91,7 @@ pub struct TextLayout {
     /// Original span boundaries, including empty spans, for exact cache reuse.
     ends: Vec<usize>,
     rows: Vec<Vec<Run>>,
+    ranges: Vec<Range<usize>>,
     width: usize,
 }
 impl TextLayout {
@@ -120,11 +121,13 @@ impl TextLayout {
             ends.push(content.len());
         }
         let mut rows = Vec::new();
+        let mut ranges = Vec::new();
         let mut widest = 0;
         let mut base = 0;
         for raw in content.split('\n') {
             let line = raw.strip_suffix('\r').unwrap_or(raw);
             for range in wrap(line, limit, mode) {
+                ranges.push(base + range.start..base + range.end);
                 let mut row: Vec<Run> = Vec::new();
                 let mut x = 0;
                 for (offset, g) in clusters(&line[range.clone()]) {
@@ -164,6 +167,7 @@ impl TextLayout {
             ends,
             content,
             rows,
+            ranges,
             width: widest,
         }
     }
@@ -201,6 +205,33 @@ impl TextLayout {
     /// Draw with the first row at local row `top`. Only rows that survive
     /// clipping are drawn, so a long text costs what is visible of it.
     pub fn paint_at(&self, canvas: &mut Canvas<'_>, top: i32) {
+        self.paint_selection(canvas, top, None);
+    }
+    /// Map a cell to a grapheme boundary in the original text. Positions past a
+    /// row map to its end; positions below the document map to the text's end.
+    pub fn position(&self, x: usize, y: usize) -> usize {
+        let Some(row) = self.rows.get(y) else {
+            return self.content.len();
+        };
+        for run in row {
+            let mut column = run.x;
+            for (offset, g) in clusters(&self.content[run.range.clone()]) {
+                let width = cell_width(g, column);
+                if x < column + width {
+                    return run.range.start + offset;
+                }
+                column += width;
+            }
+        }
+        self.ranges[y].end
+    }
+    /// Paint a logical byte selection while preserving styles and hyperlinks.
+    pub fn paint_selection(
+        &self,
+        canvas: &mut Canvas<'_>,
+        top: i32,
+        selection: Option<Range<usize>>,
+    ) {
         let visible = canvas.visible_rows();
         let first = visible.start.saturating_sub(top).max(0) as usize;
         let last = (visible.end.saturating_sub(top).max(0) as usize).min(self.rows.len());
@@ -215,6 +246,27 @@ impl TextLayout {
                     Some(n) => &SPACES[..n],
                     None => &self.content[run.range.clone()],
                 };
+                if let Some(range) = selection
+                    .as_ref()
+                    .filter(|range| range.start < run.range.end && range.end > run.range.start)
+                {
+                    let mut x = run.x;
+                    for (offset, g) in clusters(&self.content[run.range.clone()]) {
+                        let at = run.range.start + offset;
+                        let width = cell_width(g, x);
+                        let mut style = style;
+                        if at < range.end && at + g.len() > range.start {
+                            style.reverse = !style.reverse;
+                        }
+                        let text = if g == "\t" { &SPACES[..width] } else { g };
+                        match link {
+                            Some(url) => canvas.link(x as i32, y, text, style, url),
+                            None => canvas.text(x as i32, y, text, style),
+                        }
+                        x += width;
+                    }
+                    continue;
+                }
                 match link {
                     Some(url) => canvas.link(run.x as i32, y, text, style, url),
                     None => canvas.text(run.x as i32, y, text, style),

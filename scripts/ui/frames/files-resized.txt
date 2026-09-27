@@ -1,0 +1,13 @@
+Wove files · Enter inspects · Esc closes
+src/module_000.rs
+src/module_001.rs
+src/┌─ Inspector ────────────────┐
+src/│module_000.rs               │
+src/│Editable note               │
+src/│                            │
+src/└────────────────────────────┘
+src/module_007.rs
+src/module_008.rs
+src/module_009.rs
+src/module_010.rs
+@cursor 18,5

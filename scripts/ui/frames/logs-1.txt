@@ -1,0 +1,24 @@
+Wove logs · Space streams · c copies · Esc quits
+record 0078  synthetic request completed
+record 0079  synthetic request completed
+record 0080  synthetic request completed
+record 0081  synthetic request completed
+record 0082  synthetic request completed
+record 0083  synthetic request completed
+record 0084  synthetic request completed
+record 0085  synthetic request completed
+record 0086  synthetic request completed
+record 0087  synthetic request completed
+record 0088  synthetic request completed
+record 0089  synthetic request completed
+record 0090  synthetic request completed
+record 0091  synthetic request completed
+record 0092  synthetic request completed
+record 0093  synthetic request completed
+record 0094  synthetic request completed
+record 0095  synthetic request completed
+record 0096  synthetic request completed
+record 0097  synthetic request completed
+record 0098  synthetic request completed
+record 0099  synthetic request completed
+@cursor none

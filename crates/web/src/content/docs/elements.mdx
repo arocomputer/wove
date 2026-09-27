@@ -35,6 +35,33 @@ tree.add(tree.root(), Text {
 characters stay whole. Tabs expand to stops every four columns, and control
 characters are removed, so text can't send commands to the terminal.
 
+## Document
+
+`Document` is a read-only text viewport. Give it a height or `flex_grow: 1.0`.
+Arrows, paging, Home, End, and the wheel scroll it. `follow` keeps it at the
+tail until the user scrolls away; End resumes following. `wrap` takes a `Wrap`.
+
+```rust
+let mut document = wove::elements::Document::new("first line\nsecond line");
+document.wrap = wove::text::Wrap::Word;
+let id = tree.add(tree.root(), document)?;
+let mut layout = tree.layout(id)?.clone();
+layout.flex_grow = 1.0;
+tree.set_layout(id, layout)?;
+```
+
+Dragging selects source text. `tree.selected_text()` copies it without display
+wrapping. Selection survives scrolling, appends, and resizing; when replacing
+content, clear it with `Element::select(None)` or set positions for the new text.
+The `logs` example demonstrates appending from a worker and copying selection.
+
+Custom elements can implement `text_position`, `select`, and `selected_text`
+to exclude gutters or map their own document positions. `TextLayout::position`
+and `paint_selection` support byte positions at grapheme boundaries. Unhandled
+presses opt into this contract; editable elements retain their own gestures.
+Screen-cell selection remains the fallback. Editing elements keep their own
+selection; read it through `Element::selected_text` on an `Input` or `Textarea`.
+
 ## Input and Textarea
 
 `Input` edits one line. `Textarea` edits many. Both need focus to receive keys.
@@ -405,9 +432,34 @@ Every method has a default, so implement only what you need.
 | `focusable` | Says whether the element can take focus. |
 | `layout` | Returns the element's default layout. |
 | `viewport`, `reveal`, `overlay` | Scroll content and draw over children, as `Scroll` does. |
+| `manages_children`, `arrange` | Measure and place child subtrees without depending on a built-in container. |
+| `text_position`, `select`, `selected_text` | Select and copy logical content rather than painted cells. |
 
 Measure the way you paint: `render::columns` counts the cells a string takes,
 and `render::fit` cuts it to a width. Besides `text`, the canvas has `fill`,
 `border`, `cursor`, and `link`. It also expands tabs and removes control
 characters. A tall element can draw only `canvas.visible_rows()`. Mouse
 positions arrive relative to the element's top-left cell.
+
+### Custom child layout
+
+Return `true` from `manages_children` for an element that controls its children.
+That answer must remain constant for its lifetime. Give the container a height
+or let it grow into its parent. Its children do not determine its natural size.
+
+`arrange` receives a `Children` host with the content-box size and stable child
+IDs. `measure(index, width)` lays out one subtree and reports its extent including
+margins. `place(index, (x, y), width)` lays it out and paints at a signed offset
+in content coordinates. Place each visible child once, in paint order; unplaced
+children cannot receive pointer input. Layout errors propagate to `Tree::frame`.
+The tree still owns nodes, clips drawing, and routes events through logical parents.
+
+`Children::focused` identifies the child containing a descendant to reveal. Use
+its index to move the viewport. `Children::reveal(width)` measures that child at
+your chosen width and returns the descendant's local position and size, useful
+for tall children. `Lazy` uses this same public contract. The `grid` example implements
+a different layout that virtualizes both rows and columns:
+
+```sh
+cargo run -p wove --example grid
+```

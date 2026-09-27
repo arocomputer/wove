@@ -1,9 +1,10 @@
 //! An inline session. Finished lines join the terminal's own scrollback while
 //! a one-row input stays live beneath them. Enter commits a line, which a
-//! worker thread answers the way a chat or an agent would; Esc quits.
+//! worker thread answers the way a chat or an agent would. F2 opens a full-screen
+//! history view; Esc returns to the inline session, or quits from that session.
 use std::{sync::mpsc, thread, time::Duration};
 use wove::{
-    elements::{Input, Text},
+    elements::{Document, Input, Text},
     terminal::{self, Terminal},
     Event, Id, Key, Options, ScreenMode, Tree,
 };
@@ -65,13 +66,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             waker.wake();
         }
     });
+    let mut history = Vec::new();
+    let mut review = Tree::new();
+    review.add(review.root(), Text::new("Wove history · Esc returns"))?;
+    let document = review.add(review.root(), Document::default())?;
+    let mut layout = review.layout(document)?.clone();
+    layout.flex_grow = 1.0;
+    review.set_layout(document, layout)?;
+    review.focus(Some(document))?;
+    let mut reviewing = false;
     // Keys typed while the session was starting come first.
     let mut typed = terminal.typed_ahead().into_iter();
     loop {
-        for line in answers.try_iter() {
-            commit(&mut terminal, &mut tree, input, &line)?;
+        if !reviewing {
+            for line in answers.try_iter() {
+                commit(&mut terminal, &mut tree, input, &line)?;
+                history.push(line);
+            }
         }
-        draw(&mut terminal, &mut tree)?;
+        if reviewing {
+            let (width, height) = terminal.size()?;
+            terminal.draw(review.frame(width, height)?)?;
+        } else {
+            draw(&mut terminal, &mut tree)?;
+        }
         let event = match typed.next() {
             Some(event) => Some(event),
             None => terminal::read()?,
@@ -80,11 +98,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         };
         match event {
+            Event::Key(Key::Escape, _) if reviewing => {
+                reviewing = false;
+                terminal.switch(ScreenMode::Inline)?;
+            }
             Event::Key(Key::Escape, _) => break,
+            Event::Key(Key::Function(2), _) if !reviewing => {
+                review.update::<Document>(document, |document| {
+                    document.content = history.join("\n")
+                })?;
+                terminal.switch(ScreenMode::Alternate)?;
+                reviewing = true;
+            }
+            event if reviewing => {
+                review.dispatch(event)?;
+            }
             Event::Key(Key::Enter, _) => {
                 let line = tree.get::<Input>(input)?.editor.text().to_owned();
                 tree.update::<Input>(input, |input| input.editor.set(""))?;
                 commit(&mut terminal, &mut tree, input, &line)?;
+                history.push(line.clone());
                 ask.send(line)?;
             }
             event => {

@@ -3,10 +3,10 @@ use super::{Error, Host};
 use dioxus_core::AttributeValue;
 use std::any::Any;
 use wove::{
-    elements::{Input, Lazy, List, Panel, RichText, Scroll, Table, Text, Textarea},
+    elements::{Document, Input, Lazy, List, Panel, RichText, Scroll, Table, Text, Textarea},
     render::columns,
     text::{clean, Span, Wrap},
-    Id, Layout, Style,
+    Element, Id, Layout, Style,
 };
 
 /// Attributes the adapter applies to the layout of every tag, including registered ones.
@@ -33,6 +33,21 @@ impl Host {
         }
         if LAYOUT.contains(&name) {
             return self.layout_attr(id, name, value);
+        }
+        if matches!(name, "overlay" | "pointer_events") {
+            let (text, absent) = scalar(name, value)?;
+            let enabled = if absent {
+                name == "pointer_events"
+            } else {
+                text.parse()
+                    .map_err(|_| Error::Unsupported(format!("{name}={text:?}")))?
+            };
+            if name == "overlay" {
+                self.tree.set_overlay(id, enabled)?;
+            } else {
+                self.tree.set_pointer_events(id, enabled)?;
+            }
+            return Ok(());
         }
         if let Some(tag) = self.tags.get(&id) {
             if let Some((_, set)) = self.registry.entries.get(tag) {
@@ -94,14 +109,15 @@ impl Host {
             _ => return Err(Error::Unsupported("style expects Style".into())),
         };
         match self.tags.get(&id).map(String::as_str) {
-            Some("text") => self.tree.update::<Text>(id, |w| w.style = style)?,
+            Some("text") => self.tree.repaint::<Text>(id, |w| w.style = style)?,
+            Some("document") => self.tree.repaint::<Document>(id, |w| w.style = style)?,
             Some("input") => self.tree.update::<Input>(id, |w| w.style = style)?,
             Some("textarea") => self.tree.update::<Textarea>(id, |w| w.style = style)?,
             Some("panel") => self.tree.update::<Panel>(id, |w| w.style = style)?,
             Some("table") => self.tree.update::<Table>(id, |w| w.style = style)?,
             _ => {
                 return Err(Error::Unsupported(
-                    "style requires text, input, textarea, panel, or table".into(),
+                    "style requires text, document, input, textarea, panel, or table".into(),
                 ))
             }
         }
@@ -119,6 +135,10 @@ impl Host {
         let (text, absent) = scalar(name, value)?;
         let textarea = self.tags.get(&id).is_some_and(|tag| tag == "textarea");
         match name {
+            "content" if tag == Some("document") => self.tree.update::<Document>(id, |w| {
+                w.content = text;
+                w.select(None);
+            })?,
             "content" => self.tree.update::<Text>(id, |w| w.content = text)?,
             // Compare the stored form, so an equivalent value keeps cursor and undo.
             "value" if textarea => self.tree.update::<Textarea>(id, |area| {
@@ -145,6 +165,12 @@ impl Host {
                         .map_err(|_| Error::Unsupported(format!("{name}={text:?}")))?
                 };
                 match (tag, name) {
+                    (Some("document"), "wrap") => self.tree.update::<Document>(id, |w| {
+                        w.wrap = if on { Wrap::Word } else { Wrap::None }
+                    })?,
+                    (Some("document"), "follow") => {
+                        self.tree.repaint::<Document>(id, |w| w.follow = on)?
+                    }
                     (Some("rich"), "wrap") => self.tree.update::<RichText>(id, |w| {
                         w.wrap = if on { Wrap::Word } else { Wrap::None }
                     })?,

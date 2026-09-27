@@ -1,13 +1,7 @@
 //! Layout measurement and clipped painting of the retained tree.
 use super::{Error, Id, Nodes, Tree};
-use crate::{
-    elements::{Container, Lazy},
-    Buffer, Canvas, Rect,
-};
-use std::{
-    any::Any,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use crate::{elements::Container, Buffer, Canvas, ChildFocus, Children, Rect};
+use std::sync::atomic::{AtomicU64, Ordering};
 use taffy::{
     AvailableSpace, Dimension, Display, LayoutInput, LayoutOutput, Size, TraversePartialTree,
 };
@@ -43,6 +37,14 @@ impl Tree {
             frame.clear();
         }
         self.paint(self.root, (0, 0), frame.area(), &mut frame)?;
+        for index in 0..self.overlays.len() {
+            let id = self.overlays[index];
+            if self.visible(id) {
+                self.paint(id, (0, 0), frame.area(), &mut frame)?;
+            } else {
+                self.hide(id);
+            }
+        }
         if let Some((from, to)) = self.selection() {
             frame.invert(from, to);
         }
@@ -104,7 +106,7 @@ impl Tree {
         Ok(())
     }
 
-    /// Lay out a child of a `Lazy` on its own, as the only child of a column
+    /// Lay out a managed child on its own, as the only child of a column
     /// `width` cells wide, and return the rows it takes with its margins.
     /// Taffy keeps the result until something in the child changes, so asking
     /// again about an unchanged child costs little.
@@ -131,9 +133,8 @@ impl Tree {
         Ok(self.layout.layout(lane)?.size.height.max(0.0) as usize)
     }
 
-    /// Paint the children of a `Lazy` that are in view, stacked from the top
-    /// of its content box, and forget where the others were painted.
-    fn paint_lazy(
+    /// Let a custom container measure and place children through the public contract.
+    fn paint_managed(
         &mut self,
         id: Id,
         layout: &taffy::Layout,
@@ -141,36 +142,31 @@ impl Tree {
         clip: Rect,
         buffer: &mut Buffer,
     ) -> Result<(), Error> {
-        let (x, y, width, height) = content(layout, origin);
-        // Both are put back before returning; painting a child needs neither.
-        let children = std::mem::take(&mut self.nodes[id].children);
-        let mut element = std::mem::replace(&mut self.nodes[id].element, Box::new(Container));
-        let mut failed = None;
-        let (first, skipped) = (element.as_mut() as &mut dyn Any)
-            .downcast_mut::<Lazy>()
-            .expect("a lazy node")
-            .settle(height, &children, &mut |index| {
-                self.lay(children[index], width).unwrap_or_else(|error| {
-                    failed = Some(error);
-                    0
-                })
-            });
-        let mut painted = failed.map_or(Ok(()), Err);
-        let mut top = i64::from(y) - skipped as i64;
-        for (index, child) in children.iter().enumerate() {
-            if painted.is_err() || index < first || top >= i64::from(y) + i64::from(height) {
-                self.hide(*child);
-                continue;
+        let area = content(layout, origin);
+        // Only last frame's visible children need their hit regions cleared.
+        for child in std::mem::take(&mut self.nodes[id].painted) {
+            if self.contains(child) {
+                self.hide(child);
             }
-            painted = self.lay(*child, width).and_then(|rows| {
-                let at = top.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
-                top += rows as i64;
-                self.paint(*child, (x, at), clip, buffer)
-            });
         }
+        let children = std::mem::take(&mut self.nodes[id].children);
+        let reveal = self.nodes[id].reveal.take();
+        let mut element = std::mem::replace(&mut self.nodes[id].element, Box::new(Container));
+        let mut host = ChildHost {
+            tree: self,
+            children: &children,
+            area,
+            clip,
+            buffer,
+            painted: Vec::new(),
+            reveal,
+        };
+        let result = element.arrange(&mut host);
+        let painted = host.painted;
         self.nodes[id].children = children;
         self.nodes[id].element = element;
-        painted
+        self.nodes[id].painted = painted;
+        result
     }
 
     fn paint(
@@ -209,8 +205,8 @@ impl Tree {
             i32::try_from(offset.0).unwrap_or(i32::MAX),
             i32::try_from(offset.1).unwrap_or(i32::MAX),
         );
-        if self.lazy(id) {
-            self.paint_lazy(id, &layout, place.origin, place.inner, buffer)?;
+        if self.managed(id) {
+            self.paint_managed(id, &layout, place.origin, place.inner, buffer)?;
         } else {
             let scrolled = (
                 place.origin.0.saturating_sub(offset.0),
@@ -218,6 +214,9 @@ impl Tree {
             );
             for index in 0..self.nodes[id].children.len() {
                 let child = self.nodes[id].layers()[index];
+                if self.nodes[child].overlay {
+                    continue;
+                }
                 self.paint(child, scrolled, place.inner, buffer)?;
             }
         }
@@ -228,6 +227,103 @@ impl Tree {
             clip: place.bounds,
             focused: self.focus == Some(id),
         });
+        Ok(())
+    }
+}
+
+/// Narrow access to child layout, with ownership and clipping kept in the tree.
+struct ChildHost<'a> {
+    tree: &'a mut Tree,
+    children: &'a [Id],
+    area: (i32, i32, u16, u16),
+    clip: Rect,
+    buffer: &'a mut Buffer,
+    painted: Vec<Id>,
+    reveal: Option<(Id, Id)>,
+}
+impl Children for ChildHost<'_> {
+    fn size(&self) -> (u16, u16) {
+        (self.area.2, self.area.3)
+    }
+    fn ids(&self) -> &[Id] {
+        self.children
+    }
+    fn focused(&self) -> Option<usize> {
+        let (child, descendant) = self.reveal?;
+        if self.tree.focused() != Some(descendant) {
+            return None;
+        }
+        // A request may outlive a clipped frame and a subsequent subtree move.
+        let mut at = descendant;
+        while at != child {
+            at = self.tree.nodes.get(at)?.parent?;
+        }
+        self.children.iter().position(|id| *id == child)
+    }
+    fn reveal(&mut self, width: u16) -> Result<Option<ChildFocus>, Error> {
+        let Some(index) = self.focused() else {
+            return Ok(None);
+        };
+        self.measure(index, width)?;
+        let (child, descendant) = self.reveal.expect("focus request");
+        let layout = self
+            .tree
+            .layout
+            .layout(self.tree.nodes[descendant].layout)?;
+        let size = (
+            layout.size.width.clamp(0.0, f32::from(u16::MAX)) as u16,
+            layout.size.height.clamp(0.0, f32::from(u16::MAX)) as u16,
+        );
+        let (mut x, mut y) = (0.0, 0.0);
+        let mut node = descendant;
+        loop {
+            let location = self
+                .tree
+                .layout
+                .layout(self.tree.nodes[node].layout)?
+                .location;
+            x += location.x;
+            y += location.y;
+            if node == child {
+                break;
+            }
+            node = self.tree.nodes[node].parent.ok_or(Error::MissingNode)?;
+        }
+        Ok(Some(ChildFocus {
+            index,
+            at: (x.max(0.0) as u32, y.max(0.0) as u32),
+            size,
+        }))
+    }
+    fn measure(&mut self, index: usize, width: u16) -> Result<(u32, u32), Error> {
+        let child = *self.children.get(index).ok_or(Error::MissingNode)?;
+        // Overlays remain attached to the root layout, outside container flow.
+        if self.tree.nodes[child].overlay {
+            return Ok((0, 0));
+        }
+        let height = self.tree.lay(child, width)?;
+        let layout = self.tree.layout.layout(self.tree.lane)?;
+        Ok((
+            layout.size.width.max(0.0) as u32,
+            height.min(u32::MAX as usize) as u32,
+        ))
+    }
+    fn place(&mut self, index: usize, at: (i32, i32), width: u16) -> Result<(), Error> {
+        let child = *self.children.get(index).ok_or(Error::MissingNode)?;
+        if self.tree.nodes[child].overlay {
+            return Ok(());
+        }
+        self.measure(index, width)?;
+        self.tree.paint(
+            child,
+            (
+                self.area.0.saturating_add(at.0),
+                self.area.1.saturating_add(at.1),
+            ),
+            self.clip,
+            self.buffer,
+        )?;
+        self.painted.push(child);
         Ok(())
     }
 }

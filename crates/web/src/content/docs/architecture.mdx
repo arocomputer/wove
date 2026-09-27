@@ -3,7 +3,7 @@ title: Architecture
 description: How the crates fit together and who owns what.
 ---
 
-Wove is four libraries. Core has no dependency on the other three.
+Wove's core has no dependency on its adapters.
 
 | Library | Owns |
 | --- | --- |
@@ -11,6 +11,7 @@ Wove is four libraries. Core has no dependency on the other three.
 | Dioxus | Components and signals, mapped onto a core tree |
 | Keymap | Key bindings, sequences, and timeouts |
 | SSH | SSH connections, authentication, and one app per connection |
+| GPU | GPU rendering into pixel elements |
 
 The library sets no application policy. It binds no quit key, runs no
 executor, and never reads the clipboard.
@@ -18,7 +19,8 @@ executor, and never reads the clipboard.
 ## From tree to terminal
 
 1. A `Tree` owns elements, their handlers, and focus.
-2. Taffy lays the tree out in cells. Elements report their own size.
+2. Taffy lays the tree out in cells. Elements report their own size. Managed
+   containers measure and place visible child subtrees through `Children`.
 3. The paint pass draws each element through a clipped `Canvas` into a
    `Buffer` of cells.
 4. A `Renderer` compares the buffer with the last frame and writes only the
@@ -27,11 +29,20 @@ executor, and never reads the clipboard.
 An unchanged tree returns its last frame, and the renderer skips a frame it has
 already drawn. A repaint that doesn't move anything reuses the last layout.
 
+`Tree::update` invalidates measurement. `Tree::repaint` changes appearance while
+keeping layout, under the caller's promise that sizes remain the same. A dirty
+frame still paints the visible tree before output diffing; output diffing is not
+partial application painting.
+
 ## Ownership
 
 - A node owns its element's state. Moving a node keeps the state. Removing it
   drops the node, its children, and their handlers.
 - Hidden and detached nodes don't paint, take focus, or receive clicks.
+- Overlays keep their logical parents but lay out against the root and paint
+  above ordinary content. Input scopes bound focus and event bubbling separately.
+- Logical selection belongs to an element's text. Screen selection remains the
+  fallback for elements that do not expose text positions.
 - Core events carry no backend types. The same `Event` comes from a local
   terminal, SSH, or a test.
 - Text can't emit terminal control sequences. Only the terminal and SSH

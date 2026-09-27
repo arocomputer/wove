@@ -5,6 +5,62 @@ use wove::{
     Event as InputEvent, Id, Key, Tree,
 };
 use wove_dioxus::{elements as dioxus_elements, View};
+
+#[test]
+fn scoped_dioxus_listeners_stop_at_the_same_boundary_as_native_input() {
+    fn app() -> Element {
+        let mut outer = use_signal(|| 0);
+        let mut inner = use_signal(|| 0);
+        rsx! {
+            view { onkey: move |_| outer += 1,
+                text { content: "outer {outer}" }
+                panel { onkey: move |_| inner += 1,
+                    input { value: "edit" }
+                    text { content: "inner {inner}" }
+                }
+            }
+        }
+    }
+    let mut view = View::new(VirtualDom::new(app)).unwrap();
+    view.frame(40, 12).unwrap();
+    let panel = descendants(view.tree(), view.tree().root())
+        .into_iter()
+        .find(|id| view.tree().get::<wove::elements::Panel>(*id).is_ok())
+        .unwrap();
+    view.push_scope(panel).unwrap();
+    view.send(Key::Char('!').into()).unwrap();
+    let content = text(&mut view);
+    assert!(content.contains("inner 1"));
+    assert!(content.contains("outer 0"));
+    assert!(content.contains("edit!"));
+    view.pop_scope().unwrap();
+}
+
+#[test]
+fn document_and_overlay_attributes_reach_native_elements() {
+    fn app() -> Element {
+        rsx! { view { width: 2, height: 1,
+            document { content: "logical text", wrap: true, follow: true, overlay: true, pointer_events: false, width: 20, height: 3 }
+        }}
+    }
+    let mut view = View::new(VirtualDom::new(app)).unwrap();
+    assert!(text(&mut view).contains("logical text"));
+    let id = descendants(view.tree(), view.tree().root())
+        .into_iter()
+        .find(|id| view.tree().get::<wove::elements::Document>(*id).is_ok())
+        .unwrap();
+    let document = view.tree().get::<wove::elements::Document>(id).unwrap();
+    assert!(document.follow);
+    assert_eq!(document.wrap, wove::text::Wrap::Word);
+    assert_ne!(
+        view.tree().target(&InputEvent::Mouse(wove::Mouse::new(
+            5,
+            0,
+            wove::MouseKind::Down(wove::Button::Left)
+        ))),
+        Some(id)
+    );
+}
 fn descendants(tree: &Tree, id: Id) -> Vec<Id> {
     let mut out = vec![id];
     for child in tree.children(id).unwrap() {

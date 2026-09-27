@@ -41,6 +41,16 @@ Smaller examples live next to their crates:
 ```sh
 cargo run -p wove --example gallery
 cargo run -p wove --example inline
+cargo run -p wove --example logs
+cargo run -p wove --example files
+cargo run -p wove --example grid
 cargo run -p wove-dioxus --example counter
 cargo run -p wove-gpu --example shader
 ```
+
+`logs` appends synthetic records from a worker when Space enables streaming.
+Scroll away to pause tail following, drag to select source text, and press `c`
+to copy. `files` opens a modal inspector with Enter and restores list focus on
+Escape. `grid` implements two-axis virtualization for 100,000 cell elements
+through the public `Children` contract. Arrows scroll it. `inline` keeps native
+scrollback and opens a temporary full-screen history view with F2.

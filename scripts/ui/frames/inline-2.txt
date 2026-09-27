@@ -1,0 +1,6 @@
+Wove history · Esc returns
+one
+echo: one
+two
+echo: two
+@cursor none
