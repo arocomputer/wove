@@ -15,6 +15,18 @@ cargo new hello-wove && cd hello-wove
 cargo add wove --git https://github.com/arocomputer/wove
 ```
 
+Cargo.lock records the selected Git revision. Commit it for reproducible application
+builds. To deliberately pin a known Wove commit, use the same full `rev` on all
+Wove Git dependencies in Cargo.toml:
+
+```toml
+wove = { git = "https://github.com/arocomputer/wove", rev = "<full-commit-sha>" }
+```
+
+Choose a commit whose CI passed and use the guides from that checkout; these
+published guides follow main while Wove is unreleased. `cargo update` can otherwise
+advance an unpinned Git dependency to a newer, incompatible API.
+
 ## Write the app
 
 Replace `src/main.rs`:

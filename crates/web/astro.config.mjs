@@ -13,6 +13,22 @@ export default defineConfig({
     "/docs/packages": "/docs/keymap/",
   },
   integrations: [mdx(), sitemap()],
+  vite: {
+    build: {
+      rolldownOptions: {
+        onwarn(warning, warn) {
+          // Astro's generated module exports __astroPropagation and its assets.
+          // This marker has no JS runtime semantics; Rolldown may safely drop it.
+          if (
+            warning.code === "MODULE_LEVEL_DIRECTIVE" &&
+            warning.message.includes('"use astro:head-inject"') &&
+            warning.id?.includes("?astroPropagatedAssets")
+          ) return;
+          warn(warning);
+        },
+      },
+    },
+  },
   markdown: {
     shikiConfig: {
       themes: { light: "github-light", dark: "github-dark" },

@@ -1,41 +1,47 @@
-"""Exercise the actual Linux summary scripts with success, skip, and failure results."""
-import os
-from pathlib import Path
-import subprocess
-import textwrap
+"""Ensure the required gate cannot accept failed selection or unexpected skips."""
+import copy
+import json
 import unittest
+from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parents[2]
+from changes import plan
+from complete import verify
 
 
-@unittest.skipIf(os.name == "nt", "summary jobs execute on Linux")
 class SummaryTests(unittest.TestCase):
-    def status(self, area, selection, required, result):
-        """Substitute GitHub's result values into the workflow's final shell step."""
-        workflow = (ROOT / f".github/workflows/{area}.yml").read_text()
-        script = textwrap.dedent(workflow.rsplit("run: |\n", 1)[1])
-        script = script.replace("${{ needs.changes.result }}", selection)
-        script = script.replace("${{ needs.changes.outputs.run }}", required)
-        job = "check" if area == "quality" else "test"
-        script = script.replace("${{ needs." + job + ".result }}", result)
-        return subprocess.run(["sh", "-e", "-c", script], capture_output=True).returncode
+    def setUp(self):
+        printing = patch("builtins.print")
+        printing.start()
+        self.addCleanup(printing.stop)
 
-    def test_only_success_or_explicitly_unaffected_work_passes(self):
-        for area in ("core", "dioxus", "keymap", "ssh", "quality"):
-            for required, result in (("true", "success"), ("false", "skipped")):
-                with self.subTest(area=area, required=required, result=result):
-                    self.assertEqual(self.status(area, "success", required, result), 0)
+    def needs(self, work):
+        selected = plan(work)
+        needs = {"changes": {"result": "success", "outputs": {"plan": json.dumps(selected)}}}
+        flags = {"packages": bool(selected["packages"]["include"]),
+                 "quality": selected["quality"]["run"], "guides": selected["guides"],
+                 "website": selected["website"], "audit": any(selected["audits"].values())}
+        needs.update({key: {"result": "success" if value else "skipped"} for key, value in flags.items()})
+        return needs
 
-    def test_failed_detection_or_affected_work_cannot_pass(self):
-        cases = [
-            ("failure", "false", "skipped"),
-            ("cancelled", "false", "skipped"),
-            ("success", "", "skipped"),
-            ("success", "true", "failure"),
-            ("success", "true", "cancelled"),
-            ("success", "true", "skipped"),
-        ]
-        for area in ("core", "dioxus", "keymap", "ssh", "quality"):
-            for selection, required, result in cases:
-                with self.subTest(area=area, selection=selection, required=required, result=result):
-                    self.assertNotEqual(self.status(area, selection, required, result), 0)
+    def test_unaffected_jobs_must_skip_and_affected_jobs_must_pass(self):
+        for work in (set(), {"website"}, {"core", "quality", "guides", "audit"}):
+            verify(self.needs(work))
+
+    def test_failure_cancellation_and_unexpected_skips_fail_gate(self):
+        for work in (set(), {"website", "core", "quality", "guides", "audit"}):
+            baseline = self.needs(work)
+            for job in baseline:
+                for result in ("failure", "cancelled", "skipped", "success"):
+                    if result == baseline[job]["result"]:
+                        continue
+                    needs = copy.deepcopy(baseline)
+                    needs[job]["result"] = result
+                    with self.subTest(job=job, result=result), self.assertRaises(ValueError):
+                        verify(needs)
+
+    def test_missing_or_malformed_plan_fails_closed(self):
+        for raw in ("", "{}", '{"audits":{"rust":"false"}}'):
+            needs = self.needs(set())
+            needs["changes"]["outputs"]["plan"] = raw
+            with self.assertRaises((ValueError, KeyError)):
+                verify(needs)

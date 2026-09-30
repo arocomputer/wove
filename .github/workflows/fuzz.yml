@@ -1,0 +1,42 @@
+name: fuzz
+
+# The three fuzz targets, weekly and on request, never on a pull request.
+on:
+  schedule:
+    - cron: "41 5 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    # Exercise each parser independently on a fresh GitHub-hosted VM.
+    name: fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [decoder, sanitize]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-fuzz
+        run: |
+          rustup toolchain install nightly-2026-08-20 --profile minimal
+          cargo +nightly-2026-08-20 install cargo-fuzz --version 0.11.0 --locked
+
+      - name: Fuzz
+        run: cargo +nightly-2026-08-20 fuzz run "${{ matrix.target }}" -- -max_total_time=120 -rss_limit_mb=2048 -max_len=131072
+      - name: Retain crash inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crashes-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 14

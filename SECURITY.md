@@ -61,8 +61,9 @@ boundaries above is still a valid report.
 
 ## Dependency and automation review
 
-The `security` workflow runs Cargo's advisory audit weekly and on dependency
-changes. Dependabot proposes weekly updates for Cargo, Actions, Web, and PTY test
+CI audits the root and fuzz Cargo lockfiles, Bun, and Python dependencies weekly and when their manifests
+or lockfiles change. `./x audit` repeats all three locally; an advisory-service
+failure fails the check. Dependabot proposes weekly updates for Cargo, Actions, Web, and PTY test
 dependencies. Audit warnings still need review; a green run is not proof of security.
 Keep optional parsing dependencies disabled when the application does not need them.
 
@@ -70,3 +71,15 @@ Actions use full commit pins and minimal workflow permissions. Pull-request
 checks must not receive release credentials or run contributor code with a
 privileged token. Review changes to terminal output, SSH, manifests, release
 scripts, and workflows as changes to the security boundary.
+
+The optional syntax-highlighting dependency currently reaches unmaintained
+`bincode` (RUSTSEC-2025-0141) and `yaml-rust` (RUSTSEC-2024-0320) through `syntect`.
+These are maintenance advisories, not demonstrated Wove exploits. Keep syntax
+optional, review new upstream releases for replacements, and reassess these warnings
+before every supported release. Do not suppress vulnerability findings to make
+an audit pass.
+
+Scheduled fuzzing exercises decoder fragmentation and render sanitization; crash
+inputs are retained for reproduction. Workflow security scanning runs on every
+PR, release builds avoid restored caches, and crate archives receive build
+attestations. Privileged housekeeping executes only default-branch code.

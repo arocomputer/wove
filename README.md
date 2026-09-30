@@ -8,7 +8,7 @@
 </p>
 
 <div align="center">
-  <a href="https://github.com/arocomputer/wove/actions/workflows/core.yml"><img alt="Core build status" src="https://img.shields.io/github/actions/workflow/status/arocomputer/wove/core.yml?branch=main&amp;style=flat-square" /></a>
+  <a href="https://github.com/arocomputer/wove/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/arocomputer/wove/ci.yml?branch=main&amp;style=flat-square" /></a>
 </div>
 
 Wove is a Rust library for building terminal user interfaces.

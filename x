@@ -15,8 +15,12 @@ case "$command" in
     ./x docs
     ./x package
     ./x guard
+    ./x workflows
     ;;
-  fmt) cargo fmt --all "$@" ;;
+  fmt)
+    cargo fmt --all "$@"
+    cargo fmt --manifest-path fuzz/Cargo.toml "$@"
+    ;;
   lint)
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
     cargo clippy --workspace --all-targets --locked --no-default-features -- -D warnings
@@ -43,6 +47,7 @@ case "$command" in
       done
     fi
     ;;
+  fuzz-check) cargo check --manifest-path fuzz/Cargo.toml --locked ;;
   docs) RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked ;;
   package) python3 scripts/package.py ;;
   web)
@@ -50,6 +55,7 @@ case "$command" in
     bun install --frozen-lockfile
     bun run check
     bun run build
+    python3 ../../scripts/web.py links
     ;;
   guard)
     python3 scripts/guard.py
@@ -57,14 +63,20 @@ case "$command" in
     python3 -m unittest discover -s scripts/ci -p 'test_*.py'
     ;;
   affected) python3 scripts/ci/changes.py "$@" ;;
+  guides) python3 scripts/guides.py ;;
+  audit) python3 scripts/audit.py "$@" ;;
+  smoke) python3 scripts/web.py smoke ;;
+  workflows) python3 scripts/ci/workflows.py ;;
+  links) python3 scripts/ci/links.py ;;
+  settings) python3 scripts/settings.py "$@" ;;
   hooks)
     python3 scripts/hooks/install.py
     ;;
   ui)
-    cargo build --workspace --locked --examples --bins
+    python3 scripts/ui_build.py "$@"
     python3 -m venv target/ui
     target/ui/bin/python -m pip install --quiet -r scripts/ui/requirements.txt
     target/ui/bin/python scripts/ui.py "$@"
     ;;
-  *) echo 'usage: ./x [hooks|check|quality|core|dioxus|keymap|ssh|gpu|fmt|lint|test|docs|package|guard|ui|web|affected]' >&2; exit 2 ;;
+  *) echo 'usage: ./x [hooks|check|quality|core|dioxus|keymap|ssh|gpu|fmt|lint|test|docs|package|guard|ui|web|affected|guides|audit|smoke|settings|workflows|links|fuzz-check]' >&2; exit 2 ;;
 esac

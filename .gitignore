@@ -4,3 +4,7 @@ __pycache__/
 /crates/web/node_modules/
 /crates/web/dist/
 /crates/web/.astro/
+
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
