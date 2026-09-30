@@ -27,7 +27,13 @@ fn commit(
     let text = tree.create(Text::new(line))?;
     tree.insert(tree.root(), text, 0)?;
     draw(terminal, tree)?;
-    terminal.commit(1);
+    if let Err(error) = terminal.commit(1) {
+        if error.kind() != std::io::ErrorKind::WouldBlock {
+            return Err(error.into());
+        }
+        terminal.flush()?;
+        terminal.commit(1)?;
+    }
     tree.remove(text)?;
     tree.focus(Some(input))?;
     Ok(())
@@ -48,8 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mouse: false,
         ..Options::default()
     })?;
-    // Frames and commits go out from a thread of their own, in order, so a
-    // slow terminal never delays typing.
+    // Frames write on another thread. Committing history waits only when
+    // that writer already has a commit pending, keeping its queue bounded.
     terminal.detach()?;
     let header = "Wove inline · Enter commits a line · Esc quits";
     commit(&mut terminal, &mut tree, input, header)?;

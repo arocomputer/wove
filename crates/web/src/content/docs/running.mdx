@@ -82,9 +82,10 @@ work and draw. A `Waker` is `Send` and `Copy`, so give one to every producer.
 
 Over SSH, in tmux, or with very large frames, a write can block. Call
 `terminal.detach()` once after creating the session. Frames then go out from a
-thread the session owns, `draw` returns at once, and a slow terminal only ever
-receives the newest frame. Call `terminal.flush()` to wait until everything is
-on screen.
+thread the session owns and `draw` returns at once. Each frame replaces a pending
+frame unless an accepted inline commit separates them. Commit barriers preserve
+history and report backpressure when one is already queued. Call
+`terminal.flush()` to wait until everything is on screen.
 
 ## Title, bell, and clipboard
 
@@ -146,11 +147,16 @@ let line = tree.create(Text::new("done"))?;
 tree.insert(tree.root(), line, 0)?;
 let height = tree.height(width)?;
 terminal.draw(tree.frame(width, height)?)?;
-terminal.commit(1);
+terminal.commit(1)?;
 tree.remove(line)?;
 ```
 
-This keeps frames small however long the session runs.
+This keeps frames small however long the session runs. With a detached writer,
+a second commit separated by another frame returns `io::ErrorKind::WouldBlock`
+while the first commit waits. Keep the rows in the tree until the commit succeeds.
+Retry after `terminal.flush()?`, or resume committing when output catches up.
+Wove retains at most two queued frames and one commit barrier; frames may be
+replaced, but accepted commits and their preceding frames stay in order.
 
 ### Mouse input
 
