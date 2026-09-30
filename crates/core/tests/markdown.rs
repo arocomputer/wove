@@ -230,3 +230,18 @@ fn excessive_source_nesting_stays_literal_instead_of_recursing_without_bound() {
 fn ordered_lists_display_consecutive_numbers_while_parsing_retains_source() {
     assert_eq!(plain("3. a\n3. b"), "3. a\n4. b");
 }
+
+#[test]
+fn raw_html_keeps_its_source_kind_for_custom_formatters() {
+    use wove::markdown::{parse, Block, Inline};
+    assert_eq!(
+        parse("before <b>after</b>"),
+        [Block::Paragraph(vec![
+            Inline::Text("before ".into()),
+            Inline::Html("<b>".into()),
+            Inline::Text("after".into()),
+            Inline::Html("</b>".into()),
+        ])]
+    );
+    assert_eq!(plain("before <b>after</b>"), "before <b>after</b>");
+}

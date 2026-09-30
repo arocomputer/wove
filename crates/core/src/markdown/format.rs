@@ -116,7 +116,7 @@ fn append_inline(
     for inline in content {
         let mut next = style;
         match inline {
-            Inline::Text(text) => result.push(Span {
+            Inline::Text(text) | Inline::Html(text) => result.push(Span {
                 text: text.clone(),
                 style,
                 link: link.clone(),

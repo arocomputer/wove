@@ -15,6 +15,8 @@ pub enum Alignment {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Inline {
     Text(String),
+    /// Raw HTML source, preserved literally for application-selected handling.
+    Html(String),
     Code(String),
     Emphasis(Vec<Inline>),
     Strong(Vec<Inline>),
@@ -299,9 +301,8 @@ where
     I: Iterator<Item = (Event<'a>, Range<usize>)>,
 {
     Some(match event {
-        Event::Text(text) | Event::Html(text) | Event::InlineHtml(text) => {
-            Inline::Text(text.into_string())
-        }
+        Event::Text(text) => Inline::Text(text.into_string()),
+        Event::Html(text) | Event::InlineHtml(text) => Inline::Html(text.into_string()),
         Event::Code(text) => Inline::Code(text.into_string()),
         Event::SoftBreak => Inline::SoftBreak,
         Event::HardBreak => Inline::HardBreak,
