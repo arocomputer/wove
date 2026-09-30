@@ -8,12 +8,12 @@ import tomllib
 import unittest
 from unittest.mock import patch
 
-from changes import AREAS, ROOT, RUST, affected, changed_paths, lockfile_owners, main, selection
+from changes import AREAS, ROOT, RUST, affected, changed_paths, lockfile_owners, main, selection, plan
 
 
 class ChangeTests(unittest.TestCase):
     def test_core_retests_every_consumer(self):
-        self.assertEqual(affected(["crates/core/src/tree.rs"]), RUST)
+        self.assertEqual(affected(["crates/core/src/tree.rs"]), RUST | {"guides"})
 
     def test_adapter_changes_do_not_retest_siblings(self):
         for package in ("dioxus", "keymap", "ssh", "gpu"):
@@ -43,9 +43,9 @@ class ChangeTests(unittest.TestCase):
         self.assertEqual(affected(["crates/web/src/content/docs/AGENTS.md"]), {"website"})
 
     def test_manifests_and_lockfile_retest_rust_and_audit(self):
-        for path in ("Cargo.lock", "Cargo.toml", "rust-toolchain.toml"):
+        for path in ("Cargo.toml", "rust-toolchain.toml"):
             with self.subTest(path=path):
-                self.assertEqual(affected([path]), RUST | {"audit"})
+                self.assertEqual(affected([path]), RUST | {"audit", "guides"})
         self.assertEqual(affected(["crates/ssh/Cargo.toml"]), {"ssh", "quality", "quality-rust", "audit"})
 
     def test_terminal_harness_covers_core_and_dioxus_examples(self):
@@ -123,7 +123,7 @@ class ChangeTests(unittest.TestCase):
                 self.assertEqual(affected([path]), set())
 
     def test_documentation_does_not_hide_an_accompanying_code_change(self):
-        self.assertEqual(affected(["AGENTS.md", "crates/core/src/lib.rs"]), RUST)
+        self.assertEqual(affected(["AGENTS.md", "crates/core/src/lib.rs"]), RUST | {"guides"})
         self.assertEqual(affected([".github/actions/build/action.yml"]), AREAS)
 
     def test_invalid_diff_cannot_skip_all_jobs(self):
@@ -142,6 +142,40 @@ class ChangeTests(unittest.TestCase):
                 main()
             self.assertEqual(dict(line.split("=", 1) for line in (root / "output").read_text().splitlines()),
                              {"run": "true", "code": "false", "ui": "true"})
+
+    def test_dependency_ecosystems_are_selected_independently(self):
+        self.assertEqual(affected(["crates/web/bun.lock"]), {"website", "audit-web"})
+        self.assertIn("audit-python", affected(["scripts/ui/requirements.txt"]))
+        self.assertEqual(plan({"website"})["packages"]["include"], [])
+        self.assertFalse(plan({"website"})["quality"]["run"])
+
+    def test_test_only_change_runs_one_package_on_linux(self):
+        paths = ["crates/core/tests/text.rs"]
+        selected = plan(affected(paths), paths)
+        self.assertEqual([(row["package"], row["platform"]) for row in selected["packages"]["include"]], [("core", "Linux")])
+        self.assertFalse(selected["packages"]["include"][0]["ui"])
+
+    def test_core_contract_change_covers_every_platform_and_consumer(self):
+        paths = ["crates/core/src/element.rs"]
+        selected = plan(affected(paths), paths)
+        self.assertEqual(len(selected["packages"]["include"]), 15)
+        self.assertTrue(selected["guides"])
+
+    def test_platform_specific_tests_keep_all_platforms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "crates/core/tests/platform.rs"
+            source.parent.mkdir(parents=True)
+            source.write_text('#[cfg(windows)]\n#[test]\nfn platform() {}\n')
+            paths = ["crates/core/tests/platform.rs"]
+            with patch("changes.ROOT", root):
+                selected = plan(affected(paths), paths)
+            self.assertEqual(len(selected["packages"]["include"]), 3)
+
+    def test_pty_only_change_does_not_start_windows_or_unit_tests(self):
+        selected = plan(affected(["scripts/ui.py"]), ["scripts/ui.py"])
+        self.assertEqual(len(selected["packages"]["include"]), 4)
+        self.assertTrue(all(row["ui"] and not row["code"] for row in selected["packages"]["include"]))
 
 
 class LockfileTests(unittest.TestCase):

@@ -1,0 +1,196 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  changes:
+    name: Select checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Workflow syntax and security
+        run: ./x workflows
+      - id: plan
+        run: ./x affected plan
+  packages:
+    name: ${{ matrix.package }} (${{ matrix.platform }})
+    needs: changes
+    if: fromJSON(needs.changes.outputs.plan).packages.include[0] != null
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.plan).packages }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: package-${{ matrix.package }}
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+      - name: Software Vulkan for GPU tests
+        if: runner.os == 'Linux' && matrix.package == 'gpu'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - run: ./x "$PACKAGE"
+        if: matrix.code
+        env:
+          PACKAGE: ${{ matrix.package }}
+      - name: Terminal integration
+        if: matrix.ui
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          if [ "$PACKAGE" = core ]; then
+            ./x ui gallery editor inline grid files logs
+          else
+            ./x ui counter
+          fi
+  quality:
+    name: Shared quality
+    needs: changes
+    if: fromJSON(needs.changes.outputs.plan).quality.run
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: quality
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+      - run: ./x fuzz-check
+        if: fromJSON(needs.changes.outputs.plan).quality.fuzz
+      - run: ./x quality
+        if: fromJSON(needs.changes.outputs.plan).quality.code
+      - name: Tooling checks
+        if: '!fromJSON(needs.changes.outputs.plan).quality.code'
+        run: ./x fmt --check && ./x guard
+  guides:
+    name: Compile quickstart
+    needs: changes
+    if: fromJSON(needs.changes.outputs.plan).guides
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: guides
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+      - run: ./x guides
+  website:
+    name: Website
+    needs: changes
+    if: fromJSON(needs.changes.outputs.plan).website
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.2'
+          no-cache: true
+      - run: ./x web
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: crates/web/dist
+  audit:
+    name: Dependency audits
+    needs: changes
+    if: contains(toJSON(fromJSON(needs.changes.outputs.plan).audits), 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        if: fromJSON(needs.changes.outputs.plan).audits.web
+        with:
+          bun-version: '1.4.2'
+          no-cache: true
+      - run: ./x audit rust
+        if: fromJSON(needs.changes.outputs.plan).audits.rust
+      - run: ./x audit web
+        if: fromJSON(needs.changes.outputs.plan).audits.web
+      - run: ./x audit python
+        if: fromJSON(needs.changes.outputs.plan).audits.python
+  complete:
+    name: CI
+    needs: [changes, packages, quality, guides, website, audit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify selected work passed
+        env:
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/complete.py
+  # Existing required names remain until ./x settings migrates protection to CI.
+  legacy:
+    name: ${{ matrix.check }}
+    needs: complete
+    if: always() && vars.WOVE_LEGACY_CHECKS != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    strategy:
+      matrix:
+        check: ['Core - Build and Test', 'Dioxus - Build and Test', 'Keymap - Build and Test', 'SSH - Build and Test', Validate, Build, Audit]
+    steps:
+      - run: test '${{ needs.complete.result }}' = success
+  deploy:
+    name: Deploy website
+    needs: [changes, complete, website]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && fromJSON(needs.changes.outputs.plan).website
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+  smoke:
+    name: Production smoke check
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: ./x smoke

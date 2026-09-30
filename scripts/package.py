@@ -99,7 +99,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for name in names:
             for fingerprint in (target / "debug/.fingerprint").glob(f"{name}-*"):
                 shutil.rmtree(fingerprint)
-        environment = {**os.environ, "CARGO_TARGET_DIR": str(target)}
+        toolchain = tomllib.loads((root / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+        environment = {**os.environ, "CARGO_TARGET_DIR": str(target), "RUSTUP_TOOLCHAIN": toolchain}
         for features in ([], ["--no-default-features"]):
             subprocess.run(["cargo", "run", "--offline", *features], cwd=consumer, env=environment, check=True)
 

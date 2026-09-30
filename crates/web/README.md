@@ -10,7 +10,8 @@ bun run build
 ```
 
 Pushes to `main` that change the site build and deploy it through GitHub
-Actions. See [website deployment](../../CONTRIBUTING.md#website) for hosting.
+Actions after CI passes. `./x web` also checks generated links and anchors;
+`./x smoke` checks the production site after deployment. See [website deployment](../../CONTRIBUTING.md#website) for hosting.
 
 ## Where things live
 

@@ -1,0 +1,20 @@
+---
+title: API reference
+description: Read API contracts generated from the exact Wove revision you use.
+---
+
+These guides explain how to build an application. Rustdoc documents individual
+public types and methods. Wove is unreleased, so generate the reference from your
+checkout instead of relying on the yanked historical package on docs.rs:
+
+```sh
+cargo doc --workspace --all-features --no-deps --locked --open
+```
+
+The [core source](https://github.com/arocomputer/wove/tree/main/crates/core/src)
+and the four adapter crates include the same public contract comments. Use the
+Git revision in your application's Cargo.lock when comparing APIs.
+
+After supported packages are published, docs.rs will provide versioned references.
+Match the reference and guide revision to the dependency version; main can contain
+changes beyond a published release.

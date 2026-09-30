@@ -49,87 +49,121 @@ Never paste host keys, tokens, private application data, or unreviewed logs.
 
 ## Before opening a PR
 
+Choose verification by the changed contract:
+
+| Change | Checks |
+| --- | --- |
+| Rust APIs, implementations, or dependencies | `./x check` |
+| Rendering, input, or terminal lifecycle | Also `./x ui` |
+| Published docs or website | `./x web` |
+| Quickstart or the core API it uses | Also `./x guides` |
+| Repository prose only | `git diff --check` |
+
+Use package commands such as `./x ssh` for fast development loops. A regression
+test must fail on the original defect. Update affected consumers and guides with
+contract changes; review captured frames before updating PTY goldens.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` selects changes once and reports one required result,
+**CI**. That result succeeds only when selection succeeded and all selected jobs
+passed. Unexpected skips, cancellations, and failures fail the gate. Unaffected
+jobs visibly skip rather than allocating runners to report success.
+
+Shared formatting, Clippy, rustdoc, packaged-consumer, and tooling checks run
+once on Linux. Package tests run on Linux, macOS, and Windows for implementation
+or dependency changes; Core and Dioxus also run PTY scenarios on Unix. Rust caches
+are separated by job and platform and only saved by trusted pushes to main.
+
+| Changed paths | Selected work |
+| --- | --- |
+| Core implementation | Core and all four consumers on three platforms, shared quality, quickstart compilation |
+| Adapter implementation | That package on three platforms and shared quality |
+| Platform-independent package tests only | That package on Linux and shared quality |
+| Published docs/site or root README | Website build and generated-link checks |
+| Quickstart | Website plus compilation of its actual Rust source |
+| Repository prose or GitHub templates | Diff validation and the final gate; no builds |
+| PTY tooling | Core and Dioxus PTYs on Unix; no Windows or unit suites |
+| Cargo.lock | Old/new dependency graphs select affected owners, shared quality, and Cargo audit |
+| Bun manifests/lockfile | Website and Bun audit |
+| PTY dependency pins | PTYs, tooling checks, and Python audit |
+| Maintenance workflows, tool pins, and reporting scripts | Tooling tests and workflow scans |
+| Fuzz targets | Tooling tests and compilation of the two fuzz targets |
+| Shared CI, `x`, or unknown inputs | All checks |
+
+A website-only PR needs three running jobs after settings migration: selection,
+website, and the final gate. A policy-only PR needs two. A test-only PR needs four.
+Core contract changes retain all consumer/platform coverage; they are deliberately
+larger. Inspect the plan in the workflow summary or locally with:
+
 ```sh
-./x check    # formatting, lint, tests, rustdoc, packaged consumers, guard
-./x ui       # Unix PTY frames, input, resize, terminal cleanup
-./x web      # documentation types and static site build
+./x affected plan --base origin/main
 ```
 
-Run `./x check` for every submission, `./x ui` for rendering or terminal/input
-changes, and `./x web` for documentation or website changes.
+Platform-specific or deleted test files retain all three package platforms.
 
-CI is organized by library package. Every PR reports the following required
-results, but unaffected platform jobs and expensive build steps are skipped.
-Workflows themselves always start so a required result cannot remain missing.
+PR selection uses the merge base, checks both sides of renames, and validates the
+diff. Main pushes check the entire pushed range. Unknown inputs and ambiguous
+lockfile graphs select conservatively; selection errors cannot turn into skips.
+Manual runs check everything. Weekly runs audit Cargo, Bun, and Python without
+rebuilding unrelated packages.
 
-| Required check | Local command | Coverage |
-| --- | --- | --- |
-| Core - Build and Test | `./x core`, `./x ui gallery editor inline grid files logs` | All features, headless use, individual formatting features, and real terminal interaction |
-| Dioxus - Build and Test | `./x dioxus`, `./x ui counter` | Component adapter with and without its default features, plus its terminal example |
-| Keymap - Build and Test | `./x keymap` | Command bindings and key sequences |
-| SSH - Build and Test | `./x ssh` | Authentication, remote input, connection lifecycle, and cleanup |
-| Validate | `./x quality` | Formatting, Clippy, rustdoc, examples, packaged consumers, and repository guards |
-| Build | `./x web` | Astro checks and the static site build |
-| Audit | `cargo audit` | Dependency advisories |
+### Repository maintenance
 
-Affected package and Quality workflows run on Linux, macOS, and Windows. Core
-and Dioxus run their PTY scenarios on Linux and macOS. Each matrix has one required
-summary check. It passes only when change detection succeeds and either every
-selected platform passes or the package was explicitly unaffected and its matrix
-was skipped. Detection failures, cancellations, and unexpected skips fail the
-summary. Audit also runs weekly to catch new advisories without a source change.
+`./x workflows` runs checksum-pinned actionlint and offline zizmor. It runs in
+change selection even when policy changes select no builds. `./x quality` runs
+it locally too. Tool versions and Linux/macOS hashes live in
+`.github/infra-tools.json`; update both when upgrading. Release checks restore
+neither Rust build caches nor Bun setup caches. Published crate archives receive
+GitHub build attestations alongside their checksums and source identity.
 
-Selection follows the dependencies, not just the directory being edited:
+Weekly `links` checks external README and guide links with bounded retries.
+External availability stays outside the required PR gate; generated internal
+links and anchors remain part of `./x web`. Link reports expire after fourteen
+days. Closing a PR deletes only that PR's merge-ref caches, after snapshotting
+all pages; main and active-PR caches remain intact.
 
-- Core changes test Core, Dioxus, Keymap, and SSH, plus Quality.
-- Dioxus, Keymap, or SSH changes test that package and Quality.
-- Published website/docs changes run Website. Root README changes also run only
-  Website because the homepage reads its feature list from that file.
-- Non-published documentation such as AGENTS.md, CONTRIBUTING.md, SECURITY.md,
-  crate READMEs, and GitHub templates skips builds and test suites entirely.
-  The change-detection step still checks whitespace and conflict markers using
-  `git diff --check`. Required summaries report the intentional skips.
-- Terminal-harness changes run the Core and Dioxus PTY scenarios without their
-  unrelated Rust unit suites. Example-only changes select their terminal scenarios.
-- Crate manifests select that crate and its consumers, plus Quality and Audit.
-  Cargo.lock changes follow old and new dependency graphs to find their owners:
-  an SSH-only dependency update does not select Core. Ambiguous or missing lockfile
-  data conservatively selects all Rust packages. Quality still validates the lockfile.
-- The root Cargo manifest and Rust toolchain select every Rust package, Quality,
-  and Audit because they are shared build inputs.
-- Shared CI logic, the `./x` entry point, and unclassified paths run everything.
-- Manual and scheduled workflow runs do not filter their work.
+The scheduled reporter opens one bot-owned issue per failing CI, link, or fuzz
+workflow, updates it on repeated failures, and closes it after recovery. Healthy
+runs stay quiet. It reads metadata only and uses trusted default-branch code;
+it never executes the triggering run's code or artifacts. Closed-PR cache
+cleanup follows the same trusted-code boundary.
 
-`scripts/ci/changes.py` owns selection. It compares a PR against its merge base,
-includes both paths of renamed files, and checks the whole pushed range on main.
-Its tests also verify that local crate dependency edges are covered. A small
-change-detection job gates each package matrix; the summaries retain the same
-required names. Website and Audit perform detection in their existing jobs.
+The `fuzz` workspace exercises input fragmentation and bounded paste delivery,
+and verifies arbitrary text cannot place controls in rendered cells. Run
+`./x fuzz-check` locally; changed targets compile in the quality job. Scheduled
+fuzzing uses pinned nightly/cargo-fuzz, bounded inputs and execution time, and
+retains crash inputs for fourteen days. Turn discovered crashes into deterministic
+core regression tests. Cargo audits include this active development lockfile.
 
-Selection distinguishes Rust code from terminal-harness work. For metadata and
-tooling-code changes, Quality runs formatting and guards instead of Clippy,
-rustdoc, and packaged-consumer builds. Documentation alone does not run Quality.
-These refinements reuse the existing jobs.
+These schedules and privileged housekeeping activate only after merge to main.
 
-GitHub displays workflow and job names together. Shared results appear as
-`Quality / Validate`, `Website / Build`, and `Dependencies / Audit`; package
-results keep unique summary names such as `Core / Core - Build and Test`.
+### Migrating required checks and protecting releases
 
-`./x check` combines Quality with workspace-wide tests. `./x ui` without scenario
-names still runs the full PTY suite. The package commands run
-their own tests and doctests independently, avoiding features enabled only by
-sibling crates in a workspace test run.
+The workflow temporarily forwards the seven existing required check names to
+CI. This keeps current branch rules working while the change is reviewed and
+merged. An administrator then runs:
 
-A regression test must fail on the original defect. Keep tests focused on public
-behavior, and include a captured frame when appearance changes. Do not weaken
-assertions to make a regression pass. Update comments and guides with code changes.
-Describe user-visible changes and migration steps in the PR so maintainers can
-prepare release notes. GitHub Releases are the changelog; do not keep a second
-changelog file or roadmap.
+```sh
+./x settings          # inspect the proposed changes using authenticated gh
+./x settings --apply  # apply only after CI passed on current main
+```
 
-The optional `cargo run -p wove --release --example timing` command measures local
-frame timings. Include the setup and before/after measurements when claiming a
-speed improvement. Wove has no performance budgets or benchmark CI gate.
+The command preserves existing main protections and review policy, replaces its
+required checks with CI, restricts creation of `v*` tags to repository admins,
+and forbids moving or deleting release tags. Only after the new gate is enforced
+does it set `WOVE_LEGACY_CHECKS=false` to skip compatibility jobs. It backs up the
+previous main ruleset in `artifacts/settings/`. Do not manually disable compatibility
+checks before migrating protection. A failed settings call must be resolved and
+rerun; it does not establish that protection changed.
+
+CODEOWNERS routes sensitive changes to the maintainer. With the current solo
+maintainer, independent approval is not required. When a second maintainer joins,
+require an approving review and CODEOWNER approval for sensitive paths.
+
+GitHub Releases are the changelog; describe user-visible changes and migration
+steps in PRs. The optional `timing` example provides local measurements, not a
+performance gate. Include setup and before/after evidence for performance claims.
 
 ## Review
 
@@ -159,23 +193,26 @@ itself configure branch protection. Passing checks are evidence for review, not
 permission to merge or publish.
 
 Main requires a pull request and a squash merge. The branch must be current,
-review conversations resolved, and all seven checks above successful.
-The active repository rule has no bypass actors.
+review conversations resolved, and the required CI gate successful. Existing check
+names are retained until the settings migration above. Main has no bypass actors.
 
-## AI/LLM assistance
+## Agent and AI assistance
 
-AI-assisted issues and pull requests are welcome when the contributor owns the
-result and can explain it.
+Agent-assisted issues and pull requests are welcome. A named contributor must
+review the result, understand the change, answer maintainer questions, and address
+feedback. Generated text is input to their work, not a substitute for understanding.
 
 - Review generated code, tests, prose, and commit messages before requesting review.
-- Do not attribute commits to AI/LLM tools as author, co-author, committer, or
-  signatory. Do not add `Assisted-by`, AI `Co-authored-by`, or model/harness footers.
-- Answer maintainer questions yourself. Generated text is input to your response,
-  not a substitute for understanding the change.
-- Keep one AI-assisted pull request open at a time.
+- Preserve accurate authorship and provenance. Cloud-service bot authors or
+  committers, platform signatures, and attribution trailers or PR markers are allowed.
+- Git author, committer, pusher, PR creator, and signer are separate identities.
+  A service identity does not replace the accountable contributor.
+- Do not impersonate another contributor or rewrite history simply to hide agent use.
+- Keep PRs coherent and ready for review. Multiple independently reviewed agent
+  contributions are allowed; maintainers may limit their review queue by capacity.
 
-If you cannot explain or maintain the proposed change, revise or close the
-submission rather than passing that responsibility to reviewers.
+If you cannot explain or maintain a change, revise it before requesting review.
+Do not pass that responsibility to reviewers.
 
 ## Documentation
 
@@ -189,28 +226,44 @@ past decisions. Web is a Bun/Astro package under `crates/`, excluded from Cargo.
 Wove is in development. Workspace version 0.0.1 is unpublished; the premature
 `wove` 0.2.0 package is yanked. Commits and pull requests do not authorize releases.
 
-Publishable packages are `wove`, `wove-dioxus`, `wove-keymap`, and `wove-ssh`.
+Publishable packages are `wove`, `wove-dioxus`, `wove-keymap`, `wove-ssh`, and `wove-gpu`.
 Examples are private and Web is not a Cargo package.
 
 After a maintainer explicitly authorizes a release:
 
 1. Choose the version and update the workspace version and every exact internal
    dependency. Update Cargo.lock and migration guidance.
-2. Run `./x check`, `./x ui`, and `./x web` on the release commit. Review platform
-   CI and the scheduled dependency audit, including maintenance warnings.
+2. Run `./x check`, `./x ui`, `./x web`, `./x guides`, and `./x audit` on the
+   release commit. Review platform CI and advisory maintenance warnings.
 3. Inspect the archives produced by `./x package`. Its external consumer verifies
    the extracted packages with optional features enabled and disabled.
-4. If registry publication is authorized, publish core before its dependent
-   packages. Verify owners and credentials; never place tokens in chat or Git.
+4. If registry publication is authorized, publish `wove` first, then Dioxus,
+   Keymap, SSH, and GPU. Verify owners and credentials; never place tokens in chat
+   or Git. Prefer crates.io trusted publishing through GitHub OIDC, restricted to
+   this repository, its release workflow, and an approved publishing environment.
+   Configure a trusted publisher for each package with owner `arocomputer`, repo
+   `wove`, workflow `registry.yml`, and environment `crates-io`. Configure that
+   environment to allow main and require a maintainer's approval. The manual
+   **Publish registry packages** workflow runs only from main for an authorized
+   existing tag, verifies all release checks without credentials, and publishes
+   the exact tested archives in a separate job using a temporary OIDC token.
+   Upload metadata is prepared without credentials; the publishing job runs no
+   crate code and verifies each published archive checksum before its consumers. No long-lived
+   registry token is needed. Reruns skip identical published versions and reject
+   conflicting or yanked versions. Account-side trusted-publisher setup is required;
+   adding the workflow does not configure crates.io or authorize a release.
 5. Push `v<version>` only when the GitHub release is authorized. The `publish`
-   workflow checks the version and uploads crate archives and checksums to a
-   draft GitHub release. Generated PR notes are a starting point for editing.
+   workflow rejects tags outside main, checks exact internal dependency versions,
+   reruns Rust/PTY/site/guide/audit checks, and uploads archives, checksums, and
+   source commit metadata and build attestations to a draft GitHub release. Generated notes need review.
 6. Review the draft body using the format below, then publish it on GitHub. The
    workflow does not publish packages to crates.io.
 
 Before 1.0, a published incompatible API change increments the minor version.
 For the unpublished initial version, describe breaking changes in the PR.
 Never publish from a pull request or weaken tag protection to run a release.
+GitHub draft-release creation and registry publication are separate actions; neither
+a commit nor a successful CI run starts registry publication.
 
 ## Release notes
 
@@ -245,11 +298,12 @@ Run `./x web` for dependency, type, and build checks.
 
 ### Deployment
 
-`.github/workflows/website.yml` runs `./x web`. On pushes to `main` that affect
+The website job in `.github/workflows/ci.yml` runs `./x web`. On pushes to `main` that affect
 the site, it uploads `crates/web/dist/` and deploys to GitHub Pages. A manual run
 from `main` rebuilds and deploys the site. Pull requests only run checks.
-Deployment uses GitHub's workflow credentials and does not require a separate
-hosting secret.
+Deployment waits for CI, uses GitHub’s workflow credentials, and needs no separate
+hosting secret. A post-deployment smoke check verifies HTTPS, docs, the 404 page,
+and the canonical `www` redirect. Run `./x smoke` to repeat those checks.
 
 The production origin is `https://wovetui.com`, configured in
 `crates/web/astro.config.mjs`. To set up hosting:
@@ -280,6 +334,14 @@ The production origin is `https://wovetui.com`, configured in
 GitHub Pages manages the custom domain in repository settings. This Actions
 deployment does not require a `CNAME` file in the build output.
 
+### Rollback
+
+Revert the problematic site change through a PR; the successful main build deploys
+that revert. Keep the revert scoped to the affected site files. For an urgent rollback,
+restore the affected site files from a known successful revision in a corrective
+PR; merge it through the same CI gate. A manual workflow run on main redeploys
+the current source, so it does not by itself restore an older version. Verify `./x smoke`
+after either path. Do not move release tags to roll back a website.
 
 ## License
 

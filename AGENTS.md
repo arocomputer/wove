@@ -1,7 +1,7 @@
 # Working on Wove
 
 Instructions for agents and contributors editing this repository. Read
-[CONTRIBUTING.md](CONTRIBUTING.md) for contribution and AI/LLM rules, and
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution accountability rules, and
 [architecture](crates/web/src/content/docs/architecture.mdx) before changing contracts.
 
 Wove is a Rust library for building terminal user interfaces. It must serve applications
@@ -20,53 +20,34 @@ Capitalize Wove in prose; keep Cargo packages and Rust imports lowercase.
 
 ## Build and check
 
-```sh
-./x hooks                     # once per contributing checkout or worktree
-cargo build --workspace
-./x check                     # format, lint, tests, docs, packages, guard
-./x ui                        # real PTY input, resize, and restoration checks
-./x web                       # Bun dependencies, Astro checks, and site build
-```
-
 The Rust toolchain is pinned. Python 3.12 or newer runs repository tooling;
-Bun 1.4.2 or newer is needed for `crates/web`. CI runs the same `./x` commands.
-`./x check` covers all workspace crates, all optional core features, headless
-core builds, and a consumer compiled from the packaged crates.
+Bun 1.4.2 or newer builds the website. Run `./x hooks` once per worktree.
 
-Required package checks are `Core - Build and Test`, `Dioxus - Build and Test`,
-`Keymap - Build and Test`, `SSH - Build and Test`, and `GPU - Build and Test`. Shared checks are `Validate`
-from Quality, `Build` from Website, and `Audit` from Dependencies.
-Use `./x core`, `./x dioxus`, `./x keymap`, `./x ssh`, or `./x gpu` for a package's
-CI test sequence. `./x quality` runs shared formatting, lint, documentation,
-packaging, and guard checks. Platform jobs feed a required summary for each
-package.
-`scripts/ci/changes.py` selects affected packages and consumers. Core changes
-must test all adapters; an adapter-only change can skip its siblings. The
-application examples have no tests; the shared lint compiles them. Unknown
-paths and shared CI changes run everything. Selection failures must fail CI.
-Only an explicitly unaffected package may pass with a skipped platform matrix.
-Keep required names aligned with repository rules.
+Use the smallest relevant checks during development:
 
-Lockfile changes follow dependency ownership instead of selecting every crate.
-Non-published docs, including AGENTS.md and crate READMEs, select no builds or
-test suites; diff validation still checks whitespace and conflict markers.
-Root README and published docs select only Website. Terminal-harness changes
-select PTYs without unrelated unit tests. Tooling-only changes use lightweight
-Quality checks rather than compilation.
+- `./x core`, `./x dioxus`, `./x keymap`, `./x ssh`, or `./x gpu` tests one package.
+- `./x quality` checks shared formatting, lint, rustdoc, packaged consumers, and guards.
+- `./x ui` checks Unix PTY input, resize, terminal restoration, and golden frames.
+- `./x web` builds the website and checks generated links and anchors.
+- `./x workflows` checks workflow syntax and security with checksum-pinned tools.
+- `./x fuzz-check` compiles the bounded-input fuzz targets.
+- `./x guides` compiles the actual quickstart against this checkout.
+- `./x affected plan --base origin/main` explains the work selected for local changes.
 
-Core runs `./x ui gallery editor inline grid files logs` on Unix; Dioxus runs `./x ui counter`. An
-unfiltered `./x ui` runs all scenarios. Keep selection and its tests current when
-adding dependencies, packages, or shared build inputs.
+Run `./x check` for Rust contract or dependency changes, `./x ui` for rendering,
+input, or terminal changes, and `./x web` for published docs or site changes.
+Repository prose needs `git diff --check`; a prose-only change does not need Rust
+builds. CI selection, release gates, and settings migration are documented once
+in [CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration).
 
-Run `./x check` before submitting changes. Rendering, input, or terminal changes
-also need `./x ui`; documentation or website changes need `./x web`. The PTY suite
-runs on Unix and retains frames and terminal bytes in `artifacts/ui/`. Each frame
-must match its golden in `scripts/ui/frames/`, written in the `testing::snapshot`
-format; after reviewing an intended change, copy the artifact over the golden.
-Do not relax an assertion to hide a rendering regression. Review the actual frame.
+CI has one required `CI` result. Its selected package matrices include GPU;
+unaffected work skips explicitly. Selection failures, cancellations, and unexpected
+skips must fail the gate. Do not add redundant jobs or weaken selection to pass CI.
 
-The optional `cargo run -p wove --release --example timing` command prints local
-frame timings. It is not a benchmark gate; do not add budgets or a benchmarks folder.
+The PTY suite retains frames and terminal bytes in `artifacts/ui/`. Each frame
+must match its golden in `scripts/ui/frames/`. Review the actual frame before
+updating a golden; never relax an assertion to hide a rendering regression.
+The `timing` example prints local measurements, not a benchmark gate.
 
 ## Where things live
 
@@ -96,7 +77,7 @@ crates/dioxus/    component adapter; core does not depend on it
   src/runtime.rs optional local terminal loop
 crates/keymap/   scoped command bindings, sequences, and timeouts
 crates/gpu/      wgpu rendering into Pixels elements; its test needs a GPU or a
-                 software adapter, which the GPU workflow installs on Linux
+                 software adapter, which CI installs on Linux
 crates/ssh/      authenticated remote applications
   src/server.rs  listener, authentication, PTY requests, connection lifecycle
   src/runtime.rs application thread, frame output, and remote cleanup
@@ -182,8 +163,9 @@ hosting changes require a task that asks for them.
 - Describe user-visible changes and migration steps in the PR. GitHub Releases
   are the changelog; use the release-note format in CONTRIBUTING.md. Do not add
   a changelog file or a roadmap.
-- Follow the AI/LLM rules in CONTRIBUTING.md. Do not add AI attribution trailers
-  or model/harness footers to commits or PRs.
+- Follow the contribution accountability rules in CONTRIBUTING.md. Preserve
+  accurate authorship, service identities, signatures, and attribution metadata.
+  Do not rewrite history merely to add or remove agent attribution.
 
 ## Repository automation
 
