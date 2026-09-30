@@ -95,6 +95,7 @@ pub fn parse(source: &str) -> Vec<Block> {
                 Some((event, range))
             }
         })
+        .fuse()
         .peekable();
     let result = blocks(&mut events, source, None, &mut None, &mut false);
     if too_deep.get() {
@@ -136,6 +137,17 @@ where
                 level: level as u8,
                 content: inlines(events, TagEnd::Heading(level)),
             }),
+            Event::Start(Tag::HtmlBlock) => {
+                let mut source = String::new();
+                for (event, _) in events.by_ref() {
+                    match event {
+                        Event::End(TagEnd::HtmlBlock) => break,
+                        Event::Html(part) => source.push_str(&part),
+                        _ => {}
+                    }
+                }
+                Some(Block::Html(source))
+            }
             Event::Start(Tag::CodeBlock(kind)) => {
                 let info = match kind {
                     CodeBlockKind::Fenced(info) => info.into_string(),

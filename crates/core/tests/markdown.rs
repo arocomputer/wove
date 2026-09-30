@@ -250,3 +250,11 @@ fn raw_html_keeps_its_source_kind_for_custom_formatters() {
     );
     assert_eq!(plain("<div>block</div>"), "<div>block</div>");
 }
+
+#[test]
+fn multiline_html_remains_one_source_block_without_added_spacing() {
+    use wove::markdown::{parse, Block};
+    let source = "<div>\nhello\n</div>\n";
+    assert_eq!(parse(source), [Block::Html(source.into())]);
+    assert_eq!(plain(source), source.trim_end_matches('\n'));
+}
