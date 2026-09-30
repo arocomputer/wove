@@ -6,7 +6,8 @@
 //! the bytes with the lock released. A frame that is replaced before the
 //! writer reaches it is never rendered, which is safe because the next frame
 //! is diffed against what was actually sent. A commit is queued between the
-//! frames it separates, so the rows it releases are drawn first.
+//! frames it separates, so the rows it releases are drawn first. Only one
+//! commit barrier may wait for the writer; further barriers report backpressure.
 use crate::render::Park;
 use crate::{Buffer, Inline, Renderer, ScreenMode};
 use std::collections::VecDeque;
@@ -141,6 +142,12 @@ impl Output {
         if let Some(error) = state.error.take() {
             return Err(error);
         }
+        if state.closed || state.stopped {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "output writer stopped",
+            ));
+        }
         let state = &mut *state;
         match state.queue.back_mut() {
             Some(Op::Frame(queued, queued_height)) => {
@@ -165,10 +172,34 @@ impl Output {
         Ok(())
     }
 
-    /// Queue a commit behind the frames already queued.
-    pub fn commit(&self, rows: u16) {
-        self.lock().queue.push_back(Op::Commit(rows));
+    /// Queue one commit barrier; reject another until the writer catches up.
+    /// Consecutive commits release the same frame and can share one operation.
+    pub fn commit(&self, rows: u16) -> io::Result<()> {
+        let mut state = self.lock();
+        if let Some(error) = state.error.take() {
+            return Err(error);
+        }
+        if state.closed || state.stopped {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "output writer stopped",
+            ));
+        }
+        if rows == 0 {
+            return Ok(());
+        }
+        if let Some(Op::Commit(queued)) = state.queue.back_mut() {
+            *queued = queued.saturating_add(rows);
+        } else if state.queue.iter().any(|op| matches!(op, Op::Commit(_))) {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "inline commit pending",
+            ));
+        } else {
+            state.queue.push_back(Op::Commit(rows));
+        }
         self.changed.notify_all();
+        Ok(())
     }
 
     /// Wait until everything queued has been written or discarded, and
@@ -347,7 +378,7 @@ mod tests {
         let (skipped, last) = (frame(&["b", "c", "d"]), frame(&["b", "c", "d", "e"]));
         let writes = fall_behind(screen(), &first, |output| {
             output.queue(&finished, 4).unwrap();
-            output.commit(1);
+            output.commit(1).unwrap();
             output.queue(&skipped, 4).unwrap();
             output.queue(&last, 4).unwrap();
         });
@@ -357,5 +388,68 @@ mod tests {
         expected.commit(1);
         replay.push(expected.render(&last, 4).to_vec());
         assert_eq!(writes, replay);
+    }
+    #[test]
+    fn a_rejected_commit_can_be_retried_after_flushing_without_losing_rows() {
+        let screen = || Screen {
+            renderer: Renderer::with_depth(Depth::Rgb),
+            inline: Some(Inline::new(0, Depth::Rgb)),
+            mode: ScreenMode::Inline,
+        };
+        let first = frame(&["a"]);
+        let finished = frame(&["a", "b"]);
+        let last = frame(&["b", "c"]);
+        let mut rejected = None;
+        let writes = fall_behind(screen(), &first, |output| {
+            output.queue(&finished, 4).unwrap();
+            output.commit(1).unwrap();
+            output.queue(&last, 4).unwrap();
+            rejected = output.commit(1).err().map(|error| error.kind());
+        });
+        assert_eq!(rejected, Some(io::ErrorKind::WouldBlock));
+        let mut expected = screen();
+        let mut replay = vec![expected.render(&first, 4).to_vec()];
+        replay.push(expected.render(&finished, 4).to_vec());
+        expected.commit(1);
+        replay.push(expected.render(&last, 4).to_vec());
+        assert_eq!(writes, replay);
+        // With a drained queue, accepting the retry releases the last drawn row.
+        let output = Output::new(expected);
+        output.commit(1).unwrap();
+        output.close();
+        output.write(&mut Vec::new(), |_| true);
+        let next = frame(&["c"]);
+        expected = screen();
+        expected.render(&first, 4);
+        expected.render(&finished, 4);
+        expected.commit(1);
+        expected.render(&last, 4);
+        expected.commit(1);
+        assert_eq!(
+            output.with(|screen| screen.render(&next, 4).to_vec()),
+            expected.render(&next, 4)
+        );
+    }
+
+    #[test]
+    fn commits_cannot_grow_a_blocked_writers_backlog_without_bound() {
+        let screen = Screen {
+            renderer: Renderer::with_depth(Depth::Rgb),
+            inline: Some(Inline::new(0, Depth::Rgb)),
+            mode: ScreenMode::Inline,
+        };
+        let first = frame(&["first"]);
+        let mut queued = 0;
+        fall_behind(screen, &first, |output| {
+            for index in 0..100 {
+                output.queue(&frame(&[&format!("row {index}")]), 4).unwrap();
+                let _ = output.commit(1);
+            }
+            queued = output.lock().queue.len();
+        });
+        assert!(
+            queued <= 3,
+            "commits bypassed frame coalescing: {queued} operations"
+        );
     }
 }
