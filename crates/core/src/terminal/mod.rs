@@ -610,9 +610,9 @@ impl Terminal {
     }
 
     /// Wait until every frame handed to a detached writer is on the
-    /// terminal, and report a write that failed since the last `draw`. Call
-    /// it before printing around the session. Without a writer it returns
-    /// at once.
+    /// terminal, and report a write that failed since the last `draw` or a
+    /// stopped writer with unfinished output. Call it before printing around
+    /// the session. Without a writer it returns at once.
     pub fn flush(&mut self) -> io::Result<()> {
         self.output.flush()
     }

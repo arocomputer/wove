@@ -212,7 +212,16 @@ impl Output {
                 .wait(state)
                 .unwrap_or_else(PoisonError::into_inner);
         }
-        state.error.take().map_or(Ok(()), Err)
+        if let Some(error) = state.error.take() {
+            return Err(error);
+        }
+        if state.stopped && (state.writing || !state.queue.is_empty()) {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "output writer stopped before flushing",
+            ));
+        }
+        Ok(())
     }
 
     /// Stop the writer once the queue is empty.
@@ -354,6 +363,33 @@ mod tests {
         drop(sink);
         writes.extend(written.iter());
         writes
+    }
+
+    #[test]
+    fn flushing_reports_a_writer_that_panicked_during_output() {
+        struct Panics;
+        impl Write for Panics {
+            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                panic!("failed writer");
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let output = Output::new(Screen {
+            renderer: Renderer::default(),
+            inline: None,
+            mode: ScreenMode::Alternate,
+        });
+        output.queue(&frame(&["unfinished"]), 4).unwrap();
+        let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            output.write(&mut Panics, |_| true);
+        }));
+        assert!(crashed.is_err());
+        assert_eq!(
+            output.flush().unwrap_err().kind(),
+            io::ErrorKind::BrokenPipe
+        );
     }
 
     #[test]
