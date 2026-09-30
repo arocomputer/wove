@@ -92,3 +92,11 @@ The SSH library runs each app on its own thread, so core elements never need to 
 | `crates/core/src/terminal/` | The local terminal session |
 | `crates/dioxus/src/` | The Dioxus adapter |
 | `crates/ssh/src/` | The SSH server and runtime |
+
+## Optional formatting
+
+Markdown parsing returns semantic blocks and inlines without terminal styles.
+The supplied formatter converts those values to styled spans. Applications can
+use that formatter, change parsed blocks, or draw them with custom elements.
+Code info strings, table alignment, and link destinations stay available through
+public data. Syntax highlighting and diffs remain independently optional.
