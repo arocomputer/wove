@@ -592,7 +592,8 @@ impl Terminal {
     /// terminal never blocks the caller of `draw`. While the writer is busy,
     /// each new frame replaces the one waiting behind it, and the next write
     /// brings the terminal straight to the newest frame. Commits stay in
-    /// order with the frames around them.
+    /// order with the frames around them; a second queued commit barrier
+    /// reports backpressure through `commit`.
     ///
     /// `switch`, `suspend`, and dropping the session wait for queued frames;
     /// `flush` waits on request. Calling this again does nothing.
@@ -609,25 +610,28 @@ impl Terminal {
     }
 
     /// Wait until every frame handed to a detached writer is on the
-    /// terminal, and report a write that failed since the last `draw`. Call
-    /// it before printing around the session. Without a writer it returns
-    /// at once.
+    /// terminal, and report a write that failed since the last `draw` or a
+    /// stopped writer with unfinished output. Call it before printing around
+    /// the session. Without a writer it returns at once.
     pub fn flush(&mut self) -> io::Result<()> {
         self.output.flush()
     }
 
     /// Inline only: release the first `rows` rows of the last frame drawn
     /// to the terminal's history. See `Inline::commit`.
-    pub fn commit(&mut self, rows: u16) {
+    /// With a detached writer, a second pending commit barrier returns
+    /// `WouldBlock`. Keep its rows in the tree, then retry after `flush` or
+    /// once output catches up. Accepted commits preserve frame ordering.
+    pub fn commit(&mut self, rows: u16) -> io::Result<()> {
         if self.writer.is_some() {
-            self.output.commit(rows);
-            return;
+            return self.output.commit(rows);
         }
         self.output.with(|screen| screen.commit(rows));
         if self.held == Held::Entered {
             // Parking moves with the committed rows.
             self.record();
         }
+        Ok(())
     }
 
     /// Repaint on the next draw after another owner wrote to stdout.
