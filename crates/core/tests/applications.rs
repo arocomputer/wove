@@ -388,3 +388,24 @@ fn custom_containers_measure_focus_at_their_chosen_child_width() {
     assert_eq!(row.get(), 2);
     assert_eq!(tree.bounds(input).unwrap().y, 2);
 }
+
+#[test]
+fn hiding_a_subtree_clears_hit_regions_before_repainting() {
+    let mut tree = Tree::new();
+    let parent = tree.add(tree.root(), Container).unwrap();
+    let input = tree.add(parent, Input::new("hidden")).unwrap();
+    tree.frame(10, 2).unwrap();
+    assert_eq!(
+        tree.target(&mouse(MouseKind::Down(Button::Left), 0, 0)),
+        Some(input)
+    );
+    let mut layout = tree.layout(parent).unwrap().clone();
+    layout.display = layout::Display::None;
+    tree.set_layout(parent, layout).unwrap();
+    assert_eq!(tree.bounds(input).unwrap(), Rect::default());
+    let clicked = tree
+        .dispatch(mouse(MouseKind::Down(Button::Left), 0, 0))
+        .unwrap();
+    assert!(!clicked.path.contains(&input));
+    assert!(!clicked.path.contains(&parent));
+}
