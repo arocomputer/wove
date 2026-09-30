@@ -34,6 +34,12 @@ keeping layout, under the caller's promise that sizes remain the same. A dirty
 frame still paints the visible tree before output diffing; output diffing is not
 partial application painting.
 
+Applications that already place their content can create a `Buffer` and use
+`buffer.canvas(area)` to paint typed text or custom elements directly. Canvas
+coordinates and size follow the supplied region; painting clips to the buffer.
+Such a canvas has no focus owner. `Tree` supplies automatic layout and input
+routing when the application needs them. Both paths use the same renderers.
+
 ## Ownership
 
 - A node owns its element's state. Moving a node keeps the state. Removing it

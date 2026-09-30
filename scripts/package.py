@@ -82,6 +82,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _gpu = std::mem::size_of::<wove_gpu::Gpu>();
     #[cfg(feature = "terminal")]
     let _remote = std::mem::size_of::<wove_ssh::Server>();
+    // Manually positioned content uses the same typed canvas without a tree.
+    let mut buffer = wove::Buffer::new(20, 2);
+    let area = buffer.area();
+    buffer.canvas(area).text(0, 0, "direct canvas", wove::Style::default());
+    assert_eq!(buffer.cell(0, 0).unwrap().symbol(), "d");
     // Rendering to bytes needs no terminal backend, so it runs in both builds.
     wove::Renderer::default().draw(&mut Vec::new(), frame)?;
     Ok(())

@@ -480,20 +480,26 @@ impl Buffer {
         self.links.len() as u16
     }
 
+    /// Draw into a manually positioned region without a tree. Local coordinates
+    /// and size follow `area`; writes are clipped to this frame. The canvas is
+    /// unfocused. Use `Tree` when layout and input routing should be automatic.
+    pub fn canvas(&mut self, area: Rect) -> Canvas<'_> {
+        Canvas {
+            origin: (i32::from(area.x), i32::from(area.y)),
+            clip: area.intersection(self.area()),
+            size: (area.width, area.height),
+            focused: false,
+            buffer: self,
+        }
+    }
+
     /// Write one line within `area`, returning columns used. Tabs expand to the
     /// next stop; other control characters and standalone zero-width graphemes
     /// are skipped. A grapheme never splits. Overwriting either half of a wide
     /// grapheme clears the whole old grapheme.
     pub fn write(&mut self, area: Rect, text: &str, style: Style) -> u16 {
         let area = area.intersection(self.area());
-        let mut canvas = Canvas {
-            origin: (i32::from(area.x), i32::from(area.y)),
-            clip: area,
-            size: (area.width, area.height),
-            focused: false,
-            buffer: self,
-        };
-        canvas.run(0, 0, text, style, None) as u16
+        self.canvas(area).run(0, 0, text, style, None) as u16
     }
 
     /// The cells between two positions inclusive, in reading order, as a row

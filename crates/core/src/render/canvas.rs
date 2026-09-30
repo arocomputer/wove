@@ -1,4 +1,4 @@
-//! Element drawing in local coordinates, clipped by the tree's viewport.
+//! Drawing in local coordinates, clipped by the assigned viewport.
 use super::buffer::{graphemes, TAB};
 use crate::{Buffer, CursorShape, Rect, Style};
 use std::{ops::Range, sync::Arc};
