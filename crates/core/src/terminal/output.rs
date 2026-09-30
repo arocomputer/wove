@@ -315,9 +315,14 @@ mod tests {
         frame
     }
 
-    /// Queue the first frame, stall the writer on it, then queue `behind`,
-    /// and return every write the terminal received.
-    fn fall_behind(screen: Screen, first: &Buffer, behind: impl FnOnce(&Output)) -> Vec<Vec<u8>> {
+    /// Stall the first write, queue `behind`, then run `ready` after flushing.
+    /// Always unblock and close the writer, including when an assertion panics.
+    fn fall_behind(
+        screen: Screen,
+        first: &Buffer,
+        behind: impl FnOnce(&Output),
+        ready: impl FnOnce(&Output),
+    ) -> Vec<Vec<u8>> {
         let output = Output::new(screen);
         let (writes, written) = mpsc::channel();
         let (release, released) = mpsc::channel();
@@ -327,14 +332,24 @@ mod tests {
         };
         let mut writes = Vec::new();
         std::thread::scope(|scope| {
+            struct Finish<'a>(&'a Output, mpsc::Sender<()>);
+            impl Drop for Finish<'_> {
+                fn drop(&mut self) {
+                    self.0.close();
+                    let _ = self.1.send(());
+                }
+            }
+            let finish = Finish(&output, release);
             scope.spawn(|| output.write(&mut sink, |_| true));
             output.queue(first, 4).unwrap();
             // The writer is inside the first write when it arrives here.
             writes.push(written.recv().unwrap());
             behind(&output);
-            release.send(()).unwrap();
+            finish.1.send(()).unwrap();
             output.flush().unwrap();
-            output.close();
+            ready(&output);
+            output.flush().unwrap();
+            drop(finish);
         });
         drop(sink);
         writes.extend(written.iter());
@@ -349,11 +364,16 @@ mod tests {
             mode: ScreenMode::Alternate,
         };
         let frames = [["one"], ["two"], ["three"], ["four"]].map(|rows| frame(&rows));
-        let writes = fall_behind(screen, &frames[0], |output| {
-            for frame in &frames[1..] {
-                output.queue(frame, 4).unwrap();
-            }
-        });
+        let writes = fall_behind(
+            screen,
+            &frames[0],
+            |output| {
+                for frame in &frames[1..] {
+                    output.queue(frame, 4).unwrap();
+                }
+            },
+            |_| {},
+        );
         // The terminal ends up exactly where drawing every frame would
         // leave it: the skipped frames change nothing that is sent.
         let mut expected = Renderer::with_depth(Depth::Rgb);
@@ -376,12 +396,17 @@ mod tests {
         let first = frame(&["a"]);
         let finished = frame(&["a", "b", "c"]);
         let (skipped, last) = (frame(&["b", "c", "d"]), frame(&["b", "c", "d", "e"]));
-        let writes = fall_behind(screen(), &first, |output| {
-            output.queue(&finished, 4).unwrap();
-            output.commit(1).unwrap();
-            output.queue(&skipped, 4).unwrap();
-            output.queue(&last, 4).unwrap();
-        });
+        let writes = fall_behind(
+            screen(),
+            &first,
+            |output| {
+                output.queue(&finished, 4).unwrap();
+                output.commit(1).unwrap();
+                output.queue(&skipped, 4).unwrap();
+                output.queue(&last, 4).unwrap();
+            },
+            |_| {},
+        );
         let mut expected = screen();
         let mut replay = vec![expected.render(&first, 4).to_vec()];
         replay.push(expected.render(&finished, 4).to_vec());
@@ -400,35 +425,33 @@ mod tests {
         let finished = frame(&["a", "b"]);
         let last = frame(&["b", "c"]);
         let mut rejected = None;
-        let writes = fall_behind(screen(), &first, |output| {
-            output.queue(&finished, 4).unwrap();
-            output.commit(1).unwrap();
-            output.queue(&last, 4).unwrap();
-            rejected = output.commit(1).err().map(|error| error.kind());
-        });
+        let next = frame(&["c"]);
+        let writes = fall_behind(
+            screen(),
+            &first,
+            |output| {
+                output.queue(&finished, 4).unwrap();
+                output.commit(1).unwrap();
+                output.queue(&last, 4).unwrap();
+                rejected = output.commit(1).err().map(|error| error.kind());
+            },
+            |output| {
+                output.commit(1).unwrap();
+                output.queue(&next, 4).unwrap();
+            },
+        );
         assert_eq!(rejected, Some(io::ErrorKind::WouldBlock));
         let mut expected = screen();
         let mut replay = vec![expected.render(&first, 4).to_vec()];
         replay.push(expected.render(&finished, 4).to_vec());
         expected.commit(1);
         replay.push(expected.render(&last, 4).to_vec());
+        expected.commit(1);
+        let next = expected.render(&next, 4);
+        if !next.is_empty() {
+            replay.push(next.to_vec());
+        }
         assert_eq!(writes, replay);
-        // With a drained queue, accepting the retry releases the last drawn row.
-        let output = Output::new(expected);
-        output.commit(1).unwrap();
-        output.close();
-        output.write(&mut Vec::new(), |_| true);
-        let next = frame(&["c"]);
-        expected = screen();
-        expected.render(&first, 4);
-        expected.render(&finished, 4);
-        expected.commit(1);
-        expected.render(&last, 4);
-        expected.commit(1);
-        assert_eq!(
-            output.with(|screen| screen.render(&next, 4).to_vec()),
-            expected.render(&next, 4)
-        );
     }
 
     #[test]
@@ -440,13 +463,18 @@ mod tests {
         };
         let first = frame(&["first"]);
         let mut queued = 0;
-        fall_behind(screen, &first, |output| {
-            for index in 0..100 {
-                output.queue(&frame(&[&format!("row {index}")]), 4).unwrap();
-                let _ = output.commit(1);
-            }
-            queued = output.lock().queue.len();
-        });
+        fall_behind(
+            screen,
+            &first,
+            |output| {
+                for index in 0..100 {
+                    output.queue(&frame(&[&format!("row {index}")]), 4).unwrap();
+                    let _ = output.commit(1);
+                }
+                queued = output.lock().queue.len();
+            },
+            |_| {},
+        );
         assert!(
             queued <= 3,
             "commits bypassed frame coalescing: {queued} operations"
