@@ -433,11 +433,17 @@ impl Tree {
         Ok(())
     }
 
+    /// Change layout; hiding immediately clears the subtree's pointer regions,
+    /// so input cannot reach stale bounds before the next frame.
     pub fn set_layout(&mut self, id: Id, mut style: Layout) -> Result<(), Error> {
         if self.node(id)?.overlay {
             style.position = taffy::Position::Absolute;
         }
+        let hidden = style.display == Display::None;
         self.layout.set_style(self.node(id)?.layout, style)?;
+        if hidden {
+            self.hide(id);
+        }
         self.touch();
         self.drop_stale_focus()?;
         Ok(())
