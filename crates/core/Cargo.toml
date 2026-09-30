@@ -58,3 +58,7 @@ required-features = ["terminal"]
 [[example]]
 name = "logs"
 required-features = ["terminal"]
+
+[[example]]
+name = "markdown"
+required-features = ["terminal", "markdown"]

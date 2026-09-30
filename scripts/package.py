@@ -68,7 +68,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frame = tree.frame(20, 2)?;
     assert_eq!(frame.cell(0, 0).unwrap().symbol(), "p");
     #[cfg(feature = "markdown")]
-    let _markdown = wove::markdown::render("# Packed", wove::markdown::Palette::default());
+    {
+        let blocks = wove::markdown::parse("# Packed");
+        let _markdown = wove::markdown::render_blocks(&blocks, wove::markdown::Palette::default(), wove::markdown::Options::default());
+    }
     #[cfg(feature = "syntax")]
     let _syntax = wove::syntax::Syntaxes::new();
     #[cfg(feature = "diff")]
