@@ -44,7 +44,8 @@ routing when the application needs them. Both paths use the same renderers.
 
 - A node owns its element's state. Moving a node keeps the state. Removing it
   drops the node, its children, and their handlers.
-- Hidden and detached nodes don't paint, take focus, or receive clicks.
+- Hidden and detached nodes don't paint, take focus, or receive clicks. Hiding
+  clears a subtree's pointer regions immediately, before the next frame.
 - Overlays keep their logical parents but lay out against the root and paint
   above ordinary content. Input scopes bound focus and event bubbling separately.
 - Logical selection belongs to an element's text. Screen selection remains the
