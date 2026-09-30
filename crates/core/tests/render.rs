@@ -245,3 +245,29 @@ fn a_diff_shows_context_before_the_first_differing_line() {
     let missing = testing::diff("a", "a\n").unwrap();
     assert!(missing.ends_with("-     (end)\n+   2 |\n"), "{missing}");
 }
+
+#[test]
+fn a_direct_canvas_preserves_local_origin_and_clips_typed_text() {
+    use wove::text::TextLayout;
+    let mut buffer = Buffer::new(6, 3);
+    buffer.write(buffer.area(), "outside", Style::default());
+    let spans = [
+        Span::link("e", Style::default(), "https://example.com"),
+        Span::new("\u{301}界界", Style::default()),
+    ];
+    let text = TextLayout::new(&spans, Some(4), Wrap::None);
+    {
+        let mut canvas = buffer.canvas(Rect::new(2, 1, 8, 4));
+        assert_eq!(canvas.size(), (8, 4));
+        assert!(!canvas.focused());
+        text.paint(&mut canvas);
+        canvas.text(0, 1, "second", Style::default());
+        canvas.text(0, 2, "clipped", Style::default());
+    }
+    assert_eq!(buffer.lines(), ["outsid", "  e\u{301}界 ", "  seco"]);
+    assert_eq!(
+        buffer.cell(2, 1).unwrap().link(),
+        Some("https://example.com")
+    );
+    assert_eq!(buffer.cell(4, 1).unwrap().symbol(), "");
+}
