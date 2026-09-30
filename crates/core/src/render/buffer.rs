@@ -499,14 +499,7 @@ impl Buffer {
     /// grapheme clears the whole old grapheme.
     pub fn write(&mut self, area: Rect, text: &str, style: Style) -> u16 {
         let area = area.intersection(self.area());
-        let mut canvas = Canvas {
-            origin: (i32::from(area.x), i32::from(area.y)),
-            clip: area,
-            size: (area.width, area.height),
-            focused: false,
-            buffer: self,
-        };
-        canvas.run(0, 0, text, style, None) as u16
+        self.canvas(area).run(0, 0, text, style, None) as u16
     }
 
     /// The cells between two positions inclusive, in reading order, as a row
