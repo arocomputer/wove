@@ -24,6 +24,7 @@ pub(super) fn blocks(
                 inlines(content, palette.text, palette, options),
                 options.width,
             ),
+            Block::Html(source) => lines(vec![Span::new(source, palette.text)], options.width),
             Block::Heading { level, content } => {
                 let style = palette
                     .headings

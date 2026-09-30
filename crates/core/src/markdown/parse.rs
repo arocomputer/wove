@@ -46,6 +46,8 @@ pub struct ListItem {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Block {
     Paragraph(Vec<Inline>),
+    /// Raw block HTML, kept separate from inline HTML and paragraph content.
+    Html(String),
     Heading {
         level: u8,
         content: Vec<Inline>,
@@ -159,6 +161,7 @@ where
             Event::Start(Tag::List(start)) => Some(list(events, source, start)),
             Event::Start(Tag::Table(alignment)) => Some(table(events, alignment)),
             Event::Rule => Some(Block::Rule),
+            Event::Html(html) => Some(Block::Html(html.into_string())),
             Event::TaskListMarker(value) => {
                 *checked = Some(value);
                 None

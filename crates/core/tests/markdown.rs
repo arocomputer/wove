@@ -244,4 +244,9 @@ fn raw_html_keeps_its_source_kind_for_custom_formatters() {
         ])]
     );
     assert_eq!(plain("before <b>after</b>"), "before <b>after</b>");
+    assert_eq!(
+        parse("<div>block</div>"),
+        [Block::Html("<div>block</div>".into())]
+    );
+    assert_eq!(plain("<div>block</div>"), "<div>block</div>");
 }

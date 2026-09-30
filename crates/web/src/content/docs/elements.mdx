@@ -367,7 +367,8 @@ task markers, quote prefixes, rules, table headers, and table separators.
 Inline bold, italic, and strikethrough add to the surrounding block's attributes.
 
 The formatter supports CommonMark, tables, task lists, and strikethrough. HTML
-shows as literal text. Tables align columns by display-cell width and retain
+shows as literal text. Parsed block HTML and inline HTML retain their source
+kind so custom formatters can handle them separately. Tables align columns by display-cell width and retain
 inline styles and hyperlinks. Code blocks remain plain code; syntax highlighting
 is a separate feature.
 
