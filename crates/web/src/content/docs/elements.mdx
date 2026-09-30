@@ -361,9 +361,76 @@ let palette = Palette {
 tree.add(tree.root(), render("# Title\n\nSome *text*.", palette))?;
 ```
 
-`Palette` sets the style of `text`, `heading`, `code`, and `link`. Links open
-in terminals that support them. Tables are not supported yet, and HTML shows as
-plain text.
+`Palette` supplies complete styles for text, headings, code, links, list and
+task markers, quote prefixes, rules, table headers, and table separators.
+`headings` holds six optional level overrides; an unset level uses `heading`.
+Inline bold, italic, and strikethrough add to the surrounding block's attributes.
+
+The formatter supports CommonMark, tables, task lists, and strikethrough. HTML
+shows as literal text. Tables align columns by display-cell width and retain
+inline styles and hyperlinks. Code blocks remain plain code; syntax highlighting
+is a separate feature.
+
+Set presentation choices with `render_with`:
+
+```rust
+use wove::markdown::{render_with, Options};
+
+let options = Options {
+    width: Some(60),
+    link_destinations: false,
+    rule_width: 20,
+};
+let text = render_with(source, palette, options);
+```
+
+Links always retain their destinations as metadata for capable terminals.
+`link_destinations` controls whether the URL also appears after the label.
+With a width, the formatter wraps text and sizes table columns before returning
+an element with wrapping disabled. Call it again when the width changes.
+Without a width, the returned element uses word wrapping. `render` keeps the
+default choices: no fixed width, printed link destinations, and four-cell rules.
+
+#### Own the block presentation
+
+`parse` produces semantic `Block` and `Inline` values without choosing styles,
+glyphs, borders, or wrapping. It preserves heading levels, nested lists and
+quotes, task state, original ordered-item numbers, full code info strings, table
+alignments, and link and image destinations. The supplied formatter numbers
+ordered lists consecutively from their start, as CommonMark specifies.
+
+Use these values when your application needs its own table layout, code panels,
+or heading presentation. For example, a code viewer can pass the source and info
+string to its chosen highlighter (enable `syntax` for this example):
+
+```rust
+use wove::markdown::{parse, Block};
+
+for block in parse(source) {
+    if let Block::Code { info, source } = block {
+        let language = info.split_whitespace().next().unwrap_or("");
+        tree.add(tree.root(), highlighter.highlight(&source, language)?)?;
+    }
+}
+```
+
+`render_inline` formats a block's inline content into styled `Span`s for use in
+a custom element. `render_blocks` applies the supplied formatter to parsed blocks,
+so you can retain or modify the document without parsing it again. There are no
+terminal bytes in the parsed document or the formatting result.
+
+Incomplete Markdown can be parsed while text streams in. Footnote syntax stays
+ordinary text. Source nested more than 128 parser tags deep stays literal text,
+bounding the stack needed to parse, format, and drop a document.
+
+`Palette` has gained fields; construct it with `..Palette::default()` when you
+only choose some roles. Existing `render(source, palette)` calls keep working.
+
+The `markdown` example parses once and reformats on resize:
+
+```sh
+cargo run -p wove --example markdown --features markdown
+```
 
 ### Syntax highlighting
 

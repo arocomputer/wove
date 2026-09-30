@@ -30,7 +30,7 @@ Only `terminal` is on by default. Each of these works on its own:
 | Feature | Adds |
 | --- | --- |
 | `terminal` | Running on the local terminal |
-| `markdown` | `wove::markdown`, Markdown as styled text |
+| `markdown` | `wove::markdown`, semantic blocks and configurable styled text |
 | `syntax` | `wove::syntax`, syntax highlighting |
 | `diff` | `wove::diff`, styled line diffs |
 
