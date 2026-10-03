@@ -18,6 +18,18 @@ use wake::Ready;
 pub use wake::{waker, Waker};
 
 static OWNED: AtomicBool = AtomicBool::new(false);
+
+/// The largest grid, in columns and rows, that `Terminal::size` and resize
+/// events report. Whoever holds the other end of the terminal, such as a
+/// remote client of a login server, chooses its window size, and each frame
+/// allocates a cell per column and row. Within this bound a frame stays near
+/// 60 MB; a larger window shows the frame in its top-left corner.
+const MAX_SIZE: (u16, u16) = (2048, 1024);
+
+fn clamp((width, height): (u16, u16)) -> (u16, u16) {
+    (width.min(MAX_SIZE.0), height.min(MAX_SIZE.1))
+}
+
 /// What to undo if the process ends without dropping the session.
 struct Active {
     /// Raw mode is already owned; screen and input modes may not be entered yet.
@@ -562,9 +574,11 @@ impl Terminal {
         Ok(())
     }
 
-    /// Current terminal dimensions; read again after resize events.
+    /// Current terminal dimensions, at most 2048 columns by 1024 rows so that
+    /// a peer-chosen window cannot demand an enormous frame; read again after
+    /// resize events.
     pub fn size(&self) -> io::Result<(u16, u16)> {
-        terminal::size()
+        terminal::size().map(clamp)
     }
 
     /// Paint a frame. A full-screen frame matches the terminal's dimensions.
@@ -676,6 +690,7 @@ pub fn read() -> io::Result<Option<crate::Event>> {
 }
 
 /// Convert backend input for synchronous readers and asynchronous event streams.
+/// Resize events are clamped to the same bound as `Terminal::size`.
 pub fn convert(input: event::Event) -> Option<crate::Event> {
     use crate::{Button, Event, Key, Modifiers, Mouse, MouseKind};
     let modifiers = |m: event::KeyModifiers| Modifiers {
@@ -738,7 +753,10 @@ pub fn convert(input: event::Event) -> Option<crate::Event> {
                 modifiers: modifiers(m.modifiers),
             }))
         }
-        event::Event::Resize(width, height) => Some(Event::Resize(width, height)),
+        event::Event::Resize(width, height) => {
+            let (width, height) = clamp((width, height));
+            Some(Event::Resize(width, height))
+        }
         event::Event::FocusGained => Some(Event::WindowFocus(true)),
         event::Event::FocusLost => Some(Event::WindowFocus(false)),
         _ => None,

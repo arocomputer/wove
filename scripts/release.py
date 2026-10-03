@@ -1,4 +1,8 @@
-"""Verify a version tag on protected main, then stage tested crate archives and checksums."""
+"""Verify a version tag on protected main, then package and stage crate archives and checksums.
+
+Release workflows run this right after checkout and upload its output before any
+other tooling runs, so later build, test, or audit steps cannot alter the bytes
+that the checksums describe."""
 import argparse
 import hashlib
 import json
@@ -53,16 +57,17 @@ def main():
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
-    checksums = []
+    # The checkout was verified clean, so archives need no --allow-dirty, and
+    # --no-verify executes no build scripts before the archives are staged.
+    selection = [flag for name in names for flag in ("-p", name)]
+    subprocess.run(["cargo", "package", *selection, "--locked", "--no-verify"], cwd=root, check=True)
     for name in names:
-        crate = archive(name, version)
-        if not crate.is_file():
-            raise ValueError(f"{crate} is missing; run ./x package first")
-        shutil.copy2(crate, out / crate.name)
-        checksums.append(f"{hashlib.sha256(crate.read_bytes()).hexdigest()}  {crate.name}")
-    (out / "SHA256SUMS").write_text("\n".join(checksums) + "\n")
+        shutil.copy2(archive(name, version), out)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root).decode().strip()
     (out / "source.json").write_text(json.dumps({"tag": f"v{version}", "commit": commit, "packages": names}, indent=2) + "\n")
+    # Hash the staged copies, the bytes that are uploaded, not their sources.
+    files = sorted(out.iterdir())
+    (out / "SHA256SUMS").write_text("".join(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files))
 
 
 if __name__ == "__main__":

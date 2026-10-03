@@ -245,8 +245,9 @@ After a maintainer explicitly authorizes a release:
    `wove`, workflow `registry.yml`, and environment `crates-io`. Configure that
    environment to allow main and require a maintainer's approval. The manual
    **Publish registry packages** workflow runs only from main for an authorized
-   existing tag, verifies all release checks without credentials, and publishes
-   the exact tested archives in a separate job using a temporary OIDC token.
+   existing tag, packages and checksums the archives before any other tooling runs,
+   verifies all release checks without credentials, and only then publishes those
+   archives in a separate job using a temporary OIDC token.
    Upload metadata is prepared without credentials; the publishing job runs no
    crate code and verifies each published archive checksum before its consumers. No long-lived
    registry token is needed. Reruns skip identical published versions and reject
@@ -254,7 +255,8 @@ After a maintainer explicitly authorizes a release:
    adding the workflow does not configure crates.io or authorize a release.
 5. Push `v<version>` only when the GitHub release is authorized. The `publish`
    workflow rejects tags outside main, checks exact internal dependency versions,
-   reruns Rust/PTY/site/guide/audit checks, and uploads archives, checksums, and
+   packages and checksums the archives before other tooling runs,
+   reruns Rust/PTY/site/guide/audit checks, and uploads those archives, checksums, and
    source commit metadata and build attestations to a draft GitHub release. Generated notes need review.
 6. Review the draft body using the format below, then publish it on GitHub. The
    workflow does not publish packages to crates.io.
