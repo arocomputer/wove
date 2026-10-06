@@ -1,32 +1,14 @@
-<!-- Use a conventional title, such as fix(core): preserve selection on undo. -->
+## What and why
 
-### Related issue
+<!-- Explain the problem, what changed, and why. Link related issues.
+     Note migrations for API/Cargo-feature changes and user-visible release notes. -->
 
-<!-- Link an issue when applicable, for example Closes #123. -->
+## Verification
 
-### Type of change
+- `./x check` —
+- Additional path-specific checks —
 
-- [ ] Bug fix
-- [ ] Feature
-- [ ] Refactor
-- [ ] Documentation
-- [ ] Repository tooling
-
-### What does this PR do?
-
-<!-- Explain the problem, what changed, and why it works.
-     Include migration notes for API or Cargo feature changes. -->
-
-### How was it verified?
-
-<!-- List the checks run and their results. -->
-
-### Screenshots or recordings
-
-<!-- Include these for visual changes; otherwise remove this section. -->
-
-### Checklist
-
-- [ ] Relevant checks pass
-- [ ] Affected documentation is updated
-- [ ] The PR contains no unrelated changes
+<!-- Covers shared quality checks and the feature test matrix; GPU tests need an adapter.
+     Choose additional checks from CONTRIBUTING.md; include captured frames for UI changes.
+     Record actual results, failures/skips, and limitations (or why a check is N/A).
+     Add focused behavior tests and update affected docs; Releases are the changelog. -->

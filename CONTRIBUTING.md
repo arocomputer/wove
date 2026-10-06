@@ -173,9 +173,9 @@ Optional scopes are `core`, `dioxus`, `keymap`, `ssh`, `web`, `infra`, and `docs
 The title should make sense as a squash commit on main.
 
 Use the [PR template](.github/pull_request_template.md). Link a related issue when
-one exists, select the change type, explain the problem and why the change works,
-and list verification commands and results. Include screenshots or captured frames
-for visual changes; remove that section when it does not apply. Write enough detail
+one exists, explain the problem and why the change works under **What and why**,
+and list actual commands and results under **Verification**, including skipped
+checks and limitations. Include screenshots or captured frames for visual changes. Write enough detail
 to review the change without a fixed sentence limit.
 
 Keep each PR about one coherent change; leave unrelated cleanup for another
