@@ -25,6 +25,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: python3 scripts/release.py --verify --tag "$RELEASE_TAG"
+      # Package, hash, and upload before any other tooling runs in this
+      # workspace, so later steps cannot change the published bytes.
+      - run: python3 scripts/release.py --tag "$RELEASE_TAG"
+      - run: python3 scripts/registry.py artifacts/release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: registry
+          path: artifacts/release
+          if-no-files-found: error
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: '1.4.2'
@@ -35,13 +44,6 @@ jobs:
       - run: ./x web
       - run: ./x guides
       - run: ./x audit
-      - run: python3 scripts/release.py --tag "$RELEASE_TAG"
-      - run: python3 scripts/registry.py artifacts/release
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: registry
-          path: artifacts/release
-          if-no-files-found: error
   publish:
     needs: verify
     runs-on: ubuntu-latest
@@ -83,10 +85,14 @@ jobs:
                       raise
                   entries = []
               existing = next((entry for entry in entries if entry['vers'] == version), None)
+              crate = Path(f'release/{name}-{version}.crate').read_bytes()
+              # The upload body must end with exactly the checksummed archive.
+              if not Path(f'release/{name}-{version}.publish').read_bytes().endswith(len(crate).to_bytes(4, 'little') + crate):
+                  raise ValueError(f'{name} upload body does not carry the verified archive')
               if existing is None:
                   pending.append(name)
               else:
-                  checksum = hashlib.sha256(Path(f'release/{name}-{version}.crate').read_bytes()).hexdigest()
+                  checksum = hashlib.sha256(crate).hexdigest()
                   if existing['yanked'] or existing['cksum'] != checksum:
                       raise ValueError(f'{name} {version} already exists with a different archive or is yanked')
                   print(f'{name} {version}: identical version already published')
