@@ -51,9 +51,10 @@ def main():
     parser.add_argument("--apply", action="store_true", help="Apply after CI succeeds on main")
     args = parser.parse_args()
     rules = api("rulesets?includes_parents=true")
-    matches = [rule for rule in rules if rule["name"] == "main" and rule["source"] == REPO and rule["target"] == "branch"]
+    matches = [rule for rule in rules if
+               rule["name"] == "Protections" and rule["source"] == REPO and rule["target"] == "branch"]
     if len(matches) != 1:
-        raise ValueError("expected one repository-owned main ruleset; inspect settings manually")
+        raise ValueError("expected one repository-owned Protections policy; inspect settings manually")
     current = api(f"rulesets/{matches[0]['id']}")
     changes = [main_rule(current), *tag_rules()]
     print(json.dumps(changes, indent=2))

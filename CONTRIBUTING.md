@@ -153,7 +153,7 @@ The command preserves existing main protections and review policy, replaces its
 required checks with CI, restricts creation of `v*` tags to repository admins,
 and forbids moving or deleting release tags. Only after the new gate is enforced
 does it set `WOVE_LEGACY_CHECKS=false` to skip compatibility jobs. It backs up the
-previous main ruleset in `artifacts/settings/`. Do not manually disable compatibility
+previous main protection policy in `artifacts/settings/`. Do not manually disable compatibility
 checks before migrating protection. A failed settings call must be resolved and
 rerun; it does not establish that protection changed.
 
