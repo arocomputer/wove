@@ -1,6 +1,6 @@
 name: fuzz
 
-# The three fuzz targets, weekly and on request, never on a pull request.
+# The two fuzz targets, weekly and on request, never on a pull request.
 on:
   schedule:
     - cron: "41 5 * * 3"
@@ -8,6 +8,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   fuzz:
