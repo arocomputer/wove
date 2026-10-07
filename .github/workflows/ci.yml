@@ -114,6 +114,12 @@ jobs:
         with:
           bun-version: '1.4.2'
           no-cache: true
+      # setup-bun's cache covers the executable; dependency downloads live separately.
+      - name: Bun dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-deps-v1-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('crates/web/bun.lock') }}
       - run: ./x web
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -134,6 +140,12 @@ jobs:
         with:
           bun-version: '1.4.2'
           no-cache: true
+      - name: Bun dependencies
+        if: fromJSON(needs.changes.outputs.plan).audits.web
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-deps-v1-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('crates/web/bun.lock') }}
       - run: ./x audit rust
         if: fromJSON(needs.changes.outputs.plan).audits.rust
       - run: ./x audit web
