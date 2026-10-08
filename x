@@ -74,7 +74,7 @@ case "$command" in
     ;;
   ui)
     python3 scripts/ui_build.py "$@"
-    python3 -m venv target/ui
+    python3 -m venv --clear target/ui
     target/ui/bin/python -m pip install --quiet -r scripts/ui/requirements.txt
     target/ui/bin/python scripts/ui.py "$@"
     ;;

@@ -107,7 +107,7 @@ class ReleaseTests(unittest.TestCase):
 
 class SettingsTests(unittest.TestCase):
     def current(self):
-        return {"id": 1, "name": "main", "source": settings.REPO, "target": "branch", "enforcement": "active",
+        return {"id": 1, "name": "Protections", "source": settings.REPO, "target": "branch", "enforcement": "active",
                 "bypass_actors": [], "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
                 "rules": [{"type": "pull_request", "parameters": {"required_approving_review_count": 0}},
                           {"type": "required_status_checks", "parameters": {"required_status_checks": []}}]}

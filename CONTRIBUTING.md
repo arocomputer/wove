@@ -153,7 +153,7 @@ The command preserves existing main protections and review policy, replaces its
 required checks with CI, restricts creation of `v*` tags to repository admins,
 and forbids moving or deleting release tags. Only after the new gate is enforced
 does it set `WOVE_LEGACY_CHECKS=false` to skip compatibility jobs. It backs up the
-previous main ruleset in `artifacts/settings/`. Do not manually disable compatibility
+previous main protection policy in `artifacts/settings/`. Do not manually disable compatibility
 checks before migrating protection. A failed settings call must be resolved and
 rerun; it does not establish that protection changed.
 
@@ -173,9 +173,9 @@ Optional scopes are `core`, `dioxus`, `keymap`, `ssh`, `web`, `infra`, and `docs
 The title should make sense as a squash commit on main.
 
 Use the [PR template](.github/pull_request_template.md). Link a related issue when
-one exists, select the change type, explain the problem and why the change works,
-and list verification commands and results. Include screenshots or captured frames
-for visual changes; remove that section when it does not apply. Write enough detail
+one exists, explain the problem and why the change works under **What and why**,
+and list actual commands and results under **Verification**, including skipped
+checks and limitations. Include screenshots or captured frames for visual changes. Write enough detail
 to review the change without a fixed sentence limit.
 
 Keep each PR about one coherent change; leave unrelated cleanup for another
@@ -245,8 +245,9 @@ After a maintainer explicitly authorizes a release:
    `wove`, workflow `registry.yml`, and environment `crates-io`. Configure that
    environment to allow main and require a maintainer's approval. The manual
    **Publish registry packages** workflow runs only from main for an authorized
-   existing tag, verifies all release checks without credentials, and publishes
-   the exact tested archives in a separate job using a temporary OIDC token.
+   existing tag, packages and checksums the archives before any other tooling runs,
+   verifies all release checks without credentials, and only then publishes those
+   archives in a separate job using a temporary OIDC token.
    Upload metadata is prepared without credentials; the publishing job runs no
    crate code and verifies each published archive checksum before its consumers. No long-lived
    registry token is needed. Reruns skip identical published versions and reject
@@ -254,7 +255,8 @@ After a maintainer explicitly authorizes a release:
    adding the workflow does not configure crates.io or authorize a release.
 5. Push `v<version>` only when the GitHub release is authorized. The `publish`
    workflow rejects tags outside main, checks exact internal dependency versions,
-   reruns Rust/PTY/site/guide/audit checks, and uploads archives, checksums, and
+   packages and checksums the archives before other tooling runs,
+   reruns Rust/PTY/site/guide/audit checks, and uploads those archives, checksums, and
    source commit metadata and build attestations to a draft GitHub release. Generated notes need review.
 6. Review the draft body using the format below, then publish it on GitHub. The
    workflow does not publish packages to crates.io.
