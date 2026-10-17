@@ -64,7 +64,7 @@ boundaries above is still a valid report.
 CI audits the root and fuzz Cargo lockfiles, Bun, and Python dependencies weekly and when their manifests
 or lockfiles change. `./x audit` repeats all three locally; an advisory-service
 failure fails the check. The custom workflow updates compatible Cargo versions
-weekly; minor and patch PRs auto-merge only after required checks.
+weekly; dependency PRs require the repository's full check suite and maintainer review.
 Audit warnings still need review; a green run is not proof of security.
 Keep optional parsing dependencies disabled when the application does not need them.
 
