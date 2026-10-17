@@ -114,7 +114,7 @@ def affected(paths, lock_owners=None):
             result.update(WORKFLOWS.get(Path(path).stem, AREAS) | {"quality"})
         elif path.startswith(".github/") and (
             path.endswith(".md") or path.startswith(".github/ISSUE_TEMPLATE/")
-            or path in {".github/CODEOWNERS", ".github/dependabot.yml"}
+            or path in {".github/CODEOWNERS", ".github/workflows/deps.yml"}
         ):
             continue
         else:

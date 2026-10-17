@@ -118,7 +118,8 @@ class ChangeTests(unittest.TestCase):
                      "docs/design.md", "contributing/releases.md",
                      "crates/core/AGENTS.md", "crates/core/README.md", "crates/web/README.md",
                      ".github/pull_request_template.md", ".github/ISSUE_TEMPLATE/bug.yml",
-                     ".github/CODEOWNERS", ".github/dependabot.yml", ".github/workflows/README.md"):
+                     ".github/CODEOWNERS", ".github/workflows/deps.yml",
+                     ".github/workflows/README.md"):
             with self.subTest(path=path):
                 self.assertEqual(affected([path]), set())
 
