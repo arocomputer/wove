@@ -110,11 +110,13 @@ def affected(paths, lock_owners=None):
             result.update({"quality", "quality-rust"})
         elif path.startswith("scripts/"):
             result.add("quality")
+        elif path == ".github/workflows/deps.yml":
+            continue
         elif path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml")):
             result.update(WORKFLOWS.get(Path(path).stem, AREAS) | {"quality"})
         elif path.startswith(".github/") and (
             path.endswith(".md") or path.startswith(".github/ISSUE_TEMPLATE/")
-            or path in {".github/CODEOWNERS", ".github/workflows/deps.yml"}
+            or path == ".github/CODEOWNERS"
         ):
             continue
         else:
