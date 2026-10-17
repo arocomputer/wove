@@ -63,8 +63,9 @@ boundaries above is still a valid report.
 
 CI audits the root and fuzz Cargo lockfiles, Bun, and Python dependencies weekly and when their manifests
 or lockfiles change. `./x audit` repeats all three locally; an advisory-service
-failure fails the check. Dependabot proposes weekly updates for Cargo, Actions, Web, and PTY test
-dependencies. Audit warnings still need review; a green run is not proof of security.
+failure fails the check. The custom workflow updates compatible Cargo versions
+weekly; minor and patch PRs auto-merge only after required checks.
+Audit warnings still need review; a green run is not proof of security.
 Keep optional parsing dependencies disabled when the application does not need them.
 
 Actions use full commit pins and minimal workflow permissions. Pull-request
