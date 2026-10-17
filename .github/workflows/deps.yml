@@ -44,5 +44,10 @@ jobs:
           git checkout -B chore/dependency-updates
           git add -- "${update_files[@]}"
           git commit -m 'chore: update dependencies'
-          git push --force origin chore/dependency-updates
-          gh pr create --base main --head chore/dependency-updates --title 'chore: update dependencies' --body 'Grouped dependency updates. The repository check ran before opening this PR.' || true
+          if [ "$(gh pr list --state open --head chore/dependency-updates --json number --jq length)" -gt 0 ]; then
+            echo 'An update PR is already open; leaving it for review.'
+            exit 0
+          fi
+          git push origin --delete chore/dependency-updates 2>/dev/null || true
+          git push origin chore/dependency-updates
+          gh pr create --base main --head chore/dependency-updates --title 'chore: update dependencies' --body 'Grouped dependency updates. The repository check ran before opening this PR.'
